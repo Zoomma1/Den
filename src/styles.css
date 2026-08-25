@@ -1,0 +1,84 @@
+/*
+ * Tokens de thème --den-*.
+ * Valeurs par défaut ci-dessous ; le module `theme` (lot dédié) les
+ * réécrira dynamiquement sur :root à partir d'un fichier type den-theme.json.
+ */
+:root {
+  --den-bg: #1e1e1e;
+  --den-bg-elevated: #252526;
+  --den-fg: #d4d4d4;
+  --den-fg-muted: #8a8a8a;
+  --den-accent: #4fa3ff;
+  --den-accent-fg: #0b1622;
+  --den-border: #3c3c3c;
+  --den-status-success: #4caf50;
+  --den-status-warning: #e0a030;
+  --den-status-error: #e05252;
+  --den-font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --den-font-mono: "SF Mono", Menlo, Consolas, monospace;
+  --den-font-size-base: 14px;
+  --den-radius: 6px;
+  --den-space-1: 4px;
+  --den-space-2: 8px;
+  --den-space-3: 12px;
+  --den-space-4: 20px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+}
+
+body {
+  background: var(--den-bg);
+  color: var(--den-fg);
+  font-family: var(--den-font-sans);
+  font-size: var(--den-font-size-base);
+}
+
+#den-app {
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  height: 100vh;
+}
+
+#den-tabs {
+  display: flex;
+  gap: var(--den-space-2);
+  padding: var(--den-space-2) var(--den-space-3);
+  background: var(--den-bg-elevated);
+  border-bottom: 1px solid var(--den-border);
+}
+
+#den-main {
+  display: flex;
+  min-height: 0;
+}
+
+#den-conversation {
+  flex: 1 1 60%;
+  min-width: 0;
+  overflow-y: auto;
+  padding: var(--den-space-4);
+}
+
+#den-terminal {
+  flex: 1 1 40%;
+  min-width: 0;
+  border-left: 1px solid var(--den-border);
+  background: #000;
+  font-family: var(--den-font-mono);
+}
+
+#den-status {
+  padding: var(--den-space-1) var(--den-space-3);
+  background: var(--den-bg-elevated);
+  border-top: 1px solid var(--den-border);
+  color: var(--den-fg-muted);
+  font-size: 0.85em;
+}

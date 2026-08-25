@@ -1,0 +1,23 @@
+{
+  "name": "Den Dark (exemple)",
+  "tokens": {
+    "bg": "#1e1e1e",
+    "bg-elevated": "#252526",
+    "fg": "#d4d4d4",
+    "fg-muted": "#8a8a8a",
+    "accent": "#4fa3ff",
+    "accent-fg": "#0b1622",
+    "border": "#3c3c3c",
+    "status-success": "#4caf50",
+    "status-warning": "#e0a030",
+    "status-error": "#e05252",
+    "font-sans": "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
+    "font-mono": "'SF Mono', Menlo, Consolas, monospace",
+    "font-size-base": "14px",
+    "radius": "6px",
+    "space-1": "4px",
+    "space-2": "8px",
+    "space-3": "12px",
+    "space-4": "20px"
+  }
+}
