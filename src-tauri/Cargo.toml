@@ -1,0 +1,23 @@
+[package]
+name = "den"
+version = "0.1.0"
+description = "Den — app desktop qui wrappe Claude Code"
+authors = ["Victor Germain"]
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[lib]
+# Le suffixe `_lib` évite un conflit de nom avec le binaire (surtout sur Windows).
+name = "den_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# Terminal : portable-pty UNIQUEMENT (jamais tauri-plugin-shell — cf. CLAUDE.md racine).
+portable-pty = "0.9"
