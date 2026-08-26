@@ -1,0 +1,100 @@
+/*
+ * Styles du module `interactive` — blocs de décision (permission_request /
+ * question_request) injectés dans le flux de conversation via
+ * `mountCustomBlock` (cf. src/markdown/index.ts).
+ * Utilise les tokens --den-* posés par le module `theme` sur :root
+ * (cf. src/styles.css) — aucun nouveau token global, uniquement des
+ * variantes locales au module.
+ */
+
+.den-decision-block {
+  display: flex;
+  flex-direction: column;
+  gap: var(--den-space-2);
+  padding: var(--den-space-3);
+  border: 1px solid var(--den-border);
+  border-radius: var(--den-radius);
+  background: var(--den-bg-elevated);
+}
+
+.den-decision-block__title {
+  margin: 0;
+  font-weight: 600;
+}
+
+.den-decision-block__detail {
+  margin: 0;
+  padding: var(--den-space-2);
+  font-family: var(--den-font-mono);
+  font-size: 0.9em;
+  background: var(--den-bg);
+  border-radius: var(--den-radius);
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.den-decision-block__actions,
+.den-decision-block__options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--den-space-2);
+}
+
+.den-decision-block__freeform {
+  display: flex;
+  gap: var(--den-space-2);
+}
+
+.den-decision-block__input {
+  flex: 1;
+  padding: var(--den-space-1) var(--den-space-2);
+  border: 1px solid var(--den-border);
+  border-radius: var(--den-radius);
+  background: var(--den-bg);
+  color: var(--den-fg);
+  font-family: var(--den-font-sans);
+  font-size: var(--den-font-size-base);
+}
+
+.den-decision-block__status {
+  margin: 0;
+  color: var(--den-fg-muted);
+  font-size: 0.9em;
+}
+
+.den-btn {
+  padding: var(--den-space-1) var(--den-space-3);
+  border: 1px solid var(--den-border);
+  border-radius: var(--den-radius);
+  background: var(--den-bg);
+  color: var(--den-fg);
+  font-family: var(--den-font-sans);
+  font-size: var(--den-font-size-base);
+  cursor: pointer;
+}
+
+.den-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.den-btn:not(:disabled):hover {
+  border-color: var(--den-accent);
+}
+
+.den-btn--allow,
+.den-btn--submit {
+  background: var(--den-accent);
+  border-color: var(--den-accent);
+  color: var(--den-accent-fg);
+}
+
+.den-btn--deny {
+  border-color: var(--den-status-error);
+  color: var(--den-status-error);
+}
+
+.den-permission-block .den-btn--allow:not(:disabled):hover {
+  filter: brightness(1.1);
+}
