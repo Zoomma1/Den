@@ -1,0 +1,33 @@
+/*
+ * Styles du module `terminal`. `#den-terminal` (défini dans styles.css
+ * racine) reste le point de montage ; on n'y ajoute ici que ce qui est
+ * spécifique à l'agencement interne toolbar + viewport xterm.js.
+ */
+#den-terminal {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.den-terminal__toolbar {
+  flex: 0 0 auto;
+  padding: var(--den-space-1) var(--den-space-3);
+  border-bottom: 1px solid var(--den-border);
+  color: var(--den-fg-muted);
+  font-size: 0.8em;
+  font-family: var(--den-font-sans);
+  user-select: none;
+}
+
+.den-terminal__viewport {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+  padding: var(--den-space-2);
+}
+
+/* xterm.js occupe tout le viewport qu'on lui donne — c'est fitAddon qui
+   décide des cols/rows en fonction de cette taille. */
+.den-terminal__viewport .xterm {
+  height: 100%;
+}
