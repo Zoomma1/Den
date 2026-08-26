@@ -35,14 +35,19 @@ registry.register({ name: "terminal", init: terminal.init });
 registry.register({ name: "interactive", init: interactive.init });
 registry.register({ name: "plugins", init: plugins.init });
 
-ctx.mounts.status.textContent = "Den — bootstrap en cours…";
+// #den-status est partagé (les plugins y montent leurs items) : main.ts ne
+// possède que ce span, jamais le textContent du mount entier.
+const bootStatus = document.createElement("span");
+bootStatus.className = "den-boot-status";
+bootStatus.textContent = "Den — bootstrap en cours…";
+ctx.mounts.status.prepend(bootStatus);
 
 registry
   .initAll(ctx)
   .then(() => {
-    ctx.mounts.status.textContent = "Den — lot 0 bootstrap OK";
+    bootStatus.textContent = "Den — prêt";
   })
   .catch((err: unknown) => {
     console.error("Den: échec d'initialisation des modules", err);
-    ctx.mounts.status.textContent = "Den — erreur d'initialisation (voir console)";
+    bootStatus.textContent = "Den — erreur d'initialisation (voir console)";
   });
