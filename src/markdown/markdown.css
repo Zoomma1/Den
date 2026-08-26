@@ -1,0 +1,118 @@
+/*
+ * Styles du module `markdown` — flux de conversation.
+ * Utilise les tokens --den-* posés par le module `theme` sur :root
+ * (cf. src/styles.css).
+ */
+
+.den-conversation-tab {
+  height: 100%;
+  overflow-y: auto;
+  padding: var(--den-space-3);
+}
+
+.den-conversation-tab[hidden] {
+  display: none;
+}
+
+.den-conversation-flow {
+  display: flex;
+  flex-direction: column;
+  gap: var(--den-space-3);
+}
+
+.den-msg {
+  line-height: 1.5;
+}
+
+.den-msg-assistant :first-child {
+  margin-top: 0;
+}
+
+.den-msg-assistant :last-child {
+  margin-bottom: 0;
+}
+
+.den-msg-assistant p,
+.den-msg-assistant ul,
+.den-msg-assistant ol,
+.den-msg-assistant blockquote,
+.den-msg-assistant table {
+  margin: var(--den-space-2) 0;
+}
+
+.den-msg-assistant code {
+  font-family: var(--den-font-mono);
+  background: var(--den-bg-elevated);
+  border-radius: var(--den-radius);
+  padding: 0 4px;
+}
+
+.den-code {
+  background: var(--den-bg-elevated);
+  border: 1px solid var(--den-border);
+  border-radius: var(--den-radius);
+  padding: var(--den-space-2) var(--den-space-3);
+  overflow-x: auto;
+  margin: var(--den-space-2) 0;
+}
+
+.den-code code {
+  font-family: var(--den-font-mono);
+  background: none;
+  padding: 0;
+  white-space: pre;
+}
+
+.den-tool-block {
+  border: 1px solid var(--den-border);
+  border-radius: var(--den-radius);
+  background: var(--den-bg-elevated);
+  padding: var(--den-space-2) var(--den-space-3);
+}
+
+.den-tool-block > summary {
+  cursor: pointer;
+  font-family: var(--den-font-mono);
+  color: var(--den-fg-muted);
+  user-select: none;
+}
+
+.den-tool-block-error {
+  border-color: var(--den-status-error);
+}
+
+.den-tool-input,
+.den-tool-result pre {
+  font-family: var(--den-font-mono);
+  white-space: pre-wrap;
+  word-break: break-word;
+  margin: var(--den-space-2) 0 0;
+  color: var(--den-fg-muted);
+}
+
+.den-tool-result {
+  margin-top: var(--den-space-2);
+  padding-top: var(--den-space-2);
+  border-top: 1px solid var(--den-border);
+}
+
+.den-tool-result-error {
+  color: var(--den-status-error);
+}
+
+.den-tool-block-orphan {
+  opacity: 0.75;
+}
+
+.den-error-block {
+  color: var(--den-status-error);
+  border: 1px solid var(--den-status-error);
+  border-radius: var(--den-radius);
+  padding: var(--den-space-2) var(--den-space-3);
+}
+
+.den-custom-block {
+  border: 1px dashed var(--den-border);
+  border-radius: var(--den-radius);
+  padding: var(--den-space-2);
+}

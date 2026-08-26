@@ -1,0 +1,475 @@
+{"type":"session_info","sessionId":"syn-session-0001","model":"claude-synthetic-0","apiKeySource":"none"}
+{"type":"assistant_delta","id":"asst-0001","text":"Voyons ensemble"}
+{"type":"assistant_delta","id":"asst-0001","text":" la gestion des"}
+{"type":"assistant_delta","id":"asst-0001","text":" sessions Tauri"}
+{"type":"assistant_delta","id":"asst-0001","text":". Ce point est "}
+{"type":"assistant_delta","id":"asst-0001","text":"important pour "}
+{"type":"assistant_delta","id":"asst-0001","text":"la cohérence du"}
+{"type":"assistant_delta","id":"asst-0001","text":" rendu.\n\nVoici "}
+{"type":"assistant_delta","id":"asst-0001","text":"un exemple de c"}
+{"type":"assistant_delta","id":"asst-0001","text":"ode pour illust"}
+{"type":"assistant_delta","id":"asst-0001","text":"rer :\n\n```ts\nex"}
+{"type":"assistant_delta","id":"asst-0001","text":"port function a"}
+{"type":"assistant_delta","id":"asst-0001","text":"dd(a: number, b"}
+{"type":"assistant_delta","id":"asst-0001","text":": number): numb"}
+{"type":"assistant_delta","id":"asst-0001","text":"er {\n  return a"}
+{"type":"assistant_delta","id":"asst-0001","text":" + b;\n}\n\nconsol"}
+{"type":"assistant_delta","id":"asst-0001","text":"e.log(add(2, 3)"}
+{"type":"assistant_delta","id":"asst-0001","text":");\n```\n\nQuelque"}
+{"type":"assistant_delta","id":"asst-0001","text":"s points clés à"}
+{"type":"assistant_delta","id":"asst-0001","text":" retenir :\n\n- p"}
+{"type":"assistant_delta","id":"asst-0001","text":"remier point su"}
+{"type":"assistant_delta","id":"asst-0001","text":"r le streaming\n"}
+{"type":"assistant_delta","id":"asst-0001","text":"- deuxième poin"}
+{"type":"assistant_delta","id":"asst-0001","text":"t sur la finali"}
+{"type":"assistant_delta","id":"asst-0001","text":"sation des bloc"}
+{"type":"assistant_delta","id":"asst-0001","text":"s\n- troisième p"}
+{"type":"assistant_delta","id":"asst-0001","text":"oint sur la per"}
+{"type":"assistant_delta","id":"asst-0001","text":"formance\n\nPour "}
+{"type":"assistant_delta","id":"asst-0001","text":"conclure sur la"}
+{"type":"assistant_delta","id":"asst-0001","text":" gestion des se"}
+{"type":"assistant_delta","id":"asst-0001","text":"ssions Tauri, o"}
+{"type":"assistant_delta","id":"asst-0001","text":"n retient que l"}
+{"type":"assistant_delta","id":"asst-0001","text":"e résultat perç"}
+{"type":"assistant_delta","id":"asst-0001","text":"u doit rester f"}
+{"type":"assistant_delta","id":"asst-0001","text":"luide même à gr"}
+{"type":"assistant_delta","id":"asst-0001","text":"ande vitesse de"}
+{"type":"assistant_delta","id":"asst-0001","text":" streaming."}
+{"type":"tool_use","id":"tool-0001","name":"Read","input":{"file_path":"/synthetic/den/module-0.ts"}}
+{"type":"tool_result","id":"tool-0001-result","toolUseId":"tool-0001","output":{"content":"// contenu synthétique du module 0\nexport const value = 0;"},"isError":false}
+{"type":"assistant_delta","id":"asst-0002","text":"Voyons ensemble "}
+{"type":"assistant_delta","id":"asst-0002","text":"la suite de la g"}
+{"type":"assistant_delta","id":"asst-0002","text":"estion des sessi"}
+{"type":"assistant_delta","id":"asst-0002","text":"ons Tauri. Ce po"}
+{"type":"assistant_delta","id":"asst-0002","text":"int est importan"}
+{"type":"assistant_delta","id":"asst-0002","text":"t pour la cohére"}
+{"type":"assistant_delta","id":"asst-0002","text":"nce du rendu.\n\nV"}
+{"type":"assistant_delta","id":"asst-0002","text":"oici un exemple "}
+{"type":"assistant_delta","id":"asst-0002","text":"de code pour ill"}
+{"type":"assistant_delta","id":"asst-0002","text":"ustrer :\n\n```rus"}
+{"type":"assistant_delta","id":"asst-0002","text":"t\nfn greet(name:"}
+{"type":"assistant_delta","id":"asst-0002","text":" &str) -> String"}
+{"type":"assistant_delta","id":"asst-0002","text":" {\n    format!(\""}
+{"type":"assistant_delta","id":"asst-0002","text":"Bonjour, {name}!"}
+{"type":"assistant_delta","id":"asst-0002","text":"\")\n}\n\nfn main() "}
+{"type":"assistant_delta","id":"asst-0002","text":"{\n    println!(\""}
+{"type":"assistant_delta","id":"asst-0002","text":"{}\", greet(\"Den\""}
+{"type":"assistant_delta","id":"asst-0002","text":"));\n}\n```\n\nPour "}
+{"type":"assistant_delta","id":"asst-0002","text":"conclure sur la "}
+{"type":"assistant_delta","id":"asst-0002","text":"suite de la gest"}
+{"type":"assistant_delta","id":"asst-0002","text":"ion des sessions"}
+{"type":"assistant_delta","id":"asst-0002","text":" Tauri, on retie"}
+{"type":"assistant_delta","id":"asst-0002","text":"nt que le résult"}
+{"type":"assistant_delta","id":"asst-0002","text":"at perçu doit re"}
+{"type":"assistant_delta","id":"asst-0002","text":"ster fluide même"}
+{"type":"assistant_delta","id":"asst-0002","text":" à grande vitess"}
+{"type":"assistant_delta","id":"asst-0002","text":"e de streaming."}
+{"type":"done","sessionId":"syn-session-0001"}
+{"type":"assistant_delta","id":"asst-0003","text":"Voyons ensemble l"}
+{"type":"assistant_delta","id":"asst-0003","text":"e protocole NDJSO"}
+{"type":"assistant_delta","id":"asst-0003","text":"N entre le sideca"}
+{"type":"assistant_delta","id":"asst-0003","text":"r et l'interface."}
+{"type":"assistant_delta","id":"asst-0003","text":" Ce point est imp"}
+{"type":"assistant_delta","id":"asst-0003","text":"ortant pour la co"}
+{"type":"assistant_delta","id":"asst-0003","text":"hérence du rendu."}
+{"type":"assistant_delta","id":"asst-0003","text":"\n\nVoici un exempl"}
+{"type":"assistant_delta","id":"asst-0003","text":"e de code pour il"}
+{"type":"assistant_delta","id":"asst-0003","text":"lustrer :\n\n```rus"}
+{"type":"assistant_delta","id":"asst-0003","text":"t\nfn greet(name: "}
+{"type":"assistant_delta","id":"asst-0003","text":"&str) -> String {"}
+{"type":"assistant_delta","id":"asst-0003","text":"\n    format!(\"Bon"}
+{"type":"assistant_delta","id":"asst-0003","text":"jour, {name}!\")\n}"}
+{"type":"assistant_delta","id":"asst-0003","text":"\n\nfn main() {\n   "}
+{"type":"assistant_delta","id":"asst-0003","text":" println!(\"{}\", g"}
+{"type":"assistant_delta","id":"asst-0003","text":"reet(\"Den\"));\n}\n`"}
+{"type":"assistant_delta","id":"asst-0003","text":"``\n\nPour conclure"}
+{"type":"assistant_delta","id":"asst-0003","text":" sur le protocole"}
+{"type":"assistant_delta","id":"asst-0003","text":" NDJSON entre le "}
+{"type":"assistant_delta","id":"asst-0003","text":"sidecar et l'inte"}
+{"type":"assistant_delta","id":"asst-0003","text":"rface, on retient"}
+{"type":"assistant_delta","id":"asst-0003","text":" que le résultat "}
+{"type":"assistant_delta","id":"asst-0003","text":"perçu doit rester"}
+{"type":"assistant_delta","id":"asst-0003","text":" fluide même à gr"}
+{"type":"assistant_delta","id":"asst-0003","text":"ande vitesse de s"}
+{"type":"assistant_delta","id":"asst-0003","text":"treaming."}
+{"type":"tool_use","id":"tool-0002","name":"Bash","input":{"command":"npx vitest run --reporter=dot # turn 1"}}
+{"type":"tool_result","id":"tool-0002-result","toolUseId":"tool-0002","output":{"stdout":"Test Files  1 passed (1)\nTests  4 passed (4)","exitCode":0},"isError":false}
+{"type":"assistant_delta","id":"asst-0004","text":"Voyons ensemble la"}
+{"type":"assistant_delta","id":"asst-0004","text":" suite de le proto"}
+{"type":"assistant_delta","id":"asst-0004","text":"cole NDJSON entre "}
+{"type":"assistant_delta","id":"asst-0004","text":"le sidecar et l'in"}
+{"type":"assistant_delta","id":"asst-0004","text":"terface. Ce point "}
+{"type":"assistant_delta","id":"asst-0004","text":"est important pour"}
+{"type":"assistant_delta","id":"asst-0004","text":" la cohérence du r"}
+{"type":"assistant_delta","id":"asst-0004","text":"endu.\n\nVoici un ex"}
+{"type":"assistant_delta","id":"asst-0004","text":"emple de code pour"}
+{"type":"assistant_delta","id":"asst-0004","text":" illustrer :\n\n```b"}
+{"type":"assistant_delta","id":"asst-0004","text":"ash\n#!/usr/bin/env"}
+{"type":"assistant_delta","id":"asst-0004","text":" bash\nset -euo pip"}
+{"type":"assistant_delta","id":"asst-0004","text":"efail\nnpm install\n"}
+{"type":"assistant_delta","id":"asst-0004","text":"npx vitest run\n```"}
+{"type":"assistant_delta","id":"asst-0004","text":"\n\nPour conclure su"}
+{"type":"assistant_delta","id":"asst-0004","text":"r la suite de le p"}
+{"type":"assistant_delta","id":"asst-0004","text":"rotocole NDJSON en"}
+{"type":"assistant_delta","id":"asst-0004","text":"tre le sidecar et "}
+{"type":"assistant_delta","id":"asst-0004","text":"l'interface, on re"}
+{"type":"assistant_delta","id":"asst-0004","text":"tient que le résul"}
+{"type":"assistant_delta","id":"asst-0004","text":"tat perçu doit res"}
+{"type":"assistant_delta","id":"asst-0004","text":"ter fluide même à "}
+{"type":"assistant_delta","id":"asst-0004","text":"grande vitesse de "}
+{"type":"assistant_delta","id":"asst-0004","text":"streaming."}
+{"type":"done","sessionId":"syn-session-0001"}
+{"type":"assistant_delta","id":"asst-0005","text":"Voyons ensemble le "}
+{"type":"assistant_delta","id":"asst-0005","text":"rendu Markdown incr"}
+{"type":"assistant_delta","id":"asst-0005","text":"émental. Ce point e"}
+{"type":"assistant_delta","id":"asst-0005","text":"st important pour l"}
+{"type":"assistant_delta","id":"asst-0005","text":"a cohérence du rend"}
+{"type":"assistant_delta","id":"asst-0005","text":"u.\n\nVoici un exempl"}
+{"type":"assistant_delta","id":"asst-0005","text":"e de code pour illu"}
+{"type":"assistant_delta","id":"asst-0005","text":"strer :\n\n```bash\n#!"}
+{"type":"assistant_delta","id":"asst-0005","text":"/usr/bin/env bash\ns"}
+{"type":"assistant_delta","id":"asst-0005","text":"et -euo pipefail\nnp"}
+{"type":"assistant_delta","id":"asst-0005","text":"m install\nnpx vites"}
+{"type":"assistant_delta","id":"asst-0005","text":"t run\n```\n\nQuelques"}
+{"type":"assistant_delta","id":"asst-0005","text":" points clés à rete"}
+{"type":"assistant_delta","id":"asst-0005","text":"nir :\n\n- premier po"}
+{"type":"assistant_delta","id":"asst-0005","text":"int sur le streamin"}
+{"type":"assistant_delta","id":"asst-0005","text":"g\n- deuxième point "}
+{"type":"assistant_delta","id":"asst-0005","text":"sur la finalisation"}
+{"type":"assistant_delta","id":"asst-0005","text":" des blocs\n- troisi"}
+{"type":"assistant_delta","id":"asst-0005","text":"ème point sur la pe"}
+{"type":"assistant_delta","id":"asst-0005","text":"rformance\n\nPour con"}
+{"type":"assistant_delta","id":"asst-0005","text":"clure sur le rendu "}
+{"type":"assistant_delta","id":"asst-0005","text":"Markdown incrémenta"}
+{"type":"assistant_delta","id":"asst-0005","text":"l, on retient que l"}
+{"type":"assistant_delta","id":"asst-0005","text":"e résultat perçu do"}
+{"type":"assistant_delta","id":"asst-0005","text":"it rester fluide mê"}
+{"type":"assistant_delta","id":"asst-0005","text":"me à grande vitesse"}
+{"type":"assistant_delta","id":"asst-0005","text":" de streaming."}
+{"type":"tool_use","id":"tool-0003","name":"Grep","input":{"pattern":"IncrementalMarkdownRenderer","path":"src/markdown"}}
+{"type":"tool_result","id":"tool-0003-result","toolUseId":"tool-0003","output":{"matches":["src/markdown/renderer.ts:1: turn 2"]},"isError":false}
+{"type":"assistant_delta","id":"asst-0006","text":"Voyons ensembl"}
+{"type":"assistant_delta","id":"asst-0006","text":"e la suite de "}
+{"type":"assistant_delta","id":"asst-0006","text":"le rendu Markd"}
+{"type":"assistant_delta","id":"asst-0006","text":"own incrémenta"}
+{"type":"assistant_delta","id":"asst-0006","text":"l. Ce point es"}
+{"type":"assistant_delta","id":"asst-0006","text":"t important po"}
+{"type":"assistant_delta","id":"asst-0006","text":"ur la cohérenc"}
+{"type":"assistant_delta","id":"asst-0006","text":"e du rendu.\n\nV"}
+{"type":"assistant_delta","id":"asst-0006","text":"oici un exempl"}
+{"type":"assistant_delta","id":"asst-0006","text":"e de code pour"}
+{"type":"assistant_delta","id":"asst-0006","text":" illustrer :\n\n"}
+{"type":"assistant_delta","id":"asst-0006","text":"```json\n{\n  \"t"}
+{"type":"assistant_delta","id":"asst-0006","text":"ype\": \"assista"}
+{"type":"assistant_delta","id":"asst-0006","text":"nt_delta\",\n  \""}
+{"type":"assistant_delta","id":"asst-0006","text":"id\": \"demo\",\n "}
+{"type":"assistant_delta","id":"asst-0006","text":" \"text\": \"exem"}
+{"type":"assistant_delta","id":"asst-0006","text":"ple\"\n}\n```\n\nPo"}
+{"type":"assistant_delta","id":"asst-0006","text":"ur conclure su"}
+{"type":"assistant_delta","id":"asst-0006","text":"r la suite de "}
+{"type":"assistant_delta","id":"asst-0006","text":"le rendu Markd"}
+{"type":"assistant_delta","id":"asst-0006","text":"own incrémenta"}
+{"type":"assistant_delta","id":"asst-0006","text":"l, on retient "}
+{"type":"assistant_delta","id":"asst-0006","text":"que le résulta"}
+{"type":"assistant_delta","id":"asst-0006","text":"t perçu doit r"}
+{"type":"assistant_delta","id":"asst-0006","text":"ester fluide m"}
+{"type":"assistant_delta","id":"asst-0006","text":"ême à grande v"}
+{"type":"assistant_delta","id":"asst-0006","text":"itesse de stre"}
+{"type":"assistant_delta","id":"asst-0006","text":"aming."}
+{"type":"done","sessionId":"syn-session-0001"}
+{"type":"assistant_delta","id":"asst-0007","text":"Voyons ensemble"}
+{"type":"assistant_delta","id":"asst-0007","text":" la mise en cac"}
+{"type":"assistant_delta","id":"asst-0007","text":"he des tokens f"}
+{"type":"assistant_delta","id":"asst-0007","text":"inalisés. Ce po"}
+{"type":"assistant_delta","id":"asst-0007","text":"int est importa"}
+{"type":"assistant_delta","id":"asst-0007","text":"nt pour la cohé"}
+{"type":"assistant_delta","id":"asst-0007","text":"rence du rendu."}
+{"type":"assistant_delta","id":"asst-0007","text":"\n\nVoici un exem"}
+{"type":"assistant_delta","id":"asst-0007","text":"ple de code pou"}
+{"type":"assistant_delta","id":"asst-0007","text":"r illustrer :\n\n"}
+{"type":"assistant_delta","id":"asst-0007","text":"```json\n{\n  \"ty"}
+{"type":"assistant_delta","id":"asst-0007","text":"pe\": \"assistant"}
+{"type":"assistant_delta","id":"asst-0007","text":"_delta\",\n  \"id\""}
+{"type":"assistant_delta","id":"asst-0007","text":": \"demo\",\n  \"te"}
+{"type":"assistant_delta","id":"asst-0007","text":"xt\": \"exemple\"\n"}
+{"type":"assistant_delta","id":"asst-0007","text":"}\n```\n\nPour con"}
+{"type":"assistant_delta","id":"asst-0007","text":"clure sur la mi"}
+{"type":"assistant_delta","id":"asst-0007","text":"se en cache des"}
+{"type":"assistant_delta","id":"asst-0007","text":" tokens finalis"}
+{"type":"assistant_delta","id":"asst-0007","text":"és, on retient "}
+{"type":"assistant_delta","id":"asst-0007","text":"que le résultat"}
+{"type":"assistant_delta","id":"asst-0007","text":" perçu doit res"}
+{"type":"assistant_delta","id":"asst-0007","text":"ter fluide même"}
+{"type":"assistant_delta","id":"asst-0007","text":" à grande vites"}
+{"type":"assistant_delta","id":"asst-0007","text":"se de streaming"}
+{"type":"assistant_delta","id":"asst-0007","text":"."}
+{"type":"tool_use","id":"tool-0004","name":"Read","input":{"file_path":"/synthetic/den/module-3.ts"}}
+{"type":"tool_result","id":"tool-0004-result","toolUseId":"tool-0004","output":{"content":"// contenu synthétique du module 3\nexport const value = 3;"},"isError":false}
+{"type":"assistant_delta","id":"asst-0008","text":"Voyons ensemble "}
+{"type":"assistant_delta","id":"asst-0008","text":"la suite de la m"}
+{"type":"assistant_delta","id":"asst-0008","text":"ise en cache des"}
+{"type":"assistant_delta","id":"asst-0008","text":" tokens finalisé"}
+{"type":"assistant_delta","id":"asst-0008","text":"s. Ce point est "}
+{"type":"assistant_delta","id":"asst-0008","text":"important pour l"}
+{"type":"assistant_delta","id":"asst-0008","text":"a cohérence du r"}
+{"type":"assistant_delta","id":"asst-0008","text":"endu.\n\nVoici un "}
+{"type":"assistant_delta","id":"asst-0008","text":"exemple de code "}
+{"type":"assistant_delta","id":"asst-0008","text":"pour illustrer :"}
+{"type":"assistant_delta","id":"asst-0008","text":"\n\n```ts\nexport f"}
+{"type":"assistant_delta","id":"asst-0008","text":"unction add(a: n"}
+{"type":"assistant_delta","id":"asst-0008","text":"umber, b: number"}
+{"type":"assistant_delta","id":"asst-0008","text":"): number {\n  re"}
+{"type":"assistant_delta","id":"asst-0008","text":"turn a + b;\n}\n\nc"}
+{"type":"assistant_delta","id":"asst-0008","text":"onsole.log(add(2"}
+{"type":"assistant_delta","id":"asst-0008","text":", 3));\n```\n\nPour"}
+{"type":"assistant_delta","id":"asst-0008","text":" conclure sur la"}
+{"type":"assistant_delta","id":"asst-0008","text":" suite de la mis"}
+{"type":"assistant_delta","id":"asst-0008","text":"e en cache des t"}
+{"type":"assistant_delta","id":"asst-0008","text":"okens finalisés,"}
+{"type":"assistant_delta","id":"asst-0008","text":" on retient que "}
+{"type":"assistant_delta","id":"asst-0008","text":"le résultat perç"}
+{"type":"assistant_delta","id":"asst-0008","text":"u doit rester fl"}
+{"type":"assistant_delta","id":"asst-0008","text":"uide même à gran"}
+{"type":"assistant_delta","id":"asst-0008","text":"de vitesse de st"}
+{"type":"assistant_delta","id":"asst-0008","text":"reaming."}
+{"type":"done","sessionId":"syn-session-0001"}
+{"type":"assistant_delta","id":"asst-0009","text":"Voyons ensemble l"}
+{"type":"assistant_delta","id":"asst-0009","text":"'auto-scroll du f"}
+{"type":"assistant_delta","id":"asst-0009","text":"lux de conversati"}
+{"type":"assistant_delta","id":"asst-0009","text":"on. Ce point est "}
+{"type":"assistant_delta","id":"asst-0009","text":"important pour la"}
+{"type":"assistant_delta","id":"asst-0009","text":" cohérence du ren"}
+{"type":"assistant_delta","id":"asst-0009","text":"du.\n\nVoici un exe"}
+{"type":"assistant_delta","id":"asst-0009","text":"mple de code pour"}
+{"type":"assistant_delta","id":"asst-0009","text":" illustrer :\n\n```"}
+{"type":"assistant_delta","id":"asst-0009","text":"ts\nexport functio"}
+{"type":"assistant_delta","id":"asst-0009","text":"n add(a: number, "}
+{"type":"assistant_delta","id":"asst-0009","text":"b: number): numbe"}
+{"type":"assistant_delta","id":"asst-0009","text":"r {\n  return a + "}
+{"type":"assistant_delta","id":"asst-0009","text":"b;\n}\n\nconsole.log"}
+{"type":"assistant_delta","id":"asst-0009","text":"(add(2, 3));\n```\n"}
+{"type":"assistant_delta","id":"asst-0009","text":"\nQuelques points "}
+{"type":"assistant_delta","id":"asst-0009","text":"clés à retenir :\n"}
+{"type":"assistant_delta","id":"asst-0009","text":"\n- premier point "}
+{"type":"assistant_delta","id":"asst-0009","text":"sur le streaming\n"}
+{"type":"assistant_delta","id":"asst-0009","text":"- deuxième point "}
+{"type":"assistant_delta","id":"asst-0009","text":"sur la finalisati"}
+{"type":"assistant_delta","id":"asst-0009","text":"on des blocs\n- tr"}
+{"type":"assistant_delta","id":"asst-0009","text":"oisième point sur"}
+{"type":"assistant_delta","id":"asst-0009","text":" la performance\n\n"}
+{"type":"assistant_delta","id":"asst-0009","text":"Pour conclure sur"}
+{"type":"assistant_delta","id":"asst-0009","text":" l'auto-scroll du"}
+{"type":"assistant_delta","id":"asst-0009","text":" flux de conversa"}
+{"type":"assistant_delta","id":"asst-0009","text":"tion, on retient "}
+{"type":"assistant_delta","id":"asst-0009","text":"que le résultat p"}
+{"type":"assistant_delta","id":"asst-0009","text":"erçu doit rester "}
+{"type":"assistant_delta","id":"asst-0009","text":"fluide même à gra"}
+{"type":"assistant_delta","id":"asst-0009","text":"nde vitesse de st"}
+{"type":"assistant_delta","id":"asst-0009","text":"reaming."}
+{"type":"tool_use","id":"tool-0005","name":"Bash","input":{"command":"npx vitest run --reporter=dot # turn 4"}}
+{"type":"tool_result","id":"tool-0005-result","toolUseId":"tool-0005","output":{"stdout":"Test Files  1 passed (1)\nTests  7 passed (7)","exitCode":0},"isError":false}
+{"type":"assistant_delta","id":"asst-0010","text":"Voyons ensemble la"}
+{"type":"assistant_delta","id":"asst-0010","text":" suite de l'auto-s"}
+{"type":"assistant_delta","id":"asst-0010","text":"croll du flux de c"}
+{"type":"assistant_delta","id":"asst-0010","text":"onversation. Ce po"}
+{"type":"assistant_delta","id":"asst-0010","text":"int est important "}
+{"type":"assistant_delta","id":"asst-0010","text":"pour la cohérence "}
+{"type":"assistant_delta","id":"asst-0010","text":"du rendu.\n\nVoici u"}
+{"type":"assistant_delta","id":"asst-0010","text":"n exemple de code "}
+{"type":"assistant_delta","id":"asst-0010","text":"pour illustrer :\n\n"}
+{"type":"assistant_delta","id":"asst-0010","text":"```rust\nfn greet(n"}
+{"type":"assistant_delta","id":"asst-0010","text":"ame: &str) -> Stri"}
+{"type":"assistant_delta","id":"asst-0010","text":"ng {\n    format!(\""}
+{"type":"assistant_delta","id":"asst-0010","text":"Bonjour, {name}!\")"}
+{"type":"assistant_delta","id":"asst-0010","text":"\n}\n\nfn main() {\n  "}
+{"type":"assistant_delta","id":"asst-0010","text":"  println!(\"{}\", g"}
+{"type":"assistant_delta","id":"asst-0010","text":"reet(\"Den\"));\n}\n``"}
+{"type":"assistant_delta","id":"asst-0010","text":"`\n\nPour conclure s"}
+{"type":"assistant_delta","id":"asst-0010","text":"ur la suite de l'a"}
+{"type":"assistant_delta","id":"asst-0010","text":"uto-scroll du flux"}
+{"type":"assistant_delta","id":"asst-0010","text":" de conversation, "}
+{"type":"assistant_delta","id":"asst-0010","text":"on retient que le "}
+{"type":"assistant_delta","id":"asst-0010","text":"résultat perçu doi"}
+{"type":"assistant_delta","id":"asst-0010","text":"t rester fluide mê"}
+{"type":"assistant_delta","id":"asst-0010","text":"me à grande vitess"}
+{"type":"assistant_delta","id":"asst-0010","text":"e de streaming."}
+{"type":"done","sessionId":"syn-session-0001"}
+{"type":"assistant_delta","id":"asst-0011","text":"Voyons ensemble le "}
+{"type":"assistant_delta","id":"asst-0011","text":"fonctionnement des "}
+{"type":"assistant_delta","id":"asst-0011","text":"blocs repliables to"}
+{"type":"assistant_delta","id":"asst-0011","text":"ol_use / tool_resul"}
+{"type":"assistant_delta","id":"asst-0011","text":"t. Ce point est imp"}
+{"type":"assistant_delta","id":"asst-0011","text":"ortant pour la cohé"}
+{"type":"assistant_delta","id":"asst-0011","text":"rence du rendu.\n\nVo"}
+{"type":"assistant_delta","id":"asst-0011","text":"ici un exemple de c"}
+{"type":"assistant_delta","id":"asst-0011","text":"ode pour illustrer "}
+{"type":"assistant_delta","id":"asst-0011","text":":\n\n```rust\nfn greet"}
+{"type":"assistant_delta","id":"asst-0011","text":"(name: &str) -> Str"}
+{"type":"assistant_delta","id":"asst-0011","text":"ing {\n    format!(\""}
+{"type":"assistant_delta","id":"asst-0011","text":"Bonjour, {name}!\")\n"}
+{"type":"assistant_delta","id":"asst-0011","text":"}\n\nfn main() {\n    "}
+{"type":"assistant_delta","id":"asst-0011","text":"println!(\"{}\", gree"}
+{"type":"assistant_delta","id":"asst-0011","text":"t(\"Den\"));\n}\n```\n\nP"}
+{"type":"assistant_delta","id":"asst-0011","text":"our conclure sur le"}
+{"type":"assistant_delta","id":"asst-0011","text":" fonctionnement des"}
+{"type":"assistant_delta","id":"asst-0011","text":" blocs repliables t"}
+{"type":"assistant_delta","id":"asst-0011","text":"ool_use / tool_resu"}
+{"type":"assistant_delta","id":"asst-0011","text":"lt, on retient que "}
+{"type":"assistant_delta","id":"asst-0011","text":"le résultat perçu d"}
+{"type":"assistant_delta","id":"asst-0011","text":"oit rester fluide m"}
+{"type":"assistant_delta","id":"asst-0011","text":"ême à grande vitess"}
+{"type":"assistant_delta","id":"asst-0011","text":"e de streaming."}
+{"type":"tool_use","id":"tool-0006","name":"Grep","input":{"pattern":"IncrementalMarkdownRenderer","path":"src/markdown"}}
+{"type":"tool_result","id":"tool-0006-result","toolUseId":"tool-0006","output":{"matches":["src/markdown/renderer.ts:1: turn 5"]},"isError":false}
+{"type":"assistant_delta","id":"asst-0012","text":"Voyons ensembl"}
+{"type":"assistant_delta","id":"asst-0012","text":"e la suite de "}
+{"type":"assistant_delta","id":"asst-0012","text":"le fonctionnem"}
+{"type":"assistant_delta","id":"asst-0012","text":"ent des blocs "}
+{"type":"assistant_delta","id":"asst-0012","text":"repliables too"}
+{"type":"assistant_delta","id":"asst-0012","text":"l_use / tool_r"}
+{"type":"assistant_delta","id":"asst-0012","text":"esult. Ce poin"}
+{"type":"assistant_delta","id":"asst-0012","text":"t est importan"}
+{"type":"assistant_delta","id":"asst-0012","text":"t pour la cohé"}
+{"type":"assistant_delta","id":"asst-0012","text":"rence du rendu"}
+{"type":"assistant_delta","id":"asst-0012","text":".\n\nVoici un ex"}
+{"type":"assistant_delta","id":"asst-0012","text":"emple de code "}
+{"type":"assistant_delta","id":"asst-0012","text":"pour illustrer"}
+{"type":"assistant_delta","id":"asst-0012","text":" :\n\n```bash\n#!"}
+{"type":"assistant_delta","id":"asst-0012","text":"/usr/bin/env b"}
+{"type":"assistant_delta","id":"asst-0012","text":"ash\nset -euo p"}
+{"type":"assistant_delta","id":"asst-0012","text":"ipefail\nnpm in"}
+{"type":"assistant_delta","id":"asst-0012","text":"stall\nnpx vite"}
+{"type":"assistant_delta","id":"asst-0012","text":"st run\n```\n\nPo"}
+{"type":"assistant_delta","id":"asst-0012","text":"ur conclure su"}
+{"type":"assistant_delta","id":"asst-0012","text":"r la suite de "}
+{"type":"assistant_delta","id":"asst-0012","text":"le fonctionnem"}
+{"type":"assistant_delta","id":"asst-0012","text":"ent des blocs "}
+{"type":"assistant_delta","id":"asst-0012","text":"repliables too"}
+{"type":"assistant_delta","id":"asst-0012","text":"l_use / tool_r"}
+{"type":"assistant_delta","id":"asst-0012","text":"esult, on reti"}
+{"type":"assistant_delta","id":"asst-0012","text":"ent que le rés"}
+{"type":"assistant_delta","id":"asst-0012","text":"ultat perçu do"}
+{"type":"assistant_delta","id":"asst-0012","text":"it rester flui"}
+{"type":"assistant_delta","id":"asst-0012","text":"de même à gran"}
+{"type":"assistant_delta","id":"asst-0012","text":"de vitesse de "}
+{"type":"assistant_delta","id":"asst-0012","text":"streaming."}
+{"type":"done","sessionId":"syn-session-0001"}
+{"type":"assistant_delta","id":"asst-0013","text":"Voyons ensemble"}
+{"type":"assistant_delta","id":"asst-0013","text":" la coloration "}
+{"type":"assistant_delta","id":"asst-0013","text":"syntaxique avec"}
+{"type":"assistant_delta","id":"asst-0013","text":" highlight.js. "}
+{"type":"assistant_delta","id":"asst-0013","text":"Ce point est im"}
+{"type":"assistant_delta","id":"asst-0013","text":"portant pour la"}
+{"type":"assistant_delta","id":"asst-0013","text":" cohérence du r"}
+{"type":"assistant_delta","id":"asst-0013","text":"endu.\n\nVoici un"}
+{"type":"assistant_delta","id":"asst-0013","text":" exemple de cod"}
+{"type":"assistant_delta","id":"asst-0013","text":"e pour illustre"}
+{"type":"assistant_delta","id":"asst-0013","text":"r :\n\n```bash\n#!"}
+{"type":"assistant_delta","id":"asst-0013","text":"/usr/bin/env ba"}
+{"type":"assistant_delta","id":"asst-0013","text":"sh\nset -euo pip"}
+{"type":"assistant_delta","id":"asst-0013","text":"efail\nnpm insta"}
+{"type":"assistant_delta","id":"asst-0013","text":"ll\nnpx vitest r"}
+{"type":"assistant_delta","id":"asst-0013","text":"un\n```\n\nQuelque"}
+{"type":"assistant_delta","id":"asst-0013","text":"s points clés à"}
+{"type":"assistant_delta","id":"asst-0013","text":" retenir :\n\n- p"}
+{"type":"assistant_delta","id":"asst-0013","text":"remier point su"}
+{"type":"assistant_delta","id":"asst-0013","text":"r le streaming\n"}
+{"type":"assistant_delta","id":"asst-0013","text":"- deuxième poin"}
+{"type":"assistant_delta","id":"asst-0013","text":"t sur la finali"}
+{"type":"assistant_delta","id":"asst-0013","text":"sation des bloc"}
+{"type":"assistant_delta","id":"asst-0013","text":"s\n- troisième p"}
+{"type":"assistant_delta","id":"asst-0013","text":"oint sur la per"}
+{"type":"assistant_delta","id":"asst-0013","text":"formance\n\nPour "}
+{"type":"assistant_delta","id":"asst-0013","text":"conclure sur la"}
+{"type":"assistant_delta","id":"asst-0013","text":" coloration syn"}
+{"type":"assistant_delta","id":"asst-0013","text":"taxique avec hi"}
+{"type":"assistant_delta","id":"asst-0013","text":"ghlight.js, on "}
+{"type":"assistant_delta","id":"asst-0013","text":"retient que le "}
+{"type":"assistant_delta","id":"asst-0013","text":"résultat perçu "}
+{"type":"assistant_delta","id":"asst-0013","text":"doit rester flu"}
+{"type":"assistant_delta","id":"asst-0013","text":"ide même à gran"}
+{"type":"assistant_delta","id":"asst-0013","text":"de vitesse de s"}
+{"type":"assistant_delta","id":"asst-0013","text":"treaming."}
+{"type":"tool_use","id":"tool-0007","name":"Read","input":{"file_path":"/synthetic/den/module-6.ts"}}
+{"type":"tool_result","id":"tool-0007-result","toolUseId":"tool-0007","output":{"content":"// contenu synthétique du module 6\nexport const value = 6;"},"isError":false}
+{"type":"assistant_delta","id":"asst-0014","text":"Voyons ensemble "}
+{"type":"assistant_delta","id":"asst-0014","text":"la suite de la c"}
+{"type":"assistant_delta","id":"asst-0014","text":"oloration syntax"}
+{"type":"assistant_delta","id":"asst-0014","text":"ique avec highli"}
+{"type":"assistant_delta","id":"asst-0014","text":"ght.js. Ce point"}
+{"type":"assistant_delta","id":"asst-0014","text":" est important p"}
+{"type":"assistant_delta","id":"asst-0014","text":"our la cohérence"}
+{"type":"assistant_delta","id":"asst-0014","text":" du rendu.\n\nVoic"}
+{"type":"assistant_delta","id":"asst-0014","text":"i un exemple de "}
+{"type":"assistant_delta","id":"asst-0014","text":"code pour illust"}
+{"type":"assistant_delta","id":"asst-0014","text":"rer :\n\n```json\n{"}
+{"type":"assistant_delta","id":"asst-0014","text":"\n  \"type\": \"assi"}
+{"type":"assistant_delta","id":"asst-0014","text":"stant_delta\",\n  "}
+{"type":"assistant_delta","id":"asst-0014","text":"\"id\": \"demo\",\n  "}
+{"type":"assistant_delta","id":"asst-0014","text":"\"text\": \"exemple"}
+{"type":"assistant_delta","id":"asst-0014","text":"\"\n}\n```\n\nPour co"}
+{"type":"assistant_delta","id":"asst-0014","text":"nclure sur la su"}
+{"type":"assistant_delta","id":"asst-0014","text":"ite de la colora"}
+{"type":"assistant_delta","id":"asst-0014","text":"tion syntaxique "}
+{"type":"assistant_delta","id":"asst-0014","text":"avec highlight.j"}
+{"type":"assistant_delta","id":"asst-0014","text":"s, on retient qu"}
+{"type":"assistant_delta","id":"asst-0014","text":"e le résultat pe"}
+{"type":"assistant_delta","id":"asst-0014","text":"rçu doit rester "}
+{"type":"assistant_delta","id":"asst-0014","text":"fluide même à gr"}
+{"type":"assistant_delta","id":"asst-0014","text":"ande vitesse de "}
+{"type":"assistant_delta","id":"asst-0014","text":"streaming."}
+{"type":"done","sessionId":"syn-session-0001"}
+{"type":"assistant_delta","id":"asst-0015","text":"Voyons ensemble l"}
+{"type":"assistant_delta","id":"asst-0015","text":"a gestion multi-o"}
+{"type":"assistant_delta","id":"asst-0015","text":"nglets d'une sess"}
+{"type":"assistant_delta","id":"asst-0015","text":"ion Den. Ce point"}
+{"type":"assistant_delta","id":"asst-0015","text":" est important po"}
+{"type":"assistant_delta","id":"asst-0015","text":"ur la cohérence d"}
+{"type":"assistant_delta","id":"asst-0015","text":"u rendu.\n\nVoici u"}
+{"type":"assistant_delta","id":"asst-0015","text":"n exemple de code"}
+{"type":"assistant_delta","id":"asst-0015","text":" pour illustrer :"}
+{"type":"assistant_delta","id":"asst-0015","text":"\n\n```json\n{\n  \"ty"}
+{"type":"assistant_delta","id":"asst-0015","text":"pe\": \"assistant_d"}
+{"type":"assistant_delta","id":"asst-0015","text":"elta\",\n  \"id\": \"d"}
+{"type":"assistant_delta","id":"asst-0015","text":"emo\",\n  \"text\": \""}
+{"type":"assistant_delta","id":"asst-0015","text":"exemple\"\n}\n```\n\nP"}
+{"type":"assistant_delta","id":"asst-0015","text":"our conclure sur "}
+{"type":"assistant_delta","id":"asst-0015","text":"la gestion multi-"}
+{"type":"assistant_delta","id":"asst-0015","text":"onglets d'une ses"}
+{"type":"assistant_delta","id":"asst-0015","text":"sion Den, on reti"}
+{"type":"assistant_delta","id":"asst-0015","text":"ent que le résult"}
+{"type":"assistant_delta","id":"asst-0015","text":"at perçu doit res"}
+{"type":"assistant_delta","id":"asst-0015","text":"ter fluide même à"}
+{"type":"assistant_delta","id":"asst-0015","text":" grande vitesse d"}
+{"type":"assistant_delta","id":"asst-0015","text":"e streaming."}
+{"type":"tool_use","id":"tool-0008","name":"Bash","input":{"command":"npx vitest run --reporter=dot # turn 7"}}
+{"type":"tool_result","id":"tool-0008-result","toolUseId":"tool-0008","output":{"stdout":"Test Files  1 passed (1)\nTests  10 passed (10)","exitCode":0},"isError":false}
+{"type":"assistant_delta","id":"asst-0016","text":"Voyons ensemble la"}
+{"type":"assistant_delta","id":"asst-0016","text":" suite de la gesti"}
+{"type":"assistant_delta","id":"asst-0016","text":"on multi-onglets d"}
+{"type":"assistant_delta","id":"asst-0016","text":"'une session Den. "}
+{"type":"assistant_delta","id":"asst-0016","text":"Ce point est impor"}
+{"type":"assistant_delta","id":"asst-0016","text":"tant pour la cohér"}
+{"type":"assistant_delta","id":"asst-0016","text":"ence du rendu.\n\nVo"}
+{"type":"assistant_delta","id":"asst-0016","text":"ici un exemple de "}
+{"type":"assistant_delta","id":"asst-0016","text":"code pour illustre"}
+{"type":"assistant_delta","id":"asst-0016","text":"r :\n\n```ts\nexport "}
+{"type":"assistant_delta","id":"asst-0016","text":"function add(a: nu"}
+{"type":"assistant_delta","id":"asst-0016","text":"mber, b: number): "}
+{"type":"assistant_delta","id":"asst-0016","text":"number {\n  return "}
+{"type":"assistant_delta","id":"asst-0016","text":"a + b;\n}\n\nconsole."}
+{"type":"assistant_delta","id":"asst-0016","text":"log(add(2, 3));\n``"}
+{"type":"assistant_delta","id":"asst-0016","text":"`\n\nPour conclure s"}
+{"type":"assistant_delta","id":"asst-0016","text":"ur la suite de la "}
+{"type":"assistant_delta","id":"asst-0016","text":"gestion multi-ongl"}
+{"type":"assistant_delta","id":"asst-0016","text":"ets d'une session "}
+{"type":"assistant_delta","id":"asst-0016","text":"Den, on retient qu"}
+{"type":"assistant_delta","id":"asst-0016","text":"e le résultat perç"}
+{"type":"assistant_delta","id":"asst-0016","text":"u doit rester flui"}
+{"type":"assistant_delta","id":"asst-0016","text":"de même à grande v"}
+{"type":"assistant_delta","id":"asst-0016","text":"itesse de streamin"}
+{"type":"assistant_delta","id":"asst-0016","text":"g."}
+{"type":"done","sessionId":"syn-session-0001"}
+{"type":"tool_result","id":"tool-orphan-result","toolUseId":"tool-never-seen","output":{"note":"résultat sans tool_use correspondant dans ce flux"}}
+{"type":"error","message":"Erreur synthétique de fin de transcript (test de rendu du bloc error).","recoverable":true}
+{"type":"done","sessionId":"syn-session-0001"}
