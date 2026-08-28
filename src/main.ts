@@ -26,11 +26,14 @@ const ctx: DenContext = {
 
 const registry = new Registry();
 
-// Ordre d'initialisation fixe — ne pas réordonner sans raison documentée
-// (theme doit passer en premier pour poser les tokens CSS avant tout rendu).
+// Ordre d'initialisation fixe — ne pas réordonner sans raison documentée :
+// - theme en premier (pose les tokens CSS avant tout rendu) ;
+// - markdown avant tabs : tabs émet `den:active-tab-changed` de façon
+//   synchrone pour son premier tab dès son init — si markdown n'écoute pas
+//   encore, la conversation du premier tab reste montée cachée (hidden).
 registry.register({ name: "theme", init: theme.init });
-registry.register({ name: "tabs", init: tabs.init });
 registry.register({ name: "markdown", init: markdown.init });
+registry.register({ name: "tabs", init: tabs.init });
 registry.register({ name: "terminal", init: terminal.init });
 registry.register({ name: "interactive", init: interactive.init });
 registry.register({ name: "plugins", init: plugins.init });

@@ -4,10 +4,33 @@
  * (cf. src/styles.css).
  */
 
+/* Wrapper des conversations (un enfant par tab) — prend toute la hauteur
+ * disponible au-dessus de la prompt bar du module tabs (layout flex de
+ * #den-conversation, cf. src/styles.css). */
+.den-views {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
 .den-conversation-tab {
   height: 100%;
   overflow-y: auto;
   padding: var(--den-space-3);
+}
+
+/* Écho du prompt utilisateur (UserEcho, protocol.ts) — bulle alignée à
+ * droite, texte brut. */
+.den-msg-user {
+  align-self: flex-end;
+  max-width: 85%;
+  margin: var(--den-space-2) 0 var(--den-space-2) auto;
+  padding: var(--den-space-2) var(--den-space-3);
+  border-radius: var(--den-radius);
+  background: var(--den-bg-elevated);
+  border: 1px solid var(--den-border);
+  color: var(--den-fg);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 .den-conversation-tab[hidden] {

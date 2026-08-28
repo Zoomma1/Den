@@ -1,0 +1,94 @@
+/*
+ * Styles du module `tabs` — chips d'onglets et prompt bar.
+ * Utilise les tokens --den-* posés par le module `theme` sur :root
+ * (cf. src/styles.css).
+ */
+
+.den-tab-list {
+  display: flex;
+  align-items: center;
+  gap: var(--den-space-1);
+}
+
+.den-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--den-space-1);
+  max-width: 220px;
+  padding: var(--den-space-1) var(--den-space-2);
+  border: 1px solid var(--den-border);
+  border-radius: var(--den-radius);
+  background: var(--den-bg-elevated);
+  color: var(--den-fg);
+  font-family: var(--den-font-sans);
+  font-size: 0.85em;
+  cursor: pointer;
+}
+
+.den-tab__title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.den-tab__status {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--den-fg-muted);
+}
+
+.den-tab--error {
+  border-color: var(--den-status-error);
+}
+
+.den-tab--error .den-tab__status {
+  color: var(--den-status-error);
+}
+
+.den-tab__close {
+  color: var(--den-fg-muted);
+}
+
+.den-tab__close:hover {
+  color: var(--den-status-error);
+}
+
+.den-tab-add {
+  padding: var(--den-space-1) var(--den-space-2);
+  border: 1px solid var(--den-border);
+  border-radius: var(--den-radius);
+  background: var(--den-bg-elevated);
+  color: var(--den-fg);
+  cursor: pointer;
+}
+
+.den-prompt-bar {
+  display: flex;
+  gap: var(--den-space-2);
+  padding: var(--den-space-2);
+  background: var(--den-bg);
+  border-top: 1px solid var(--den-border);
+}
+
+.den-prompt-bar__input {
+  flex: 1;
+  resize: vertical;
+  padding: var(--den-space-2);
+  border: 1px solid var(--den-border);
+  border-radius: var(--den-radius);
+  background: var(--den-bg-elevated);
+  color: var(--den-fg);
+  font-family: var(--den-font-sans);
+  font-size: var(--den-font-size-base);
+}
+
+.den-prompt-bar__submit {
+  padding: var(--den-space-1) var(--den-space-3);
+  border: 1px solid var(--den-accent);
+  border-radius: var(--den-radius);
+  background: var(--den-accent);
+  color: var(--den-accent-fg);
+  font-family: var(--den-font-sans);
+  cursor: pointer;
+}
