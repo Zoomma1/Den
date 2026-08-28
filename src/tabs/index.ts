@@ -2,8 +2,10 @@
  * Module `tabs` — barre d'onglets, un sidecar par session/tab.
  *
  * Contrat inter-lots (événements DOM sur `window`, aucun fichier partagé) :
- * - `den:session-message` (`detail: { tabId, message }`) pour CHAQUE message
- *   sidecar reçu et validé contre le protocole (cf. `src/types/protocol.ts`).
+ * - `den:session-message` (`detail: { tabId, message: ConversationMessage }`) :
+ *   chaque message sidecar reçu et validé contre le protocole wire, plus
+ *   l'écho local `user_echo` fabriqué ici à l'envoi d'un prompt (cf.
+ *   `src/types/protocol.ts` — `UserEcho` n'est jamais sur le wire).
  * - `den:active-tab-changed` (`detail: { tabId }`) à chaque changement de
  *   tab actif, y compris pour le tout premier tab créé au démarrage.
  *
@@ -12,12 +14,13 @@
  * continuent (routage/état isolés par tabId, cf. `router.ts`).
  */
 import { Channel, invoke } from "@tauri-apps/api/core";
+import "./tabs.css";
 import type { DenContext } from "../core/registry";
 import {
   isDone,
   isErrorMessage,
   isSessionInfo,
-  type SidecarToUIMessage,
+  type ConversationMessage,
 } from "../types/protocol";
 import { TabRouter } from "./router";
 
@@ -45,7 +48,7 @@ export function init(ctx: DenContext): void {
 
   function dispatchSessionMessage(
     tabId: string,
-    message: SidecarToUIMessage,
+    message: ConversationMessage,
   ): void {
     window.dispatchEvent(
       new CustomEvent("den:session-message", { detail: { tabId, message } }),
@@ -69,13 +72,19 @@ export function init(ctx: DenContext): void {
   }
 
   function updateTabTitle(tab: Tab): void {
+    // "." = cwd par défaut, sans valeur pour l'utilisateur — préférer un
+    // libellé neutre en attendant un vrai choix de dossier par tab.
+    const label = tab.cwd === "." ? "Session" : tab.cwd;
     tab.titleEl.textContent = tab.sessionId
-      ? `${tab.cwd} — ${tab.sessionId.slice(0, 8)}`
-      : tab.cwd;
+      ? `${label} ${tab.sessionId.slice(0, 8)}`
+      : label;
   }
 
   function markTabError(tab: Tab, message: string): void {
+    // Le chip tronque déjà par ellipsis CSS (.den-tab__status) — le message
+    // complet reste lisible au survol (title).
     tab.statusEl.textContent = `Erreur: ${message}`;
+    tab.statusEl.title = message;
     tab.buttonEl.classList.add("den-tab--error");
   }
 
@@ -111,7 +120,6 @@ export function init(ctx: DenContext): void {
 
     const titleEl = document.createElement("span");
     titleEl.className = "den-tab__title";
-    titleEl.textContent = cwd;
 
     const statusEl = document.createElement("span");
     statusEl.className = "den-tab__status";
@@ -134,6 +142,7 @@ export function init(ctx: DenContext): void {
 
     const tab: Tab = { id, cwd, buttonEl, titleEl, statusEl };
     tabs.set(id, tab);
+    updateTabTitle(tab);
     router.registerTab(id);
 
     const channel = new Channel<string>();
@@ -160,10 +169,12 @@ export function init(ctx: DenContext): void {
     return tab;
   }
 
-  async function sendPrompt(tabId: string, text: string): Promise<void> {
+  /** Retourne false si le prompt n'a pas pu partir (l'appelant peut alors
+   * restituer le texte tapé au lieu de le perdre). */
+  async function sendPrompt(tabId: string, text: string): Promise<boolean> {
     const trimmed = text.trim();
-    if (trimmed.length === 0) return;
-    if (router.getState(tabId) === "error") return;
+    if (trimmed.length === 0) return true;
+    if (router.getState(tabId) === "error") return false;
 
     router.markPromptSubmitted(tabId);
     const tab = tabs.get(tabId);
@@ -181,26 +192,32 @@ export function init(ctx: DenContext): void {
       });
     } catch (err) {
       if (tab) markTabError(tab, err instanceof Error ? err.message : String(err));
+      return false;
     }
+    // Écho local du prompt dans le fil (cf. UserEcho, protocol.ts) — le
+    // sidecar ne renvoie jamais les prompts, sans ça le fil est illisible.
+    // Émis seulement une fois l'envoi confirmé : un écho dispatché avant
+    // l'invoke afficherait comme livré un message qui ne l'est pas.
+    dispatchSessionMessage(tabId, {
+      type: "user_echo",
+      id: payload.id,
+      text: trimmed,
+    });
+    return true;
   }
 
   function buildPromptBar(): void {
     const form = document.createElement("form");
     form.className = "den-prompt-bar";
-    // Pas de styles.css touché dans ce lot : positionnement inline minimal
-    // pour tenir "en bas du layout conversation" quel que soit l'ordre dans
-    // lequel le lot markdown ajoute ses propres conteneurs par tab.
-    form.style.cssText =
-      "position: sticky; bottom: 0; display: flex; gap: 0.5rem; padding: 0.5rem; background: inherit;";
 
     const textarea = document.createElement("textarea");
     textarea.className = "den-prompt-bar__input";
     textarea.rows = 2;
     textarea.placeholder = "Message pour Claude…";
-    textarea.style.cssText = "flex: 1; resize: vertical;";
 
     const submitEl = document.createElement("button");
     submitEl.type = "submit";
+    submitEl.className = "den-prompt-bar__submit";
     submitEl.textContent = "Envoyer";
 
     form.append(textarea, submitEl);
@@ -209,7 +226,13 @@ export function init(ctx: DenContext): void {
       if (!activeTabId) return;
       const text = textarea.value;
       textarea.value = "";
-      void sendPrompt(activeTabId, text);
+      void sendPrompt(activeTabId, text).then((sent) => {
+        // Envoi en échec : restituer le texte tapé (sauf si l'utilisateur a
+        // déjà commencé autre chose) plutôt que de le perdre.
+        if (!sent && textarea.value.length === 0) {
+          textarea.value = text;
+        }
+      });
     });
 
     // Entrée envoie, Maj+Entrée insère un saut de ligne.

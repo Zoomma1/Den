@@ -61,10 +61,12 @@ body {
 }
 
 #den-conversation {
+  display: flex;
+  flex-direction: column;
   flex: 1 1 60%;
   min-width: 0;
-  overflow-y: auto;
-  padding: var(--den-space-4);
+  min-height: 0;
+  padding: var(--den-space-4) var(--den-space-4) 0;
 }
 
 #den-terminal {
@@ -76,6 +78,9 @@ body {
 }
 
 #den-status {
+  display: flex;
+  align-items: center;
+  gap: var(--den-space-3);
   padding: var(--den-space-1) var(--den-space-3);
   background: var(--den-bg-elevated);
   border-top: 1px solid var(--den-border);
