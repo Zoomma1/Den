@@ -116,6 +116,19 @@ export interface ErrorMessage {
   recoverable?: boolean;
 }
 
+/**
+ * Écho local du prompt utilisateur dans le flux de conversation.
+ * Jamais émis par le sidecar : le module `tabs` le dispatche lui-même sur
+ * `den:session-message` au moment de l'envoi, pour que le fil reste
+ * relisible (le protocole NDJSON réel ne renvoie pas les prompts).
+ */
+export interface UserEcho {
+  type: "user_echo";
+  /** Même id de corrélation que le `user_message` envoyé au sidecar. */
+  id: string;
+  text: string;
+}
+
 export type SidecarToUIMessage =
   | AssistantDelta
   | ToolUse
@@ -125,6 +138,15 @@ export type SidecarToUIMessage =
   | SessionInfo
   | Done
   | ErrorMessage;
+
+/**
+ * Messages affichables dans le fil de conversation : le wire sidecar -> UI
+ * plus l'écho local `UserEcho`, fabriqué côté UI (module `tabs`) et jamais
+ * présent sur le wire NDJSON. C'est le type transporté par l'événement
+ * `den:session-message` — les parseurs wire (cf. `src/tabs/router.ts`)
+ * restent, eux, sur `SidecarToUIMessage`.
+ */
+export type ConversationMessage = SidecarToUIMessage | UserEcho;
 
 /** Union complète du protocole, dans les deux sens. */
 export type DenProtocolMessage = UIToSidecarMessage | SidecarToUIMessage;
@@ -191,6 +213,10 @@ export function isDone(msg: DenProtocolMessage): msg is Done {
 
 export function isErrorMessage(msg: DenProtocolMessage): msg is ErrorMessage {
   return msg.type === "error";
+}
+
+export function isUserEcho(msg: ConversationMessage): msg is UserEcho {
+  return msg.type === "user_echo";
 }
 
 /** true si le message appartient au sens UI -> sidecar. */

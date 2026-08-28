@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  type ConversationMessage,
   type DenProtocolMessage,
   isAssistantDelta,
   isDone,
@@ -12,6 +13,7 @@ import {
   isSessionInfo,
   isSidecarToUIMessage,
   isToolResult,
+  isUserEcho,
   isToolUse,
   isUIToSidecarMessage,
   isUserMessage,
@@ -58,6 +60,18 @@ describe("protocol type guards", () => {
       } else {
         expect(guard(msg)).toBe(false);
       }
+    }
+  });
+
+  it("user_echo est un écho local UI, hors wire : reconnu par isUserEcho, par aucun guard wire", () => {
+    const echo: ConversationMessage = {
+      type: "user_echo",
+      id: "u1",
+      text: "mon prompt",
+    };
+    expect(isUserEcho(echo)).toBe(true);
+    for (const guard of Object.values(guards)) {
+      expect(guard(echo as unknown as DenProtocolMessage)).toBe(false);
     }
   });
 
