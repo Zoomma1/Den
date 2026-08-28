@@ -4,8 +4,9 @@
  *
  * Contrat inter-lots (aucun fichier partagé, cf. CLAUDE.md du lot) :
  * - le lot `tabs` émet sur `window` un `CustomEvent<'den:session-message'>`
- *   (`detail: { tabId: string, message: SidecarToUIMessage }`) pour chaque
- *   message reçu d'un sidecar, et `CustomEvent<'den:active-tab-changed'>`
+ *   (`detail: { tabId: string, message: ConversationMessage }`) pour chaque
+ *   message reçu d'un sidecar (plus l'écho local `user_echo`), et
+ *   `CustomEvent<'den:active-tab-changed'>`
  *   (`detail: { tabId: string }`) à chaque changement de tab actif (émis
  *   aussi pour le tout premier tab).
  * - ce module maintient un container de conversation PAR tabId dans
@@ -16,13 +17,13 @@
  * stratégie de streaming incrémental.
  */
 import type { DenContext } from "../core/registry";
-import type { CustomBlock, SidecarToUIMessage } from "../types/protocol";
+import type { ConversationMessage, CustomBlock } from "../types/protocol";
 import { ConversationView } from "./conversationView";
 import "./markdown.css";
 
 interface SessionMessageDetail {
   tabId: string;
-  message: SidecarToUIMessage;
+  message: ConversationMessage;
 }
 
 interface ActiveTabChangedDetail {

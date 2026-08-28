@@ -1,7 +1,7 @@
 /**
  * `ConversationView` — flux de conversation DOM d'un seul tabId.
  *
- * Dispatche chaque `SidecarToUIMessage` reçu (via `den:session-message`, cf.
+ * Dispatche chaque `ConversationMessage` reçu (via `den:session-message`, cf.
  * conventions inter-lots) vers le bon rendu : texte assistant streamé
  * (délégué à `IncrementalMarkdownRenderer`), blocs `tool_use`/`tool_result`
  * repliables, marqueurs `done`/`error`. Gère aussi l'auto-scroll (collant au
@@ -9,8 +9,8 @@
  * custom (surface interactive, lot dédié).
  */
 import type {
+  ConversationMessage,
   CustomBlock,
-  SidecarToUIMessage,
 } from "../types/protocol";
 import { IncrementalMarkdownRenderer } from "./renderer";
 
@@ -40,6 +40,29 @@ function safeStringify(value: unknown): string {
   }
 }
 
+/**
+ * Rend la sortie d'un tool lisible : les blocs `[{type:"text", text}]` du
+ * protocole CLI sont dépliés en texte brut (avec leurs vrais retours à la
+ * ligne), une string est affichée telle quelle, le reste en JSON indenté —
+ * plus jamais de `"a\nb"` échappé sur une seule ligne.
+ */
+function isTextBlock(block: unknown): block is { type: "text"; text: string } {
+  return (
+    typeof block === "object" &&
+    block !== null &&
+    (block as { type?: unknown }).type === "text" &&
+    typeof (block as { text?: unknown }).text === "string"
+  );
+}
+
+function formatToolOutput(output: unknown): string {
+  if (typeof output === "string") return output;
+  if (Array.isArray(output) && output.length > 0 && output.every(isTextBlock)) {
+    return output.map((block) => block.text).join("\n");
+  }
+  return safeStringify(output);
+}
+
 export class ConversationView {
   readonly tabId: string;
   /** Container racine à monter dans #den-conversation (un par tab, masqué si inactif). */
@@ -63,7 +86,7 @@ export class ConversationView {
     this.el.addEventListener("scroll", () => this.onScroll());
   }
 
-  handleMessage(msg: SidecarToUIMessage): void {
+  handleMessage(msg: ConversationMessage): void {
     switch (msg.type) {
       case "assistant_delta":
         this.onAssistantDelta(msg.id, msg.text);
@@ -82,6 +105,13 @@ export class ConversationView {
       case "error":
         this.finalizeActiveAssistant();
         this.onError(msg.message);
+        return;
+      case "user_echo":
+        // Ne PAS finaliser le bloc assistant en cours : un prompt soumis
+        // pendant un streaming s'insère sous le bloc actif, qui continue de
+        // streamer avec son renderer intact (finaliser ici couperait le
+        // message en deux et casserait tout construct markdown ouvert).
+        this.onUserEcho(msg.text);
         return;
       default:
         // session_info / permission_request / question_request : hors
@@ -222,7 +252,7 @@ export class ConversationView {
     const label = document.createElement("strong");
     label.textContent = isError ? "Erreur" : "Résultat";
     const pre = document.createElement("pre");
-    pre.textContent = safeStringify(output);
+    pre.textContent = formatToolOutput(output);
     resultEl.appendChild(label);
     resultEl.appendChild(pre);
 
@@ -248,6 +278,16 @@ export class ConversationView {
     const el = document.createElement("div");
     el.className = "den-error-block";
     el.textContent = `⚠ ${message}`;
+    this.flowEl.appendChild(el);
+    this.scrollToBottomIfStuck();
+  }
+
+  private onUserEcho(text: string): void {
+    const el = document.createElement("div");
+    el.className = "den-msg den-msg-user";
+    // Texte brut volontairement (pas de rendu markdown) : c'est l'écho
+    // exact de ce que l'utilisateur a tapé.
+    el.textContent = text;
     this.flowEl.appendChild(el);
     this.scrollToBottomIfStuck();
   }
