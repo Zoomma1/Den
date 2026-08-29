@@ -1,0 +1,37 @@
+/*
+ * Thème "default" — Den.
+ *
+ * Contrat tokens-only : ce fichier doit se réduire à un unique bloc `:root`
+ * ne contenant que des déclarations de custom properties `--den-*`. Rien
+ * d'autre n'est toléré (pas d'autre sélecteur, pas de propriété hors
+ * `--den-*`, pas de second bloc) — cf. `src/theme/theme.ts` (parseThemeCSS)
+ * pour le parseur qui applique ce contrat côté TS.
+ *
+ * Direction : sombre, dense, confortable pour de longues sessions — quasi
+ * noir avec 3 niveaux de surface distincts (--den-bg / --den-bg-elevated /
+ * --den-bg-surface), hiérarchie de texte à 3 paliers, accent bleu réservé
+ * au sélectionné/interactif (jamais décoratif).
+ */
+:root {
+  --den-bg: #0e0e10;
+  --den-bg-elevated: #1a1a1e;
+  --den-bg-surface: #050506;
+  --den-fg: #e6e6e9;
+  --den-fg-secondary: #a8a8b0;
+  --den-fg-muted: #85858e;
+  --den-accent: #5b9bf6;
+  --den-accent-fg: #071018;
+  --den-accent-muted: rgba(91, 155, 246, 0.14);
+  --den-border: #26262b;
+  --den-status-success: #3fb950;
+  --den-status-warning: #d29922;
+  --den-status-error: #f85149;
+  --den-font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --den-font-mono: "SF Mono", Menlo, Consolas, monospace;
+  --den-font-size-base: 13px;
+  --den-radius: 5px;
+  --den-space-1: 4px;
+  --den-space-2: 8px;
+  --den-space-3: 12px;
+  --den-space-4: 16px;
+}

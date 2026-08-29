@@ -1,59 +1,83 @@
 /**
- * Logique pure du module `theme` — parsing/validation du JSON de thème et
- * mapping tokens -> variables CSS `--den-*`. Séparé de `index.ts` (qui fait
- * l'IPC + le DOM) pour rester testable sans DOM ni Tauri.
+ * Logique pure du module `theme` — parsing/validation du CSS de thème et
+ * application des variables `--den-*`. Séparé de `index.ts` (qui fait l'IPC
+ * + le DOM) pour rester testable sans DOM ni Tauri.
  *
- * Format attendu (cf. den-theme.json à la racine du repo) :
- * ```json
- * { "name": "...", "tokens": { "bg": "#1e1e1e", ... } }
- * ```
- * Chaque clé de `tokens` devient la variable CSS `--den-<clé>` sur
- * `document.documentElement` (cf. src/styles.css pour la liste des tokens
- * consommés par le reste de l'app).
+ * Format attendu (cf. `themes/default.css` à la racine du repo, thème
+ * désigné par `.config`) : un unique bloc `:root { ... }` ne contenant que
+ * des déclarations de custom properties `--den-*` (valeurs terminées par
+ * `;`). Le fichier est tokens-only — pas d'autre sélecteur, pas de
+ * propriété hors `--den-*`, pas de second bloc. Les commentaires CSS
+ * `/* *\/` sont tolérés n'importe où (avant, après, dans le bloc). Le CSS
+ * porte directement les noms finaux des variables : le retour de
+ * `parseThemeCSS` est déjà la map `{ "--den-bg": "#1e1e1e", ... }`,
+ * consommée telle quelle par `applyThemeVars`.
  */
 
-export interface ThemeFile {
-  name?: string;
-  tokens: Record<string, string>;
+/** Retire les commentaires CSS `/* ... *\/` (non gourmand, multi-lignes). */
+function stripComments(raw: string): string {
+  return raw.replace(/\/\*[\s\S]*?\*\//g, "");
 }
 
 /**
- * Parse et valide le JSON brut d'un fichier de thème. Retourne `null` (jamais
- * ne lève) si le JSON est invalide ou ne respecte pas la forme attendue —
- * l'appelant doit alors conserver le thème courant.
+ * Parse une déclaration `--den-xxx: valeur` (sans le `;` final, déjà
+ * retiré par le split). Retourne `null` si la forme ne respecte pas le
+ * contrat tokens-only (nom hors `--den-*`, valeur vide, pas de `:`).
  */
-export function parseThemeJSON(raw: string): ThemeFile | null {
-  let data: unknown;
-  try {
-    data = JSON.parse(raw);
-  } catch {
+function parseDeclaration(part: string): [string, string] | null {
+  const trimmed = part.trim();
+  if (trimmed === "") {
     return null;
   }
-  return isValidThemeFile(data) ? data : null;
+  const colonIndex = trimmed.indexOf(":");
+  if (colonIndex === -1) {
+    return null;
+  }
+  const name = trimmed.slice(0, colonIndex).trim();
+  const value = trimmed.slice(colonIndex + 1).trim();
+  if (!/^--den-[A-Za-z0-9-]+$/.test(name) || value === "") {
+    return null;
+  }
+  return [name, value];
 }
 
-function isValidThemeFile(data: unknown): data is ThemeFile {
-  if (typeof data !== "object" || data === null) {
-    return false;
+/** Parse le corps (contenu entre accolades) d'un bloc `:root`. */
+function parseRootBody(body: string): Record<string, string> | null {
+  const trimmed = body.trim();
+  if (trimmed === "") {
+    return {};
   }
-  const tokens = (data as Record<string, unknown>).tokens;
-  if (typeof tokens !== "object" || tokens === null || Array.isArray(tokens)) {
-    return false;
+  // Contrat : chaque déclaration se termine par `;` — y compris la dernière.
+  if (!trimmed.endsWith(";")) {
+    return null;
   }
-  return Object.values(tokens as Record<string, unknown>).every(
-    (value) => typeof value === "string",
-  );
-}
-
-/** Mappe les tokens `{ bg: "#..." }` en variables CSS `{ "--den-bg": "#..." }`. */
-export function tokensToCssVars(
-  tokens: Record<string, string>,
-): Record<string, string> {
+  const declarations = trimmed.slice(0, -1).split(";");
   const vars: Record<string, string> = {};
-  for (const [key, value] of Object.entries(tokens)) {
-    vars[`--den-${key}`] = value;
+  for (const declaration of declarations) {
+    const parsed = parseDeclaration(declaration);
+    if (!parsed) {
+      return null;
+    }
+    const [name, value] = parsed;
+    vars[name] = value;
   }
   return vars;
+}
+
+/**
+ * Parse et valide le CSS brut d'un fichier de thème. Retourne `null`
+ * (jamais ne lève) si le CSS ne respecte pas le contrat tokens-only décrit
+ * en tête de fichier — l'appelant doit alors conserver le thème courant.
+ * Le retour est directement la map `--den-*` -> valeur, prête pour
+ * `applyThemeVars`.
+ */
+export function parseThemeCSS(raw: string): Record<string, string> | null {
+  const withoutComments = stripComments(raw).trim();
+  const match = /^:root\s*\{([\s\S]*)\}$/.exec(withoutComments);
+  if (!match) {
+    return null;
+  }
+  return parseRootBody(match[1]);
 }
 
 /**

@@ -5,6 +5,11 @@
  * Utilise les tokens --den-* posés par le module `theme` sur :root
  * (cf. src/styles.css) — aucun nouveau token global, uniquement des
  * variantes locales au module.
+ *
+ * Langage visuel : le bloc lui-même est une carte élevée
+ * (--den-bg-elevated, cohérent avec les tool blocks du fil) ; le détail
+ * JSON et les boutons par défaut sont en retrait (--den-bg-surface) —
+ * seules les actions primaires (Autoriser/Envoyer) prennent l'accent.
  */
 
 .den-decision-block {
@@ -20,6 +25,7 @@
 .den-decision-block__title {
   margin: 0;
   font-weight: 600;
+  color: var(--den-fg);
 }
 
 .den-decision-block__detail {
@@ -27,7 +33,8 @@
   padding: var(--den-space-2);
   font-family: var(--den-font-mono);
   font-size: 0.9em;
-  background: var(--den-bg);
+  color: var(--den-fg-secondary);
+  background: var(--den-bg-surface);
   border-radius: var(--den-radius);
   overflow-x: auto;
   white-space: pre-wrap;
@@ -51,15 +58,20 @@
   padding: var(--den-space-1) var(--den-space-2);
   border: 1px solid var(--den-border);
   border-radius: var(--den-radius);
-  background: var(--den-bg);
+  background: var(--den-bg-surface);
   color: var(--den-fg);
   font-family: var(--den-font-sans);
   font-size: var(--den-font-size-base);
 }
 
+.den-decision-block__input:focus-visible {
+  outline: none;
+  border-color: var(--den-accent);
+}
+
 .den-decision-block__status {
   margin: 0;
-  color: var(--den-fg-muted);
+  color: var(--den-fg-secondary);
   font-size: 0.9em;
 }
 
@@ -67,7 +79,7 @@
   padding: var(--den-space-1) var(--den-space-3);
   border: 1px solid var(--den-border);
   border-radius: var(--den-radius);
-  background: var(--den-bg);
+  background: var(--den-bg-surface);
   color: var(--den-fg);
   font-family: var(--den-font-sans);
   font-size: var(--den-font-size-base);
@@ -79,8 +91,14 @@
   cursor: default;
 }
 
-.den-btn:not(:disabled):hover {
+/* Hover accent générique — sauf deny, dont la bordure error est un signal
+ * sémantique qui ne doit pas virer au bleu (accents jamais décoratifs). */
+.den-btn:not(:disabled):not(.den-btn--deny):hover {
   border-color: var(--den-accent);
+}
+
+.den-btn--deny:not(:disabled):hover {
+  filter: brightness(1.15);
 }
 
 .den-btn--allow,

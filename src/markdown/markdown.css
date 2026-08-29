@@ -2,6 +2,11 @@
  * Styles du module `markdown` — flux de conversation.
  * Utilise les tokens --den-* posés par le module `theme` sur :root
  * (cf. src/styles.css).
+ *
+ * Langage visuel : le fil vit sur --den-bg (surface de base) ; tout ce qui
+ * doit s'en détacher comme un bloc (bulle user, code, tool block) prend
+ * --den-bg-elevated. Texte à 3 paliers : --den-fg (prose assistant),
+ * --den-fg-secondary (détail tool/résultat), --den-fg-muted (métadonnées).
  */
 
 /* Wrapper des conversations (un enfant par tab) — prend toute la hauteur
@@ -45,6 +50,7 @@
 
 .den-msg {
   line-height: 1.5;
+  color: var(--den-fg);
 }
 
 .den-msg-assistant :first-child {
@@ -84,6 +90,7 @@
   background: none;
   padding: 0;
   white-space: pre;
+  color: var(--den-fg);
 }
 
 .den-tool-block {
@@ -96,7 +103,7 @@
 .den-tool-block > summary {
   cursor: pointer;
   font-family: var(--den-font-mono);
-  color: var(--den-fg-muted);
+  color: var(--den-fg-secondary);
   user-select: none;
 }
 
@@ -110,7 +117,7 @@
   white-space: pre-wrap;
   word-break: break-word;
   margin: var(--den-space-2) 0 0;
-  color: var(--den-fg-muted);
+  color: var(--den-fg-secondary);
 }
 
 .den-tool-result {
@@ -129,6 +136,7 @@
 
 .den-error-block {
   color: var(--den-status-error);
+  background: color-mix(in srgb, var(--den-status-error) 8%, var(--den-bg));
   border: 1px solid var(--den-status-error);
   border-radius: var(--den-radius);
   padding: var(--den-space-2) var(--den-space-3);

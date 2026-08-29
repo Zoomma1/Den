@@ -1,7 +1,15 @@
 /*
  * Styles du module `terminal`. `#den-terminal` (défini dans styles.css
  * racine) reste le point de montage ; on n'y ajoute ici que ce qui est
- * spécifique à l'agencement interne toolbar + viewport xterm.js.
+ * spécifique à l'agencement interne toolbar + viewport xterm.js. Les
+ * couleurs internes de xterm (thème du Terminal xterm.js lui-même) sont
+ * hors scope — seuls le chrome de la toolbar et le fond du viewport sont
+ * stylés ici.
+ *
+ * Langage visuel : la toolbar est du chrome (--den-bg-elevated, cohérent
+ * avec les barres tabs/status) ; le viewport reste sur --den-bg-surface
+ * (troisième niveau de fond, quasi noir pur — posé dans #den-terminal,
+ * cf. src/styles.css) pour l'authenticité d'un vrai terminal.
  */
 #den-terminal {
   display: flex;
@@ -12,6 +20,7 @@
 .den-terminal__toolbar {
   flex: 0 0 auto;
   padding: var(--den-space-1) var(--den-space-3);
+  background: var(--den-bg-elevated);
   border-bottom: 1px solid var(--den-border);
   color: var(--den-fg-muted);
   font-size: 0.8em;
@@ -24,6 +33,7 @@
   min-height: 0;
   overflow: hidden;
   padding: var(--den-space-2);
+  background: var(--den-bg-surface);
 }
 
 /* xterm.js occupe tout le viewport qu'on lui donne — c'est fitAddon qui

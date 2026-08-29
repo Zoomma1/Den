@@ -1,70 +1,69 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   applyThemeVars,
-  parseThemeJSON,
-  tokensToCssVars,
+  parseThemeCSS,
   type CssPropertyTarget,
 } from "./theme";
 
-describe("parseThemeJSON", () => {
-  it("parses a valid theme file", () => {
-    const raw = JSON.stringify({
-      name: "Den Dark",
-      tokens: { bg: "#1e1e1e", accent: "#4fa3ff" },
-    });
-    expect(parseThemeJSON(raw)).toEqual({
-      name: "Den Dark",
-      tokens: { bg: "#1e1e1e", accent: "#4fa3ff" },
-    });
-  });
-
-  it("accepts a theme file without a name", () => {
-    const raw = JSON.stringify({ tokens: { bg: "#000" } });
-    expect(parseThemeJSON(raw)).toEqual({ tokens: { bg: "#000" } });
-  });
-
-  it("returns null on malformed JSON", () => {
-    expect(parseThemeJSON("{not json")).toBeNull();
-  });
-
-  it("returns null when tokens is missing", () => {
-    expect(parseThemeJSON(JSON.stringify({ name: "x" }))).toBeNull();
-  });
-
-  it("returns null when tokens is not an object", () => {
-    expect(parseThemeJSON(JSON.stringify({ tokens: "nope" }))).toBeNull();
-  });
-
-  it("returns null when tokens is an array", () => {
-    expect(parseThemeJSON(JSON.stringify({ tokens: ["a", "b"] }))).toBeNull();
-  });
-
-  it("returns null when a token value is not a string", () => {
-    const raw = JSON.stringify({ tokens: { bg: "#000", radius: 6 } });
-    expect(parseThemeJSON(raw)).toBeNull();
-  });
-
-  it("returns null for a bare JSON value (e.g. a number)", () => {
-    expect(parseThemeJSON("42")).toBeNull();
-  });
-
-  it("returns null for null", () => {
-    expect(parseThemeJSON("null")).toBeNull();
-  });
-});
-
-describe("tokensToCssVars", () => {
-  it("prefixes each token key with --den-", () => {
-    expect(
-      tokensToCssVars({ bg: "#1e1e1e", "fg-muted": "#8a8a8a" }),
-    ).toEqual({
+describe("parseThemeCSS", () => {
+  it("parses a valid :root block with several tokens", () => {
+    const raw = `:root {
+      --den-bg: #1e1e1e;
+      --den-accent: #4fa3ff;
+    }`;
+    expect(parseThemeCSS(raw)).toEqual({
       "--den-bg": "#1e1e1e",
-      "--den-fg-muted": "#8a8a8a",
+      "--den-accent": "#4fa3ff",
     });
   });
 
-  it("returns an empty object for empty tokens", () => {
-    expect(tokensToCssVars({})).toEqual({});
+  it("parses values containing spaces (font stacks)", () => {
+    const raw = `:root {
+      --den-font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      --den-font-mono: 'SF Mono', Menlo, Consolas, monospace;
+    }`;
+    expect(parseThemeCSS(raw)).toEqual({
+      "--den-font-sans": '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+      "--den-font-mono": "'SF Mono', Menlo, Consolas, monospace",
+    });
+  });
+
+  it("tolerates comments before, after and inside the block", () => {
+    const raw = `/* header comment */
+    :root {
+      /* inline comment */
+      --den-bg: #1e1e1e; /* trailing comment */
+    }
+    /* footer comment */`;
+    expect(parseThemeCSS(raw)).toEqual({ "--den-bg": "#1e1e1e" });
+  });
+
+  it("returns null for a non-:root selector", () => {
+    const raw = `.foo { --den-bg: #1e1e1e; }`;
+    expect(parseThemeCSS(raw)).toBeNull();
+  });
+
+  it("returns null when the block contains a non --den-* property", () => {
+    const raw = `:root { --den-bg: #1e1e1e; color: red; }`;
+    expect(parseThemeCSS(raw)).toBeNull();
+  });
+
+  it("returns null when there are two blocks", () => {
+    const raw = `:root { --den-bg: #1e1e1e; } :root { --den-fg: #fff; }`;
+    expect(parseThemeCSS(raw)).toBeNull();
+  });
+
+  it("returns null on malformed CSS (missing closing brace)", () => {
+    const raw = `:root { --den-bg: #1e1e1e;`;
+    expect(parseThemeCSS(raw)).toBeNull();
+  });
+
+  it("returns null for an empty file", () => {
+    expect(parseThemeCSS("")).toBeNull();
+  });
+
+  it("returns null for a file containing only whitespace", () => {
+    expect(parseThemeCSS("   \n\t  ")).toBeNull();
   });
 });
 
