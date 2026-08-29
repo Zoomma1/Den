@@ -1,25 +1,32 @@
 /**
- * Module `theme` — charge un fichier de thème (cf. den-theme.json à la
- * racine : clés de tokens -> valeurs CSS) et réécrit les custom properties
- * `--den-*` sur `:root`. N'a pas de mount point dédié : il agit sur le
- * document entier, avant tout autre module (cf. ordre dans main.ts).
+ * Module `theme` — charge le fichier de thème actif (cf. `.config` +
+ * `themes/<nom>.css` à la racine du repo : un bloc `:root` de custom
+ * properties `--den-*`) et réécrit ces variables sur `document.
+ * documentElement`. N'a pas de mount point dédié : il agit sur le document
+ * entier, avant tout autre module (cf. ordre dans main.ts).
  *
  * IPC : `theme_read` (lecture ponctuelle au démarrage) puis `theme_watch`
- * (souscription — un `Channel<string>` reçoit le contenu JSON brut à chaque
+ * (souscription — un `Channel<string>` reçoit le CSS brut à chaque
  * changement détecté côté Rust, cf. `src-tauri/src/theme.rs`). Jamais de
- * crash : un JSON invalide ou un échec d'IPC conservent le thème courant.
+ * crash : un CSS invalide ou un échec d'IPC conservent le thème courant.
+ *
+ * Contrat inter-lots : après chaque application réussie d'un thème, un
+ * événement DOM `den:theme-changed` est dispatché sur `document`. Le module
+ * terminal (lot ultérieur) s'y abonnera pour re-dériver son `ITheme` xterm
+ * à partir des nouvelles variables `--den-*`.
  */
 import { Channel, invoke } from "@tauri-apps/api/core";
 import type { DenContext } from "../core/registry";
-import { applyThemeVars, parseThemeJSON, tokensToCssVars } from "./theme";
+import { applyThemeVars, parseThemeCSS } from "./theme";
 
 function applyRawTheme(raw: string): void {
-  const parsed = parseThemeJSON(raw);
-  if (!parsed) {
-    console.warn("den: theme — JSON de thème invalide, thème courant conservé.");
+  const vars = parseThemeCSS(raw);
+  if (!vars) {
+    console.warn("den: theme — CSS de thème invalide, thème courant conservé.");
     return;
   }
-  applyThemeVars(document.documentElement.style, tokensToCssVars(parsed.tokens));
+  applyThemeVars(document.documentElement.style, vars);
+  document.dispatchEvent(new CustomEvent("den:theme-changed"));
 }
 
 export async function init(_ctx: DenContext): Promise<void> {
