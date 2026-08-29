@@ -1,27 +1,32 @@
 /*
- * Tokens de thème --den-*.
- * Valeurs par défaut ci-dessous ; le module `theme` (lot dédié) les
- * réécrira dynamiquement sur :root à partir d'un fichier type den-theme.json.
+ * Tokens de thème --den-* (fallback).
+ * Valeurs par défaut ci-dessous, alignées à l'identique sur
+ * `themes/default.css` — le module `theme` les réécrit dynamiquement sur
+ * :root au démarrage à partir du fichier CSS désigné par `.config`
+ * (`themes/<actif>.css`, contrat tokens-only, cf. `src/theme/theme.ts`).
  */
 :root {
-  --den-bg: #1e1e1e;
-  --den-bg-elevated: #252526;
-  --den-fg: #d4d4d4;
-  --den-fg-muted: #8a8a8a;
-  --den-accent: #4fa3ff;
-  --den-accent-fg: #0b1622;
-  --den-border: #3c3c3c;
-  --den-status-success: #4caf50;
-  --den-status-warning: #e0a030;
-  --den-status-error: #e05252;
+  --den-bg: #0e0e10;
+  --den-bg-elevated: #1a1a1e;
+  --den-bg-surface: #050506;
+  --den-fg: #e6e6e9;
+  --den-fg-secondary: #a8a8b0;
+  --den-fg-muted: #85858e;
+  --den-accent: #5b9bf6;
+  --den-accent-fg: #071018;
+  --den-accent-muted: rgba(91, 155, 246, 0.14);
+  --den-border: #26262b;
+  --den-status-success: #3fb950;
+  --den-status-warning: #d29922;
+  --den-status-error: #f85149;
   --den-font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   --den-font-mono: "SF Mono", Menlo, Consolas, monospace;
-  --den-font-size-base: 14px;
-  --den-radius: 6px;
+  --den-font-size-base: 13px;
+  --den-radius: 5px;
   --den-space-1: 4px;
   --den-space-2: 8px;
   --den-space-3: 12px;
-  --den-space-4: 20px;
+  --den-space-4: 16px;
 }
 
 * {
@@ -73,7 +78,7 @@ body {
   flex: 1 1 40%;
   min-width: 0;
   border-left: 1px solid var(--den-border);
-  background: #000;
+  background: var(--den-bg-surface);
   font-family: var(--den-font-mono);
 }
 
@@ -85,5 +90,6 @@ body {
   background: var(--den-bg-elevated);
   border-top: 1px solid var(--den-border);
   color: var(--den-fg-muted);
+  font-family: var(--den-font-mono);
   font-size: 0.85em;
 }

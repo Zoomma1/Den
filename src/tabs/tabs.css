@@ -2,6 +2,11 @@
  * Styles du module `tabs` — chips d'onglets et prompt bar.
  * Utilise les tokens --den-* posés par le module `theme` sur :root
  * (cf. src/styles.css).
+ *
+ * Langage visuel : la barre (#den-tabs) est la surface "élevée" ; les chips
+ * inactives sont en retrait (--den-bg-surface, plus sombre que la barre) —
+ * la hiérarchie vient du contraste de fond, pas de bordures. La chip
+ * active bascule en surbrillance pleine (accent).
  */
 
 .den-tab-list {
@@ -16,13 +21,19 @@
   gap: var(--den-space-1);
   max-width: 220px;
   padding: var(--den-space-1) var(--den-space-2);
-  border: 1px solid var(--den-border);
+  border: 1px solid transparent;
   border-radius: var(--den-radius);
-  background: var(--den-bg-elevated);
-  color: var(--den-fg);
+  background: var(--den-bg-surface);
+  color: var(--den-fg-secondary);
   font-family: var(--den-font-sans);
   font-size: 0.85em;
   cursor: pointer;
+  transition: background-color 0.1s ease-out;
+}
+
+.den-tab:not(.den-tab--active):hover {
+  background: var(--den-bg-elevated);
+  color: var(--den-fg);
 }
 
 .den-tab__title {
@@ -38,12 +49,24 @@
   color: var(--den-fg-muted);
 }
 
+.den-tab--active {
+  background: var(--den-accent);
+  color: var(--den-accent-fg);
+}
+
+.den-tab--active .den-tab__status {
+  color: inherit;
+  opacity: 0.7;
+}
+
 .den-tab--error {
   border-color: var(--den-status-error);
+  background: color-mix(in srgb, var(--den-status-error) 12%, var(--den-bg-surface));
 }
 
 .den-tab--error .den-tab__status {
   color: var(--den-status-error);
+  opacity: 1;
 }
 
 .den-tab__close {
@@ -56,11 +79,17 @@
 
 .den-tab-add {
   padding: var(--den-space-1) var(--den-space-2);
-  border: 1px solid var(--den-border);
+  border: 1px solid transparent;
   border-radius: var(--den-radius);
+  background: var(--den-bg-surface);
+  color: var(--den-fg-secondary);
+  cursor: pointer;
+  transition: background-color 0.1s ease-out;
+}
+
+.den-tab-add:hover {
   background: var(--den-bg-elevated);
   color: var(--den-fg);
-  cursor: pointer;
 }
 
 .den-prompt-bar {
@@ -83,6 +112,11 @@
   font-size: var(--den-font-size-base);
 }
 
+.den-prompt-bar__input:focus-visible {
+  outline: none;
+  border-color: var(--den-accent);
+}
+
 .den-prompt-bar__submit {
   padding: var(--den-space-1) var(--den-space-3);
   border: 1px solid var(--den-accent);
@@ -91,4 +125,8 @@
   color: var(--den-accent-fg);
   font-family: var(--den-font-sans);
   cursor: pointer;
+}
+
+.den-prompt-bar__submit:hover {
+  filter: brightness(1.08);
 }
