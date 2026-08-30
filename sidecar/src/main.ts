@@ -26,8 +26,10 @@ import {
   isInterruptMessage,
   isPermissionResponse,
   isQuestionResponse,
+  isSetModeMessage,
   isUserMessage,
   type DenProtocolMessage,
+  type PermissionModeId,
   type SidecarToUIMessage,
   type UserMessage,
 } from "../../src/types/protocol";
@@ -115,6 +117,25 @@ function handleUserMessage(msg: UserMessage): void {
   });
 }
 
+/**
+ * Change le mode de permission de la session en cours (sélecteur de mode
+ * côté UI, cf. DEN-03). En cas d'échec de `setPermissionMode` (mode inconnu
+ * du CLI, session déjà terminée...), on remonte une erreur récupérable sans
+ * émettre de `mode_changed` — l'UI garde alors le mode affiché précédent.
+ */
+async function handleSetMode(mode: PermissionModeId): Promise<void> {
+  try {
+    await queryHandle.setPermissionMode(mode);
+    send({ type: "mode_changed", mode });
+  } catch (err) {
+    send({
+      type: "error",
+      message: err instanceof Error ? err.message : String(err),
+      recoverable: true,
+    });
+  }
+}
+
 const queryHandle = query({
   prompt: inputQueue,
   options: { canUseTool: permissionBroker.canUseTool },
@@ -130,6 +151,16 @@ async function pump(): Promise<void> {
           model: sdkMessage.model,
           apiKeySource: sdkMessage.apiKeySource,
         });
+        send({ type: "mode_changed", mode: sdkMessage.permissionMode });
+      } else if (sdkMessage.type === "system" && sdkMessage.subtype === "status") {
+        // Le CLI pousse un status avec permissionMode après une sortie de
+        // plan mode gérée par lui-même (cf. sonde runtime : ExitPlanMode
+        // n'a pas besoin de cas spécial côté broker) ou tout autre
+        // changement de mode déclenché hors `set_mode` (ex. setPermissionMode
+        // côté CLI). L'UI est idempotente sur les doublons avec le point 1.
+        if (sdkMessage.permissionMode) {
+          send({ type: "mode_changed", mode: sdkMessage.permissionMode });
+        }
       } else if (sdkMessage.type === "assistant") {
         for (const block of sdkMessage.message.content) {
           if (block.type === "text") {
@@ -209,6 +240,8 @@ rl.on("line", (line) => {
     permissionBroker.handlePermissionResponse(msg);
   } else if (isQuestionResponse(msg)) {
     permissionBroker.handleQuestionResponse(msg);
+  } else if (isSetModeMessage(msg)) {
+    void handleSetMode(msg.mode);
   }
 });
 

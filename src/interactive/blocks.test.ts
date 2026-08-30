@@ -41,7 +41,7 @@ describe("renderPermissionBlock", () => {
     ]);
     expect(allowBtn.disabled).toBe(true);
     expect(denyBtn.disabled).toBe(true);
-    expect(el.querySelector(".den-decision-block__status")?.textContent).toContain("Autorisé");
+    expect(el.querySelector(".den-decision-block__status")?.textContent).toContain("Allowed");
   });
 
   it("clic sur Refuser envoie approved:false", () => {
@@ -70,6 +70,102 @@ describe("renderPermissionBlock", () => {
     el.querySelector<HTMLButtonElement>(".den-btn--deny")!.click();
 
     expect(responses).toHaveLength(1);
+  });
+
+  it("sans suggestions, seuls Allow/Deny sont affichés (pas d'always-allow ni de menu)", () => {
+    const el = content();
+    renderPermissionBlock(el, message, () => {});
+
+    expect(el.querySelector(".den-btn--always-allow")).toBeNull();
+    expect(el.querySelector(".den-btn--more")).toBeNull();
+    expect(el.querySelector(".den-btn--allow")).not.toBeNull();
+    expect(el.querySelector(".den-btn--deny")).not.toBeNull();
+  });
+
+  it("ExitPlanMode avec suggestions n'affiche pas de bouton Always allow ni de menu (done criterion)", () => {
+    const el = content();
+    const planMessage: PermissionRequest = {
+      type: "permission_request",
+      requestId: "req-plan",
+      toolName: "ExitPlanMode",
+      input: {},
+      suggestions: [{ type: "addRules", rules: [], behavior: "allow" }],
+    };
+    renderPermissionBlock(el, planMessage, () => {});
+
+    expect(el.querySelector(".den-btn--always-allow")).toBeNull();
+    expect(el.querySelector(".den-btn--more")).toBeNull();
+    expect(el.querySelector(".den-btn--allow")).not.toBeNull();
+    expect(el.querySelector(".den-btn--deny")).not.toBeNull();
+  });
+
+  it("clic sur Always allow envoie destination session et replie le bloc", () => {
+    const el = content();
+    const responses: unknown[] = [];
+    const suggestMessage: PermissionRequest = {
+      ...message,
+      requestId: "req-suggest",
+      suggestions: [{ type: "addRules", rules: [], behavior: "allow" }],
+    };
+    renderPermissionBlock(el, suggestMessage, (response) => responses.push(response));
+
+    el.querySelector<HTMLButtonElement>(".den-btn--always-allow")!.click();
+
+    expect(responses).toEqual([
+      {
+        type: "permission_response",
+        requestId: "req-suggest",
+        approved: true,
+        destination: "session",
+      },
+    ]);
+    expect(el.classList.contains("den-decision-block--collapsed")).toBe(true);
+    expect(el.querySelector(".den-decision-block__actions")).toBeNull();
+    expect(el.querySelector(".den-decision-block__detail")).toBeNull();
+    expect(el.querySelector(".den-decision-block__title")).not.toBeNull();
+  });
+
+  it("menu … propose 'Allow for this project' (localSettings) puis 'Always allow' (userSettings)", () => {
+    const el = content();
+    const suggestMessage: PermissionRequest = {
+      ...message,
+      requestId: "req-menu",
+      suggestions: [{ type: "addRules", rules: [], behavior: "allow" }],
+    };
+
+    const responsesProject: unknown[] = [];
+    renderPermissionBlock(el, suggestMessage, (response) => responsesProject.push(response));
+    el.querySelector<HTMLButtonElement>(".den-btn--more")!.click();
+    const items = el.querySelectorAll<HTMLButtonElement>(".den-decision-block__menu-item");
+    expect(items).toHaveLength(2);
+    expect(items[0].textContent).toBe("Allow for this project");
+    expect(items[1].textContent).toBe("Always allow (all projects)");
+
+    items[0].click();
+    expect(responsesProject).toEqual([
+      {
+        type: "permission_response",
+        requestId: "req-menu",
+        approved: true,
+        destination: "localSettings",
+      },
+    ]);
+
+    const el2 = content();
+    const responsesUser: unknown[] = [];
+    renderPermissionBlock(el2, { ...suggestMessage, requestId: "req-menu-2" }, (response) =>
+      responsesUser.push(response),
+    );
+    el2.querySelector<HTMLButtonElement>(".den-btn--more")!.click();
+    el2.querySelectorAll<HTMLButtonElement>(".den-decision-block__menu-item")[1].click();
+    expect(responsesUser).toEqual([
+      {
+        type: "permission_response",
+        requestId: "req-menu-2",
+        approved: true,
+        destination: "userSettings",
+      },
+    ]);
   });
 });
 

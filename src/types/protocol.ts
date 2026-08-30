@@ -24,12 +24,20 @@ export interface UserMessage {
   text: string;
 }
 
+/** Portée d'une règle de permission "always allow" côté SDK. */
+export type PermissionRuleDestination =
+  | "session"
+  | "localSettings"
+  | "userSettings";
+
 /** Réponse de l'utilisateur à une `PermissionRequest`. */
 export interface PermissionResponse {
   type: "permission_response";
   requestId: string;
   approved: boolean;
   reason?: string;
+  /** Présent = always-allow avec cette portée ; absent = allow/deny simple. */
+  destination?: PermissionRuleDestination;
 }
 
 /** Réponse de l'utilisateur à une `QuestionRequest`. */
@@ -44,11 +52,31 @@ export interface InterruptMessage {
   type: "interrupt";
 }
 
+/**
+ * Identifiants de mode de permission — copie locale des modes du SDK Agent.
+ * protocol.ts ne doit pas importer le SDK (l'UI n'en dépend pas) : cette
+ * union est maintenue en phase avec les modes exposés côté sidecar.
+ */
+export type PermissionModeId =
+  | "default"
+  | "acceptEdits"
+  | "bypassPermissions"
+  | "plan"
+  | "dontAsk"
+  | "auto";
+
+/** L'utilisateur change le mode de permission courant. */
+export interface SetModeMessage {
+  type: "set_mode";
+  mode: PermissionModeId;
+}
+
 export type UIToSidecarMessage =
   | UserMessage
   | PermissionResponse
   | QuestionResponse
-  | InterruptMessage;
+  | InterruptMessage
+  | SetModeMessage;
 
 // ---------------------------------------------------------------------------
 // sidecar -> UI
@@ -78,12 +106,27 @@ export interface ToolResult {
   isError?: boolean;
 }
 
+/**
+ * Représentation opaque côté protocole d'une PermissionUpdate du SDK
+ * (suggestion d'always-allow). Le sidecar garde les entrées typées de son
+ * côté ; l'UI ne fait que tester la présence de ces suggestions.
+ */
+export interface PermissionSuggestion {
+  type: string;
+  [key: string]: unknown;
+}
+
 /** Le sidecar demande une autorisation utilisateur avant d'exécuter un outil. */
 export interface PermissionRequest {
   type: "permission_request";
   requestId: string;
   toolName: string;
   input: unknown;
+  /** Suggestions d'always-allow proposées par le SDK, à afficher côté UI. */
+  suggestions?: PermissionSuggestion[];
+  title?: string;
+  displayName?: string;
+  description?: string;
 }
 
 /** Le sidecar pose une question à l'utilisateur (ex. AskUserQuestion). */
@@ -129,6 +172,12 @@ export interface UserEcho {
   text: string;
 }
 
+/** Le sidecar confirme le changement de mode de permission. */
+export interface ModeChanged {
+  type: "mode_changed";
+  mode: PermissionModeId;
+}
+
 export type SidecarToUIMessage =
   | AssistantDelta
   | ToolUse
@@ -137,7 +186,8 @@ export type SidecarToUIMessage =
   | QuestionRequest
   | SessionInfo
   | Done
-  | ErrorMessage;
+  | ErrorMessage
+  | ModeChanged;
 
 /**
  * Messages affichables dans le fil de conversation : le wire sidecar -> UI
@@ -175,6 +225,12 @@ export function isInterruptMessage(
   msg: DenProtocolMessage,
 ): msg is InterruptMessage {
   return msg.type === "interrupt";
+}
+
+export function isSetModeMessage(
+  msg: DenProtocolMessage,
+): msg is SetModeMessage {
+  return msg.type === "set_mode";
 }
 
 export function isAssistantDelta(
@@ -215,6 +271,10 @@ export function isErrorMessage(msg: DenProtocolMessage): msg is ErrorMessage {
   return msg.type === "error";
 }
 
+export function isModeChanged(msg: DenProtocolMessage): msg is ModeChanged {
+  return msg.type === "mode_changed";
+}
+
 export function isUserEcho(msg: ConversationMessage): msg is UserEcho {
   return msg.type === "user_echo";
 }
@@ -227,7 +287,8 @@ export function isUIToSidecarMessage(
     isUserMessage(msg) ||
     isPermissionResponse(msg) ||
     isQuestionResponse(msg) ||
-    isInterruptMessage(msg)
+    isInterruptMessage(msg) ||
+    isSetModeMessage(msg)
   );
 }
 

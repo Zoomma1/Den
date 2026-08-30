@@ -2,6 +2,7 @@ import {
   isAssistantDelta,
   isDone,
   isErrorMessage,
+  isModeChanged,
   isPermissionRequest,
   isQuestionRequest,
   isSessionInfo,
@@ -107,7 +108,8 @@ function parseSidecarMessage(line: string): SidecarToUIMessage | null {
     isQuestionRequest(candidate) ||
     isSessionInfo(candidate) ||
     isDone(candidate) ||
-    isErrorMessage(candidate);
+    isErrorMessage(candidate) ||
+    isModeChanged(candidate);
 
   return isKnownSidecarMessage ? (candidate as SidecarToUIMessage) : null;
 }

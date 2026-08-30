@@ -6,11 +6,13 @@ import {
   isDone,
   isErrorMessage,
   isInterruptMessage,
+  isModeChanged,
   isPermissionRequest,
   isPermissionResponse,
   isQuestionRequest,
   isQuestionResponse,
   isSessionInfo,
+  isSetModeMessage,
   isSidecarToUIMessage,
   isToolResult,
   isUserEcho,
@@ -32,6 +34,8 @@ const samples: DenProtocolMessage[] = [
   { type: "session_info", sessionId: "s1", model: "sonnet", apiKeySource: "none" },
   { type: "done" },
   { type: "error", message: "boom" },
+  { type: "set_mode", mode: "acceptEdits" },
+  { type: "mode_changed", mode: "plan" },
 ];
 
 const guards: Record<
@@ -50,6 +54,8 @@ const guards: Record<
   session_info: isSessionInfo,
   done: isDone,
   error: isErrorMessage,
+  set_mode: isSetModeMessage,
+  mode_changed: isModeChanged,
 };
 
 describe("protocol type guards", () => {
@@ -81,6 +87,7 @@ describe("protocol type guards", () => {
       "permission_response",
       "question_response",
       "interrupt",
+      "set_mode",
     ]);
 
     for (const msg of samples) {
@@ -92,5 +99,15 @@ describe("protocol type guards", () => {
         expect(isSidecarToUIMessage(msg)).toBe(true);
       }
     }
+  });
+
+  it("une PermissionResponse avec destination reste reconnue par isPermissionResponse", () => {
+    const alwaysAllow: DenProtocolMessage = {
+      type: "permission_response",
+      requestId: "r1",
+      approved: true,
+      destination: "localSettings",
+    };
+    expect(isPermissionResponse(alwaysAllow)).toBe(true);
   });
 });

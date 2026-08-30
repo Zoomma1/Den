@@ -9,6 +9,13 @@
  * - `den:active-tab-changed` (`detail: { tabId }`) à chaque changement de
  *   tab actif, y compris pour le tout premier tab créé au démarrage.
  *
+ * Sélecteur de mode de permission par tab (DEN-03) : un unique `<select>`
+ * reflète le mode EFFECTIF du tab actif (jamais optimiste — cf.
+ * `setModeSelectValue`). Un changement utilisateur envoie `set_mode` au
+ * sidecar du tab actif ; la valeur affichée ne bascule que sur réception
+ * d'un `mode_changed` (guard `isModeChanged`, routé par `router.ts` comme
+ * les autres messages sidecar -> UI).
+ *
  * Un sidecar par tab (`sidecar_spawn`/`sidecar_send`/`sidecar_kill`, cf.
  * `src-tauri/src/sidecar.rs`) — un crash n'emporte qu'un tab, les autres
  * continuent (routage/état isolés par tabId, cf. `router.ts`).
@@ -19,8 +26,10 @@ import type { DenContext } from "../core/registry";
 import {
   isDone,
   isErrorMessage,
+  isModeChanged,
   isSessionInfo,
   type ConversationMessage,
+  type PermissionModeId,
 } from "../types/protocol";
 import { TabRouter } from "./router";
 
@@ -28,9 +37,44 @@ interface Tab {
   id: string;
   cwd: string;
   sessionId?: string;
+  /** Mode de permission effectif du tab — un nouveau tab démarre en
+   * "default" ; ne change que sur confirmation `mode_changed` du sidecar
+   * (jamais d'optimisme, cf. sélecteur de mode dans `init`). */
+  mode: PermissionModeId;
   buttonEl: HTMLButtonElement;
   titleEl: HTMLSpanElement;
   statusEl: HTMLSpanElement;
+}
+
+/** Options fixes du sélecteur de mode — libellés en anglais (arbitrage
+ * produit, cf. blocks.ts). Un mode reçu hors de cette liste (ex.
+ * `bypassPermissions`) est ajouté dynamiquement par `ensureModeOption` pour
+ * rester honnête sur le mode réel du tab plutôt que de le masquer. */
+const MODE_OPTIONS: Array<{ value: PermissionModeId; label: string }> = [
+  { value: "default", label: "Default" },
+  { value: "acceptEdits", label: "Accept edits" },
+  { value: "plan", label: "Plan" },
+];
+
+/** Ajoute une option pour `mode` si le select ne la connaît pas déjà.
+ * Désactivée : un mode hors MVP (ex. `bypassPermissions`) doit être
+ * affichable comme état effectif, mais jamais sélectionnable à la main —
+ * le select est partagé entre tous les tabs, une option cliquable ferait de
+ * n'importe quel mode reçu une escalade à un clic depuis n'importe quel tab. */
+function ensureModeOption(select: HTMLSelectElement, mode: PermissionModeId): void {
+  if ([...select.options].some((option) => option.value === mode)) return;
+  const option = document.createElement("option");
+  option.value = mode;
+  option.textContent = mode;
+  option.disabled = true;
+  select.appendChild(option);
+}
+
+/** Reflète `mode` dans le select (ajoute l'option au besoin) — jamais
+ * d'optimisme : n'appeler qu'avec le mode EFFECTIF (courant ou confirmé). */
+function setModeSelectValue(select: HTMLSelectElement, mode: PermissionModeId): void {
+  ensureModeOption(select, mode);
+  select.value = mode;
 }
 
 /**
@@ -45,6 +89,34 @@ export function init(ctx: DenContext): void {
   const router = new TabRouter();
   const tabs = new Map<string, Tab>();
   let activeTabId: string | null = null;
+
+  const modeSelect = document.createElement("select");
+  modeSelect.className = "den-mode-select";
+  modeSelect.setAttribute("aria-label", "Permission mode");
+  for (const { value, label } of MODE_OPTIONS) {
+    const option = document.createElement("option");
+    option.value = value;
+    option.textContent = label;
+    modeSelect.appendChild(option);
+  }
+  modeSelect.addEventListener("change", () => {
+    const tabId = activeTabId;
+    const tab = tabId ? tabs.get(tabId) : undefined;
+    if (!tabId || !tab) return;
+    const mode = modeSelect.value as PermissionModeId;
+    invoke("sidecar_send", {
+      tabId,
+      message: JSON.stringify({ type: "set_mode", mode }),
+    }).catch((err: unknown) => {
+      // Même traitement que les autres échecs d'envoi (cf. sendPrompt) : un
+      // set_mode perdu sans signal UI serait relu comme un bug du sélecteur.
+      markTabError(tab, err instanceof Error ? err.message : String(err));
+    });
+    // Pas d'optimisme : le select revient au mode effectif courant tant que
+    // le sidecar n'a pas confirmé via `mode_changed` (cf. handler du channel
+    // plus bas).
+    setModeSelectValue(modeSelect, tab.mode);
+  });
 
   function dispatchSessionMessage(
     tabId: string,
@@ -68,6 +140,8 @@ export function init(ctx: DenContext): void {
       tab.buttonEl.setAttribute("aria-selected", String(selected));
       tab.buttonEl.classList.toggle("den-tab--active", selected);
     }
+    const active = tabs.get(tabId);
+    if (active) setModeSelectValue(modeSelect, active.mode);
     dispatchActiveTabChanged(tabId);
   }
 
@@ -140,7 +214,7 @@ export function init(ctx: DenContext): void {
     const list = ctx.mounts.tabs.querySelector(".den-tab-list");
     if (list) list.appendChild(buttonEl);
 
-    const tab: Tab = { id, cwd, buttonEl, titleEl, statusEl };
+    const tab: Tab = { id, cwd, mode: "default", buttonEl, titleEl, statusEl };
     tabs.set(id, tab);
     updateTabTitle(tab);
     router.registerTab(id);
@@ -155,7 +229,15 @@ export function init(ctx: DenContext): void {
           markTabError(tab, message.message);
         } else if (isDone(message) && router.getState(id) !== "error") {
           tab.statusEl.textContent = "";
+        } else if (isModeChanged(message)) {
+          // Idempotent : un doublon de mode_changed réécrit la même valeur
+          // sans effet observable.
+          tab.mode = message.mode;
+          if (activeTabId === id) setModeSelectValue(modeSelect, tab.mode);
         }
+        // Dispatché aussi bien pour les messages "métier" que pour
+        // mode_changed — le module interactive l'ignore, mais le contrat
+        // d'événement reste uniforme (cf. docstring de tête).
         dispatchSessionMessage(id, message);
       }
     };
@@ -220,7 +302,14 @@ export function init(ctx: DenContext): void {
     submitEl.className = "den-prompt-bar__submit";
     submitEl.textContent = "Envoyer";
 
-    form.append(textarea, submitEl);
+    // Colonne de droite : bouton d'envoi + sélecteur de mode dessous
+    // (retour grill DEN-03 : le sélecteur vit près de la saisie, pas dans la
+    // barre d'onglets).
+    const side = document.createElement("div");
+    side.className = "den-prompt-bar__side";
+    side.append(submitEl, modeSelect);
+
+    form.append(textarea, side);
     form.addEventListener("submit", (event) => {
       event.preventDefault();
       if (!activeTabId) return;
