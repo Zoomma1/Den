@@ -30,6 +30,7 @@
 import type {
   CanUseTool,
   PermissionResult,
+  PermissionUpdate,
 } from "@anthropic-ai/claude-agent-sdk";
 import type {
   PermissionRequest,
@@ -43,7 +44,12 @@ const ASK_USER_QUESTION_TOOL = "AskUserQuestion";
 const SESSION_INTERRUPTED_MESSAGE = "Requête annulée : session interrompue.";
 
 type PendingEntry =
-  | { kind: "permission"; resolve: (result: PermissionResult) => void }
+  | {
+      kind: "permission";
+      resolve: (result: PermissionResult) => void;
+      /** Suggestions d'always-allow proposées par le SDK pour cette requête (cf. `CanUseTool.suggestions`). */
+      suggestions?: PermissionUpdate[];
+    }
   | {
       kind: "question";
       resolve: (result: PermissionResult) => void;
@@ -106,7 +112,7 @@ export class PermissionBroker {
 
   /** À passer tel quel en `options.canUseTool` de `query()`. */
   readonly canUseTool: CanUseTool = (toolName, input, options) => {
-    const { requestId, signal } = options;
+    const { requestId, signal, suggestions, title, displayName, description } = options;
 
     if (signal.aborted) {
       return Promise.resolve({
@@ -118,7 +124,16 @@ export class PermissionBroker {
 
     return toolName === ASK_USER_QUESTION_TOOL
       ? this.askQuestion(requestId, input, signal)
-      : this.askPermission(requestId, toolName, input, signal);
+      : this.askPermission(
+          requestId,
+          toolName,
+          input,
+          signal,
+          suggestions,
+          title,
+          displayName,
+          description,
+        );
   };
 
   /** Résout la requête en attente correspondant à une `permission_response`. */
@@ -126,14 +141,38 @@ export class PermissionBroker {
     const pending = this.pending.get(response.requestId);
     if (!pending || pending.kind !== "permission") return;
     this.pending.delete(response.requestId);
-    pending.resolve(
-      response.approved
-        ? { behavior: "allow" }
-        : {
-            behavior: "deny",
-            message: response.reason ?? "Refusé par l'utilisateur.",
-          },
-    );
+
+    if (!response.approved) {
+      pending.resolve({
+        behavior: "deny",
+        message: response.reason ?? "Refusé par l'utilisateur.",
+      });
+      return;
+    }
+
+    const destination = response.destination;
+    const suggestions = pending.suggestions;
+    if (destination && suggestions && suggestions.length > 0) {
+      // Always-allow : on ne réécrit la destination que des règles d'outil
+      // retenues (addRules) — setMode/addDirectories/... passent tels quels,
+      // pour qu'un always-allow n'élargisse jamais un setMode ou un accès
+      // répertoire par effet de bord (cf. spec DEN-03).
+      const updatedPermissions: PermissionUpdate[] = suggestions.map((suggestion) =>
+        suggestion.type === "addRules" ? { ...suggestion, destination } : suggestion,
+      );
+      pending.resolve({ behavior: "allow", updatedPermissions });
+      // Un setMode transmis change le mode effectif de la session sans
+      // qu'aucun message SDK ne le confirme sur ce chemin — l'émettre ici,
+      // sinon le sélecteur de l'UI ment jusqu'au prochain tour.
+      for (const suggestion of updatedPermissions) {
+        if (suggestion.type === "setMode") {
+          this.send({ type: "mode_changed", mode: suggestion.mode });
+        }
+      }
+      return;
+    }
+
+    pending.resolve({ behavior: "allow" });
   }
 
   /** Résout la requête en attente correspondant à une `question_response`. */
@@ -178,9 +217,13 @@ export class PermissionBroker {
     toolName: string,
     input: Record<string, unknown>,
     signal: AbortSignal,
+    suggestions: PermissionUpdate[] | undefined,
+    title: string | undefined,
+    displayName: string | undefined,
+    description: string | undefined,
   ): Promise<PermissionResult> {
     return new Promise((resolve) => {
-      this.pending.set(requestId, { kind: "permission", resolve });
+      this.pending.set(requestId, { kind: "permission", resolve, suggestions });
       signal.addEventListener("abort", () => this.settleOnAbort(requestId, resolve), {
         once: true,
       });
@@ -189,6 +232,10 @@ export class PermissionBroker {
         requestId,
         toolName,
         input,
+        suggestions,
+        title,
+        displayName,
+        description,
       };
       this.send(message);
     });
