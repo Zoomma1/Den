@@ -69,4 +69,13 @@ describe("TabRouter", () => {
     router.markPromptSubmitted("tab-a");
     expect(router.getState("tab-a")).toBe("running");
   });
+
+  it("route une ligne mode_changed valide (guard isModeChanged, cf. DEN-03)", () => {
+    const router = new TabRouter();
+    router.registerTab("tab-a");
+    const routed = router.handleChunk("tab-a", '{"type":"mode_changed","mode":"plan"}\n');
+    expect(routed).toEqual([
+      { tabId: "tab-a", message: { type: "mode_changed", mode: "plan" } },
+    ]);
+  });
 });

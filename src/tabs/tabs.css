@@ -77,6 +77,25 @@
   color: var(--den-status-error);
 }
 
+/* Sélecteur de mode de permission (DEN-03) — reflète le mode effectif du
+ * tab actif, chrome sobre cohérent avec les chips d'onglets. */
+.den-mode-select {
+  padding: var(--den-space-1) var(--den-space-2);
+  border: 1px solid var(--den-border);
+  border-radius: var(--den-radius);
+  background: var(--den-bg-surface);
+  color: var(--den-fg-secondary);
+  font-family: var(--den-font-sans);
+  font-size: 0.85em;
+  cursor: pointer;
+}
+
+.den-mode-select:hover,
+.den-mode-select:focus-visible {
+  color: var(--den-fg);
+  border-color: var(--den-accent);
+}
+
 .den-tab-add {
   padding: var(--den-space-1) var(--den-space-2);
   border: 1px solid transparent;
@@ -98,6 +117,16 @@
   padding: var(--den-space-2);
   background: var(--den-bg);
   border-top: 1px solid var(--den-border);
+}
+
+.den-prompt-bar__side {
+  display: flex;
+  flex-direction: column;
+  gap: var(--den-space-1);
+}
+
+.den-prompt-bar__side .den-prompt-bar__submit {
+  width: 100%;
 }
 
 .den-prompt-bar__input {
