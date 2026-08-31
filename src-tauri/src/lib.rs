@@ -13,6 +13,7 @@ pub fn run() {
             sidecar::sidecar_spawn,
             sidecar::sidecar_send,
             sidecar::sidecar_kill,
+            sidecar::sidecar_kill_all,
             theme::theme_read,
             theme::theme_watch,
         ])
