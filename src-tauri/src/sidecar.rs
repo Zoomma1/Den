@@ -22,7 +22,7 @@ use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use tauri::ipc::Channel;
 
@@ -118,6 +118,42 @@ fn resolve_sidecar_command(cwd: &str) -> Result<Command, String> {
     Ok(command)
 }
 
+/// Énumère les PID de TOUS les descendants transitifs de `root` (DEN-06,
+/// escalade de `sidecar_kill`), le wrapper exclu. Parcours de l'arbre via
+/// `pgrep -P` — PAS `ps -ppid`, qui n'existe pas sur macOS (BSD ps :
+/// "Invalid process id"). Récursif car l'arbre réel a ≥3 niveaux sous le
+/// wrapper (tsx -> node main.ts -> CLI claude -> bash éventuels) : ne tuer
+/// que les enfants directs orphelinerait le CLI. macOS ne permet pas
+/// d'énumérer par marqueur d'env (l'env d'un process n'est pas lisible par
+/// `ps`) — la parenté, parent vivant, est la seule voie disponible, d'où
+/// l'appel juste avant de tuer le wrapper (au-delà, ses descendants sont
+/// reparentés et leur ppid d'origine est perdu).
+/// Best-effort, deux limites assumées : un échec de `pgrep` (binaire
+/// absent, sandbox...) donne une liste vide plutôt qu'une erreur —
+/// l'escalade continue quand même avec le kill du wrapper lui-même ; et
+/// l'énumération est un instantané (TOCTOU) — un descendant qui fork entre
+/// l'instantané et son propre kill laisse un petit-fils non énuméré. Ce
+/// chemin n'est que le filet du filet (mort douce ratée après 3 s) ; la
+/// garantie de fond reste l'auto-terminaison côté `main.ts`.
+fn enumerate_descendants(root: u32) -> Vec<u32> {
+    let mut descendants = Vec::new();
+    let mut frontier = vec![root];
+    while let Some(pid) = frontier.pop() {
+        let output = match Command::new("pgrep").arg("-P").arg(pid.to_string()).output() {
+            Ok(output) => output,
+            Err(_) => continue,
+        };
+        for child in String::from_utf8_lossy(&output.stdout)
+            .lines()
+            .filter_map(|line| line.trim().parse::<u32>().ok())
+        {
+            descendants.push(child);
+            frontier.push(child);
+        }
+    }
+    descendants
+}
+
 #[tauri::command]
 pub fn sidecar_spawn(
     tab_id: String,
@@ -128,7 +164,29 @@ pub fn sidecar_spawn(
         return Err(format!("un sidecar tourne déjà pour le tab {tab_id}"));
     }
 
-    let mut child: Child = resolve_sidecar_command(&cwd)?
+    let mut command = resolve_sidecar_command(&cwd)?;
+
+    // Marqueur d'identification de l'ARBRE sidecar (DEN-06) : hérité par
+    // tout descendant (tsx -> node main.ts -> CLI -> bash detached), il
+    // permet de découvrir/compter les arbres via `ps -E`. Découverte
+    // uniquement — tout kill reste gardé PID par PID après vérification.
+    let marker = format!(
+        "{tab_id}-{}",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0)
+    );
+    command.env("DEN_SIDECAR", &marker);
+
+    // PID du process Rust, pour le watchdog de `sidecar/src/main.ts`
+    // (DEN-06) : `process.ppid` là-bas ne voit que le wrapper tsx (main.ts
+    // tourne dans un node FILS du wrapper), jamais ce process — un crash de
+    // l'app laisserait le tsx orphelin vivant et le ppid du node inchangé.
+    // Le sidecar sonde donc directement la vie de CE pid (`kill(pid, 0)`).
+    command.env("DEN_PARENT_PID", std::process::id().to_string());
+
+    let mut child: Child = command
         .spawn()
         .map_err(|err| format!("échec du spawn du sidecar: {err}"))?;
 
@@ -197,12 +255,56 @@ pub fn sidecar_spawn(
     {
         let tab_id = tab_id.clone();
         thread::spawn(move || {
+            // Mort douce puis escalade (DEN-06). Le retrait du registre
+            // (`sidecar_kill`/`sidecar_kill_all`, avant que `shutdown` ne
+            // passe à `true`) a déjà drop l'unique `Arc<Mutex<ChildStdin>>`
+            // du tab -> EOF sur le stdin du wrapper tsx -> `rl.on("close")`
+            // côté `sidecar/src/main.ts` -> `dieGracefully()` -> cascade
+            // jusqu'au CLI claude et au wrapper lui-même. On laisse cette
+            // cascade s'exécuter avant de tuer quoi que ce soit : `shutdown_at`
+            // marque l'instant de la première observation du flag, jamais
+            // réarmé ensuite (une seule fenêtre de grâce par tab).
+            let mut shutdown_at: Option<Instant> = None;
+            let mut escalated = false;
             let status = loop {
                 match child.try_wait() {
                     Ok(Some(status)) => break Some(status),
                     Ok(None) => {
                         if shutdown.load(Ordering::SeqCst) {
-                            let _ = child.kill();
+                            match shutdown_at {
+                                None => shutdown_at = Some(Instant::now()),
+                                Some(at)
+                                    if !escalated && at.elapsed() >= Duration::from_secs(3) =>
+                                {
+                                    // Mort douce sans effet après 3s (main.ts
+                                    // bloqué, hard-exit qui pend, wrapper qui
+                                    // n'a jamais reçu l'EOF...) : escalade.
+                                    // Énumération des enfants directs du
+                                    // wrapper AVANT de le tuer — un wrapper
+                                    // mort ne les laisse plus retrouver par
+                                    // ppid (reparentés/orphelins, ppid perdu).
+                                    escalated = true;
+                                    let descendants = enumerate_descendants(child.id());
+                                    let _ = child.kill();
+                                    for pid in descendants {
+                                        // PID exact fraîchement énuméré —
+                                        // jamais de pkill/pattern (cf.
+                                        // commentaire du marqueur DEN_SIDECAR
+                                        // plus haut : découverte uniquement,
+                                        // kill toujours PID par PID vérifié).
+                                        // `-9` : même sémantique que le
+                                        // `child.kill()` (SIGKILL) du wrapper
+                                        // — dans cette branche le process est
+                                        // présumé gelé, un SIGTERM catchable
+                                        // ne garantirait rien.
+                                        let _ = Command::new("kill")
+                                            .arg("-9")
+                                            .arg(pid.to_string())
+                                            .status();
+                                    }
+                                }
+                                _ => {}
+                            }
                         }
                         thread::sleep(Duration::from_millis(100));
                     }
@@ -269,7 +371,33 @@ pub fn sidecar_kill(tab_id: String) -> Result<(), String> {
     // Idempotent : un tab déjà mort (crash détecté par le thread de
     // surveillance, qui s'est déjà retiré du registre) ne doit jamais faire
     // échouer la fermeture du tab côté UI.
+    //
+    // Le `remove` ici est ce qui déclenche la mort douce (DEN-06) : `entry`
+    // est possédé localement puis drop en fin de fonction, entraînant le
+    // drop du dernier `Arc<Mutex<ChildStdin>>` du tab (aucun autre clone ne
+    // survit ailleurs — `sidecar_send` ne fait qu'emprunter le sien le
+    // temps d'une écriture, cf. doc de `TabSidecar::stdin`) => fermeture du
+    // fd => EOF côté sidecar, AVANT même que `shutdown` ne soit vu par le
+    // thread de surveillance.
     if let Some(entry) = lock_registry().remove(&tab_id) {
+        entry.shutdown.store(true, Ordering::SeqCst);
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub fn sidecar_kill_all() -> Result<(), String> {
+    // Purge totale du registre (DEN-06) : appelée par `src/tabs/index.ts`
+    // en tout début de `init()`, avant tout `sidecar_spawn`, pour tuer les
+    // sidecars d'une session précédente qui auraient échappé à
+    // `sidecar_kill` (ex. l'app tuée avant fermeture propre des tabs — le
+    // thread de surveillance de chaque sidecar orphelin les rattrape aussi
+    // via le watchdog ppid côté `main.ts`, mais cette purge est immédiate).
+    // Même séquence de mort douce que `sidecar_kill`, tab par tab : le
+    // `drain` possède chaque `entry` localement, elle drop en fin de corps
+    // de boucle -> même cascade EOF que ci-dessus, pour chaque tab.
+    let mut registry = lock_registry();
+    for (_, entry) in registry.drain() {
         entry.shutdown.store(true, Ordering::SeqCst);
     }
     Ok(())
