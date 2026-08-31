@@ -245,9 +245,70 @@ rl.on("line", (line) => {
   }
 });
 
+/**
+ * Auto-terminaison (DEN-06) : le CLI claude et le wrapper tsx ne meurent
+ * qu'en cascade de LA mort de CE process (node main.ts) — sans elle, l'EOF
+ * sur stdin (drop du ChildStdin côté Rust) est bien reçu ici (cf.
+ * `rl.on("close")` ci-dessous) mais ne suffisait pas à faire sortir
+ * main.ts, laissant tout l'arbre en fuite derrière lui. `interrupt()`
+ * tente une sortie propre de la query en cours (best-effort : elle peut
+ * déjà être terminée, d'où le `.catch`) ; le timer hard-exit couvre le cas
+ * où `interrupt()` ne résout jamais. Idempotente (garde `dying`) : le
+ * watchdog ppid ci-dessous et `rl.on("close")` peuvent tous deux
+ * l'invoquer.
+ */
+let dying = false;
+function dieGracefully(): void {
+  if (dying) return;
+  dying = true;
+  // Jamais `.unref()` : ce timer doit tenir l'event loop ouverte jusqu'à
+  // son déclenchement pour garantir la sortie même si `interrupt()` pend
+  // indéfiniment (sans lui, un event loop par ailleurs vide pourrait sortir
+  // avant l'échéance, mais rien ne le garantit dans le cas contraire).
+  setTimeout(() => process.exit(0), 2000);
+  queryHandle
+    .interrupt()
+    .catch(() => {
+      // Query déjà terminée/jamais démarrée — sans conséquence, on sort
+      // quand même.
+    })
+    .then(() => process.exit(0));
+}
+
 // Filet de sécurité : stdin fermé (process en train de s'arrêter) avant que
 // le SDK n'ait signalé l'abandon d'un tool call en attente de décision —
 // cf. docstring `PermissionBroker.rejectAllPending`.
 rl.on("close", () => {
   permissionBroker.rejectAllPending();
+  dieGracefully();
 });
+
+/**
+ * Watchdog parent (DEN-06) : si le process Rust meurt sans passer par le
+ * retrait de registre habituel (crash, kill -9...) et que l'EOF stdin se
+ * perd, ce sidecar resterait orphelin indéfiniment. `process.ppid` ne
+ * suffit PAS : ce process (node main.ts) est un FILS du wrapper tsx, pas du
+ * process Rust — un crash de Rust orpheline le tsx (qui survit, reparenté à
+ * launchd) sans jamais changer le ppid vu d'ici. On sonde donc directement
+ * le PID Rust transmis au spawn (`DEN_PARENT_PID`, cf.
+ * src-tauri/src/sidecar.rs) via `kill(pid, 0)` — signal nul, pur test
+ * d'existence. Un throw (ESRCH : mort ; EPERM : PID recyclé par un process
+ * d'un autre user, donc le parent est mort aussi) = mourir. Le test
+ * `ppid === 1` reste en complément pour le cas symétrique : le wrapper tsx
+ * meurt seul et ce node est reparenté à launchd. Un sidecar orphelin n'est
+ * JAMAIS légitime, peu importe la cause de la mort du parent.
+ */
+const parentPid = Number(process.env.DEN_PARENT_PID);
+setInterval(() => {
+  if (process.ppid === 1) {
+    dieGracefully();
+    return;
+  }
+  if (Number.isInteger(parentPid) && parentPid > 0) {
+    try {
+      process.kill(parentPid, 0);
+    } catch {
+      dieGracefully();
+    }
+  }
+}, 2000);
