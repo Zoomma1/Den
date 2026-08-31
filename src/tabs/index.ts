@@ -85,7 +85,28 @@ function setModeSelectValue(select: HTMLSelectElement, mode: PermissionModeId): 
  */
 const DEFAULT_CWD = ".";
 
-export function init(ctx: DenContext): void {
+export async function init(ctx: DenContext): Promise<void> {
+  // Purge des sidecars d'une éventuelle session précédente (DEN-06) — AVANT
+  // tout `sidecar_spawn` : la résolution de cet invoke est garantie ici
+  // avant que la moindre UI capable de spawn (bouton "+", premier tab plus
+  // bas) n'existe, donc avant qu'aucun `createTab` ne puisse s'exécuter.
+  // Sans cette garantie d'ordre, un `sidecar_kill_all` qui résoudrait après
+  // le premier `sidecar_spawn` de CETTE session tuerait le sidecar qu'on
+  // vient de faire naître. Volontairement PAS de timeout sur cet await : un
+  // `invoke` Tauri n'est pas annulable — un `Promise.race` n'abandonnerait
+  // que l'attente JS, laissant le kill_all en vol côté Rust s'exécuter
+  // APRÈS le premier spawn et tuer le tab qu'on vient d'ouvrir (la race
+  // exacte que ce commentaire décrit). L'await nu, lui, garantit l'ordre
+  // par construction. Contrepartie assumée : un IPC qui ne répond jamais
+  // fige le bootstrap — mais un IPC incapable de drainer une HashMap ne
+  // servirait pas davantage le spawn suivant ; l'app serait morte de toute
+  // façon, autant que ce soit visible.
+  try {
+    await invoke("sidecar_kill_all");
+  } catch (err) {
+    console.error("Den: échec sidecar_kill_all au démarrage", err);
+  }
+
   const router = new TabRouter();
   const tabs = new Map<string, Tab>();
   let activeTabId: string | null = null;
