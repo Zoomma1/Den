@@ -32,7 +32,7 @@ function emitSessionMessage(tabId: string, message: SidecarToUIMessage): void {
 
 function emitActiveTabChanged(tabId: string): void {
   window.dispatchEvent(
-    new CustomEvent("den:active-tab-changed", { detail: { tabId } }),
+    new CustomEvent("den:active-tab-changed", { detail: { tabId, projectId: null } }),
   );
 }
 

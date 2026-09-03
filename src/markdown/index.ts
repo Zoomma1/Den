@@ -7,10 +7,13 @@
  *   (`detail: { tabId: string, message: ConversationMessage }`) pour chaque
  *   message reçu d'un sidecar (plus l'écho local `user_echo`), et
  *   `CustomEvent<'den:active-tab-changed'>`
- *   (`detail: { tabId: string }`) à chaque changement de tab actif (émis
- *   aussi pour le tout premier tab).
+ *   (`detail: { tabId: string | null, projectId: string | null }`) à chaque
+ *   changement de tab actif — `null` quand plus aucun tab n'existe (dernier
+ *   tab fermé, ou aucune session lancée : DEN-04 A1 ne crée plus de tab au
+ *   démarrage).
  * - ce module maintient un container de conversation PAR tabId dans
- *   #den-conversation ; seul celui du tab actif est visible.
+ *   #den-conversation ; seul celui du tab actif est visible. `tabId === null`
+ *   masque toutes les vues existantes sans en créer.
  *
  * Contrainte de résultat (CLAUDE.md racine) : replay d'un transcript réel à
  * vitesse réelle sans freeze perceptible — cf. `renderer.ts` pour la
@@ -27,7 +30,8 @@ interface SessionMessageDetail {
 }
 
 interface ActiveTabChangedDetail {
-  tabId: string;
+  tabId: string | null;
+  projectId: string | null;
 }
 
 const views = new Map<string, ConversationView>();
@@ -43,11 +47,17 @@ function getOrCreateView(tabId: string): ConversationView {
   return view;
 }
 
-function setActiveTab(tabId: string): void {
-  const active = getOrCreateView(tabId);
+/** `tabId === null` (aucune session active) masque toutes les vues sans en
+ * créer — état normal au démarrage et après la fermeture du dernier tab. */
+function setActiveTab(tabId: string | null): void {
+  const active = tabId === null ? null : getOrCreateView(tabId);
   for (const view of views.values()) {
     view.el.hidden = view !== active;
   }
+  // Le wrapper lui-même sort du flux : sinon il garde son `flex: 1 1 auto`
+  // sans contenu visible et partage la hauteur du pane avec l'état vide du
+  // module tabs, qui se retrouve centré dans la moitié basse.
+  if (viewsRoot) viewsRoot.hidden = active === null;
 }
 
 function onSessionMessage(event: Event): void {
@@ -67,11 +77,15 @@ function onActiveTabChanged(event: Event): void {
 }
 
 export function init(ctx: DenContext): void {
-  // #den-conversation est partagé avec la prompt bar du module tabs — ne
-  // jamais vider le mount : ce module ne possède que son wrapper de views,
-  // inséré en tête pour que la prompt bar (append par tabs) reste en bas.
+  // #den-conversation est partagé avec le module tabs — ne jamais vider le
+  // mount : ce module ne possède que son wrapper de views. Ordre DOM
+  // (invariant, cf. main.ts) : tabs s'init APRÈS et prepend son header de
+  // session au-dessus de `.den-views`, puis append état vide et prompt bar
+  // en dessous. Masqué tant qu'aucune session n'est active (DEN-04 A1 : plus
+  // de tab auto-créé au démarrage).
   viewsRoot = document.createElement("div");
   viewsRoot.className = "den-views";
+  viewsRoot.hidden = true;
   ctx.mounts.conversation.prepend(viewsRoot);
   window.addEventListener("den:session-message", onSessionMessage);
   window.addEventListener("den:active-tab-changed", onActiveTabChanged);
