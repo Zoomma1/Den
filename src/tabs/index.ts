@@ -1,13 +1,18 @@
 /**
- * Module `tabs` — barre d'onglets, un sidecar par session/tab.
+ * Module `tabs` — barre d'onglets, un sidecar par session/tab, ancré dans un
+ * projet (DEN-04 A1 : plus de tab auto au démarrage, plus de `cwd` "." par
+ * défaut — chaque tab naît d'un projet choisi via « Launch Claude in… »).
  *
- * Contrat inter-lots (événements DOM sur `window`, aucun fichier partagé) :
+ * Contrat inter-lots (événements DOM sur `window` ; `tabs` consomme en plus
+ * l'API du module `workspace` — projets, picker, cf. `src/workspace/index.ts`) :
  * - `den:session-message` (`detail: { tabId, message: ConversationMessage }`) :
  *   chaque message sidecar reçu et validé contre le protocole wire, plus
  *   l'écho local `user_echo` fabriqué ici à l'envoi d'un prompt (cf.
  *   `src/types/protocol.ts` — `UserEcho` n'est jamais sur le wire).
- * - `den:active-tab-changed` (`detail: { tabId }`) à chaque changement de
- *   tab actif, y compris pour le tout premier tab créé au démarrage.
+ * - `den:active-tab-changed`
+ *   (`detail: { tabId: string | null, projectId: string | null }`) à chaque
+ *   changement de tab actif, y compris `{ null, null }` quand le dernier tab
+ *   se ferme (aucune session restante).
  *
  * Sélecteur de mode de permission par tab (DEN-03) : un unique `<select>`
  * reflète le mode EFFECTIF du tab actif (jamais optimiste — cf.
@@ -17,8 +22,8 @@
  * les autres messages sidecar -> UI).
  *
  * Un sidecar par tab (`sidecar_spawn`/`sidecar_send`/`sidecar_kill`, cf.
- * `src-tauri/src/sidecar.rs`) — un crash n'emporte qu'un tab, les autres
- * continuent (routage/état isolés par tabId, cf. `router.ts`).
+ * `src-tauri/src/sidecar.rs`) — un crash n'emporte qu'un tab (routage/état
+ * isolés par tabId, cf. `router.ts`).
  */
 import { Channel, invoke } from "@tauri-apps/api/core";
 import "./tabs.css";
@@ -31,11 +36,13 @@ import {
   type ConversationMessage,
   type PermissionModeId,
 } from "../types/protocol";
+import { addProject, getProjects, pickProjectDirectory } from "../workspace";
+import { displayName, type Project } from "../workspace/store";
 import { TabRouter } from "./router";
 
 interface Tab {
   id: string;
-  cwd: string;
+  projectId: string;
   sessionId?: string;
   /** Mode de permission effectif du tab — un nouveau tab démarre en
    * "default" ; ne change que sur confirmation `mode_changed` du sidecar
@@ -77,19 +84,11 @@ function setModeSelectValue(select: HTMLSelectElement, mode: PermissionModeId): 
   select.value = mode;
 }
 
-/**
- * Cwd par défaut d'un nouveau tab. Aucun sélecteur de dossier natif n'est
- * dans le périmètre de ce lot (pas de plugin dialog installé) — "." résout
- * côté Rust au cwd du process app. Limitation connue : pas d'édition du cwd
- * après création dans ce lot (à couvrir par une UI dédiée si besoin).
- */
-const DEFAULT_CWD = ".";
-
 export async function init(ctx: DenContext): Promise<void> {
   // Purge des sidecars d'une éventuelle session précédente (DEN-06) — AVANT
   // tout `sidecar_spawn` : la résolution de cet invoke est garantie ici
-  // avant que la moindre UI capable de spawn (bouton "+", premier tab plus
-  // bas) n'existe, donc avant qu'aucun `createTab` ne puisse s'exécuter.
+  // avant que la moindre UI capable de spawn (bouton "Launch Claude in…")
+  // n'existe, donc avant qu'aucun `createTab` ne puisse s'exécuter.
   // Sans cette garantie d'ordre, un `sidecar_kill_all` qui résoudrait après
   // le premier `sidecar_spawn` de CETTE session tuerait le sidecar qu'on
   // vient de faire naître. Volontairement PAS de timeout sur cet await : un
@@ -110,6 +109,10 @@ export async function init(ctx: DenContext): Promise<void> {
   const router = new TabRouter();
   const tabs = new Map<string, Tab>();
   let activeTabId: string | null = null;
+  // Renseignés par buildPromptBar — désactivés tant qu'aucune session n'est
+  // active (cf. updateEmptyState).
+  let promptInputEl: HTMLTextAreaElement | null = null;
+  let promptSubmitEl: HTMLButtonElement | null = null;
 
   const modeSelect = document.createElement("select");
   modeSelect.className = "den-mode-select";
@@ -139,6 +142,18 @@ export async function init(ctx: DenContext): Promise<void> {
     setModeSelectValue(modeSelect, tab.mode);
   });
 
+  /** Projet du tab, retrouvé par `projectId` dans la liste courante — pas de
+   * référence figée sur `Tab` : le nom affiché (collision de basename) doit
+   * rester correct si d'autres projets sont ajoutés ensuite. */
+  function projectOf(tab: Tab): Project | undefined {
+    return getProjects().find((p) => p.id === tab.projectId);
+  }
+
+  function tabLabel(tab: Tab): string {
+    const project = projectOf(tab);
+    return project ? displayName(project, getProjects()) : tab.projectId;
+  }
+
   function dispatchSessionMessage(
     tabId: string,
     message: ConversationMessage,
@@ -148,31 +163,59 @@ export async function init(ctx: DenContext): Promise<void> {
     );
   }
 
-  function dispatchActiveTabChanged(tabId: string): void {
+  function dispatchActiveTabChanged(tabId: string | null, projectId: string | null): void {
     window.dispatchEvent(
-      new CustomEvent("den:active-tab-changed", { detail: { tabId } }),
+      new CustomEvent("den:active-tab-changed", { detail: { tabId, projectId } }),
     );
   }
 
-  function setActiveTab(tabId: string): void {
+  function updateSessionHeader(): void {
+    const tab = activeTabId ? tabs.get(activeTabId) : undefined;
+    if (!tab) {
+      sessionHeaderNameEl.textContent = "Aucune session";
+      sessionHeaderEl.removeAttribute("title");
+      sessionHeaderIdEl.textContent = "";
+      return;
+    }
+    const project = projectOf(tab);
+    sessionHeaderNameEl.textContent = tabLabel(tab);
+    if (project) sessionHeaderEl.title = project.path;
+    else sessionHeaderEl.removeAttribute("title");
+    sessionHeaderIdEl.textContent = tab.sessionId ? tab.sessionId.slice(0, 8) : "";
+  }
+
+  /** Sans session active : état vide visible, et prompt bar + sélecteur de
+   * mode désactivés — sinon un « Envoyer » ne fait rien en silence, et un
+   * mode choisi avant le lancement serait affiché sans jamais être envoyé. */
+  function updateEmptyState(): void {
+    const idle = activeTabId === null;
+    emptyStateEl.hidden = !idle;
+    modeSelect.disabled = idle;
+    if (promptInputEl) promptInputEl.disabled = idle;
+    if (promptSubmitEl) promptSubmitEl.disabled = idle;
+  }
+
+  function setActiveTab(tabId: string | null): void {
     activeTabId = tabId;
+    const active = tabId ? tabs.get(tabId) : undefined;
     for (const tab of tabs.values()) {
       const selected = tab.id === tabId;
       tab.buttonEl.setAttribute("aria-selected", String(selected));
       tab.buttonEl.classList.toggle("den-tab--active", selected);
     }
-    const active = tabs.get(tabId);
-    if (active) setModeSelectValue(modeSelect, active.mode);
-    dispatchActiveTabChanged(tabId);
+    // Sans tab actif, le select ne reflète plus aucun mode effectif : retour
+    // au défaut plutôt qu'un mode périmé du tab qui vient de fermer.
+    setModeSelectValue(modeSelect, active ? active.mode : "default");
+    updateSessionHeader();
+    updateEmptyState();
+    dispatchActiveTabChanged(tabId, active?.projectId ?? null);
   }
 
   function updateTabTitle(tab: Tab): void {
-    // "." = cwd par défaut, sans valeur pour l'utilisateur — préférer un
-    // libellé neutre en attendant un vrai choix de dossier par tab.
-    const label = tab.cwd === "." ? "Session" : tab.cwd;
     tab.titleEl.textContent = tab.sessionId
-      ? `${label} ${tab.sessionId.slice(0, 8)}`
-      : label;
+      ? `${tabLabel(tab)} ${tab.sessionId.slice(0, 8)}`
+      : tabLabel(tab);
+    if (activeTabId === tab.id) updateSessionHeader();
   }
 
   function markTabError(tab: Tab, message: string): void {
@@ -197,15 +240,13 @@ export async function init(ctx: DenContext): Promise<void> {
 
     if (activeTabId === tabId) {
       const remaining = [...tabs.keys()];
-      if (remaining.length > 0) {
-        setActiveTab(remaining[0]);
-      } else {
-        activeTabId = null;
-      }
+      // Dernier tab fermé -> `{ null, null }` (contrat inter-lots) : sans ça
+      // la conversation du tab mort restait affichée (bug corrigé au passage).
+      setActiveTab(remaining.length > 0 ? remaining[0] : null);
     }
   }
 
-  function createTab(cwd: string): Tab {
+  function createTab(project: Project): Tab {
     const id = crypto.randomUUID();
 
     const buttonEl = document.createElement("button");
@@ -235,7 +276,7 @@ export async function init(ctx: DenContext): Promise<void> {
     const list = ctx.mounts.tabs.querySelector(".den-tab-list");
     if (list) list.appendChild(buttonEl);
 
-    const tab: Tab = { id, cwd, mode: "default", buttonEl, titleEl, statusEl };
+    const tab: Tab = { id, projectId: project.id, mode: "default", buttonEl, titleEl, statusEl };
     tabs.set(id, tab);
     updateTabTitle(tab);
     router.registerTab(id);
@@ -263,7 +304,7 @@ export async function init(ctx: DenContext): Promise<void> {
       }
     };
 
-    invoke("sidecar_spawn", { tabId: id, cwd, onMessage: channel }).catch(
+    invoke("sidecar_spawn", { tabId: id, cwd: project.path, onMessage: channel }).catch(
       (err: unknown) => {
         markTabError(tab, err instanceof Error ? err.message : String(err));
       },
@@ -330,6 +371,8 @@ export async function init(ctx: DenContext): Promise<void> {
     side.className = "den-prompt-bar__side";
     side.append(submitEl, modeSelect);
 
+    promptInputEl = textarea;
+    promptSubmitEl = submitEl;
     form.append(textarea, side);
     form.addEventListener("submit", (event) => {
       event.preventDefault();
@@ -356,28 +399,76 @@ export async function init(ctx: DenContext): Promise<void> {
     ctx.mounts.conversation.appendChild(form);
   }
 
+  /** Ouvre le picker natif, ajoute (ou retrouve) le projet choisi et lui
+   * ouvre une session. `null` (picker annulé) : rien ne se passe, pas
+   * d'erreur console. */
+  let launching = false;
+  async function launchInProject(): Promise<void> {
+    // Anti-réentrance : un second clic pendant le picker ou le `save` du
+    // projet ouvrirait deux sessions pour un seul geste.
+    if (launching) return;
+    launching = true;
+    try {
+      const path = await pickProjectDirectory();
+      if (path === null) return;
+      const project = await addProject(path);
+      const tab = createTab(project);
+      // Un projet ajouté peut créer une collision de basename avec un tab
+      // existant : tous les titres sont recalculés, pas seulement le nouveau.
+      for (const other of tabs.values()) updateTabTitle(other);
+      setActiveTab(tab.id);
+    } finally {
+      launching = false;
+    }
+  }
+
+  /** Un même bouton « Launch Claude in… », dupliqué dans la barre d'onglets
+   * et dans l'état vide (même libellé, même action). */
+  function createLaunchButton(): HTMLButtonElement {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "den-launch";
+    button.textContent = "Launch Claude in…";
+    button.setAttribute("aria-label", "Launch Claude in…");
+    button.addEventListener("click", () => {
+      void launchInProject().catch((err: unknown) => {
+        console.error("Den: échec du picker/lancement de projet", err);
+      });
+    });
+    return button;
+  }
+
   ctx.mounts.tabs.textContent = "";
   const list = document.createElement("div");
   list.className = "den-tab-list";
   list.setAttribute("role", "tablist");
+  ctx.mounts.tabs.append(list, createLaunchButton());
 
-  const addEl = document.createElement("button");
-  addEl.type = "button";
-  addEl.className = "den-tab-add";
-  addEl.textContent = "+";
-  addEl.setAttribute("aria-label", "Nouvel onglet");
-  addEl.addEventListener("click", () => {
-    const tab = createTab(DEFAULT_CWD);
-    setActiveTab(tab.id);
-  });
+  // Header de session, en tête du mount conversation — `prepend` s'exécute
+  // après celui de `markdown` (`.den-views`, cf. ordre d'init dans main.ts) :
+  // le header passe donc au-dessus du fil.
+  const sessionHeaderEl = document.createElement("div");
+  sessionHeaderEl.className = "den-session-header";
+  const sessionHeaderNameEl = document.createElement("span");
+  sessionHeaderNameEl.className = "den-session-header__name";
+  const sessionHeaderIdEl = document.createElement("span");
+  sessionHeaderIdEl.className = "den-session-header__id";
+  sessionHeaderEl.append(sessionHeaderNameEl, sessionHeaderIdEl);
+  ctx.mounts.conversation.prepend(sessionHeaderEl);
 
-  ctx.mounts.tabs.append(list, addEl);
+  // État vide — visible ssi aucun tab actif (démarrage, ou dernier tab
+  // fermé).
+  const emptyStateEl = document.createElement("div");
+  emptyStateEl.className = "den-empty-state";
+  const emptyStateTextEl = document.createElement("p");
+  emptyStateTextEl.textContent = "Ouvre un projet pour démarrer une session";
+  emptyStateEl.append(emptyStateTextEl, createLaunchButton());
+  ctx.mounts.conversation.append(emptyStateEl);
 
   buildPromptBar();
 
-  // Premier tab créé au démarrage — den:active-tab-changed doit être émis
-  // pour lui aussi (contrat inter-lots), pas seulement pour les bascules
-  // ultérieures.
-  const first = createTab(DEFAULT_CWD);
-  setActiveTab(first.id);
+  // Aucun tab au démarrage (DEN-04 A1) — état vide affiché jusqu'au premier
+  // « Launch Claude in… ».
+  updateSessionHeader();
+  updateEmptyState();
 }

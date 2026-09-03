@@ -77,6 +77,14 @@
   color: var(--den-status-error);
 }
 
+/* Sans session active (état vide), saisie et sélecteur sont désactivés. */
+.den-prompt-bar__input:disabled,
+.den-prompt-bar__submit:disabled,
+.den-mode-select:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 /* Sélecteur de mode de permission (DEN-03) — reflète le mode effectif du
  * tab actif, chrome sobre cohérent avec les chips d'onglets. */
 .den-mode-select {
@@ -96,19 +104,69 @@
   border-color: var(--den-accent);
 }
 
-.den-tab-add {
+/* Bouton « Launch Claude in… » — remplace le "+" de la barre d'onglets
+ * (DEN-04 A1) ; le même bouton est réutilisé dans l'état vide. */
+.den-launch {
   padding: var(--den-space-1) var(--den-space-2);
   border: 1px solid transparent;
   border-radius: var(--den-radius);
   background: var(--den-bg-surface);
   color: var(--den-fg-secondary);
+  font-family: var(--den-font-sans);
+  font-size: 0.85em;
   cursor: pointer;
   transition: background-color 0.1s ease-out;
 }
 
-.den-tab-add:hover {
+.den-launch:hover {
   background: var(--den-bg-elevated);
   color: var(--den-fg);
+}
+
+/* Header de session — nom du projet (collision -> parent/basename, cf.
+ * displayName dans workspace/store.ts) + sessionId court, en tête du mount
+ * conversation, au-dessus du fil. */
+.den-session-header {
+  display: flex;
+  align-items: baseline;
+  gap: var(--den-space-2);
+  padding-bottom: var(--den-space-2);
+  border-bottom: 1px solid var(--den-border);
+  color: var(--den-fg);
+  font-family: var(--den-font-sans);
+}
+
+.den-session-header__name {
+  font-weight: 600;
+}
+
+.den-session-header__id {
+  color: var(--den-fg-muted);
+  font-family: var(--den-font-mono);
+  font-size: 0.85em;
+}
+
+/* État vide — aucune session active (démarrage, ou dernier tab fermé). */
+.den-empty-state {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--den-space-3);
+  min-height: 0;
+  color: var(--den-fg-muted);
+}
+
+/* `hidden` seul ne suffit pas : `display: flex` (author) l'emporte sur le
+ * `display: none` du user-agent — même repli explicite que
+ * `.den-conversation-tab[hidden]` dans markdown.css. */
+.den-empty-state[hidden] {
+  display: none;
+}
+
+.den-empty-state .den-launch {
+  border-color: var(--den-accent);
 }
 
 .den-prompt-bar {
