@@ -30,3 +30,8 @@ sidecar/dist
 # Rust / Tauri
 src-tauri/target
 src-tauri/gen/schemas
+
+# Workspace utilisateur (projets, layout) en dev — jamais versionné. Ancré à
+# la racine : un fixture nommé workspace.json ailleurs dans l'arbre reste
+# versionnable. Couvre aussi .tmp / .bak (écriture atomique + sauvegarde).
+/workspace.json*
