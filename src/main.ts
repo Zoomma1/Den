@@ -1,6 +1,7 @@
 import "./styles.css";
 import { Registry, type DenContext } from "./core/registry";
 import * as theme from "./theme";
+import * as workspace from "./workspace";
 import * as tabs from "./tabs";
 import * as markdown from "./markdown";
 import * as terminal from "./terminal";
@@ -28,10 +29,14 @@ const registry = new Registry();
 
 // Ordre d'initialisation fixe — ne pas réordonner sans raison documentée :
 // - theme en premier (pose les tokens CSS avant tout rendu) ;
-// - markdown avant tabs : tabs émet `den:active-tab-changed` de façon
-//   synchrone pour son premier tab dès son init — si markdown n'écoute pas
-//   encore, la conversation du premier tab reste montée cachée (hidden).
+// - workspace avant tabs : `workspace.init` charge workspace.json dans
+//   l'objet module-level que `getProjects()` expose — tabs le lit dès qu'un
+//   tab existe, et la sidebar (A2) dès son premier rendu ;
+// - markdown avant tabs : invariant DOM, pas d'événement en jeu — les deux
+//   font `prepend` dans #den-conversation, et tabs doit passer en dernier
+//   pour que son header de session se retrouve au-dessus de `.den-views`.
 registry.register({ name: "theme", init: theme.init });
+registry.register({ name: "workspace", init: workspace.init });
 registry.register({ name: "markdown", init: markdown.init });
 registry.register({ name: "tabs", init: tabs.init });
 registry.register({ name: "terminal", init: terminal.init });
