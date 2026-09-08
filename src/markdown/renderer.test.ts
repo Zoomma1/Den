@@ -79,6 +79,18 @@ describe("IncrementalMarkdownRenderer", () => {
     expect(html).toContain("hljs");
   });
 
+  it("ne colore pas le bloc de code COURANT (fence ouvert), seulement à la finalisation — mesure 1b.2", () => {
+    const renderer = new IncrementalMarkdownRenderer();
+    const { currentHtml } = renderer.feed("```ts\nconst x: number = 1;\n");
+    expect(currentHtml).toContain('<pre class="den-code">');
+    expect(currentHtml).toContain('class="den-copy"');
+    expect(currentHtml).not.toContain("hljs");
+    expect(currentHtml).toContain("const x: number = 1;");
+
+    const finalized = renderer.feed("```\n\nsuite").finalizedHtml.join("");
+    expect(finalized).toContain("hljs");
+  });
+
   it("ne plante pas sur un langage de bloc de code inconnu", () => {
     const renderer = new IncrementalMarkdownRenderer();
     renderer.feed("```not-a-real-language\nsome text\n```\n\nsuite");

@@ -51,6 +51,18 @@ function escapeHtml(text: string): string {
     .replace(/>/g, "&gt;");
 }
 
+/**
+ * Enveloppe commune d'un bloc de code (coloré ou non). Bouton copier émis
+ * ICI (pas injecté après coup, cf. D8) : `.den-msg-current` est réécrit par
+ * `innerHTML` à chaque frame pendant le stream (conversationView.ts) — une
+ * injection post-render ne survivrait pas au prochain remplacement.
+ * Convention unique : le bouton précède immédiatement l'élément dont le
+ * `textContent` est copié.
+ */
+function wrapCode(innerHtml: string, codeClass: string): string {
+  return `<pre class="den-code"><button class="den-copy" type="button" aria-label="Copier" title="Copier">⧉</button><code class="${codeClass}">${innerHtml}</code></pre>`;
+}
+
 function highlightCode(text: string, lang: string | undefined): string {
   const language = lang && hljs.getLanguage(lang) ? lang : undefined;
   let highlighted: string;
@@ -62,7 +74,19 @@ function highlightCode(text: string, lang: string | undefined): string {
     highlighted = escapeHtml(text);
   }
   const langClass = language ? ` language-${language}` : "";
-  return `<pre class="den-code"><code class="hljs${langClass}">${highlighted}</code></pre>`;
+  return wrapCode(highlighted, `hljs${langClass}`);
+}
+
+/**
+ * Bloc de code NON coloré — réservé au bloc courant (mesure 1b.2 du grill
+ * DEN-10, 06/09 : un fence de 300 lignes streamé donnait 57 frames > 50 ms,
+ * parce que `highlightAuto` — qui essaie toutes les langues — tournait sur
+ * le bloc entier à chaque frame). La coloration n'arrive qu'à la
+ * finalisation, sur un bloc qui ne bouge plus. Même enveloppe, même bouton
+ * copier : le DOM garde la même forme entre courant et finalisé.
+ */
+function plainCode(text: string): string {
+  return wrapCode(escapeHtml(text), "den-code-plain");
 }
 
 /**
@@ -79,14 +103,14 @@ function highlightCode(text: string, lang: string | undefined): string {
  * serait exécuté tel quel (XSS). Le Markdown "normal" (gras, liens, code,
  * listes, tableaux...) ne passe pas par ce chemin et n'est pas affecté.
  */
-export function createMarkdownEngine(): Marked {
+export function createMarkdownEngine(highlight = true): Marked {
   const md = new Marked();
   md.use({
     gfm: true,
     breaks: true,
     renderer: {
       code({ text, lang }) {
-        return highlightCode(text, lang);
+        return highlight ? highlightCode(text, lang) : plainCode(text);
       },
       html({ text }) {
         return escapeHtml(text);
@@ -98,10 +122,13 @@ export function createMarkdownEngine(): Marked {
 
 export class IncrementalMarkdownRenderer {
   private readonly md: Marked;
+  /** Même grammaire, sans coloration — ne sert qu'au bloc COURANT (cf. `plainCode`). */
+  private readonly mdPlain: Marked;
   private pending = "";
 
-  constructor(md: Marked = createMarkdownEngine()) {
+  constructor(md: Marked = createMarkdownEngine(), mdPlain: Marked = createMarkdownEngine(false)) {
     this.md = md;
+    this.mdPlain = mdPlain;
   }
 
   /** Texte non encore finalisé (bloc markdown en cours) — utile pour les tests. */
@@ -143,7 +170,7 @@ export class IncrementalMarkdownRenderer {
 
     if (lastSpaceIndex === -1) {
       // Aucune ligne vide confirmée pour l'instant : tout reste "courant".
-      return { finalizedHtml: [], currentHtml: this.md.parser(tokens) };
+      return { finalizedHtml: [], currentHtml: this.mdPlain.parser(tokens) };
     }
 
     const finalizedTokens = tokens.slice(0, lastSpaceIndex + 1);
@@ -158,7 +185,7 @@ export class IncrementalMarkdownRenderer {
     // ligne vide confirmée — jamais le buffer entier du message.
     this.pending = this.pending.slice(finalizedRawLength);
     const currentHtml =
-      remainingTokens.length > 0 ? this.md.parser(remainingTokens) : "";
+      remainingTokens.length > 0 ? this.mdPlain.parser(remainingTokens) : "";
     return { finalizedHtml, currentHtml };
   }
 
