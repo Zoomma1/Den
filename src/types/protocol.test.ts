@@ -3,6 +3,7 @@ import {
   type ConversationMessage,
   type DenProtocolMessage,
   isAssistantDelta,
+  isConversationReset,
   isDone,
   isErrorMessage,
   isInterruptMessage,
@@ -27,7 +28,7 @@ const samples: DenProtocolMessage[] = [
   { type: "question_response", requestId: "r2", answer: "oui" },
   { type: "interrupt" },
   { type: "assistant_delta", id: "1", text: "bon" },
-  { type: "tool_use", id: "t1", name: "Read", input: {} },
+  { type: "tool_use", id: "t1", toolUseId: "toolu_1", name: "Read", input: {} },
   { type: "tool_result", id: "t1", toolUseId: "t1", output: "ok" },
   { type: "permission_request", requestId: "r1", toolName: "Read", input: {} },
   { type: "question_request", requestId: "r2", question: "?" },
@@ -36,6 +37,7 @@ const samples: DenProtocolMessage[] = [
   { type: "error", message: "boom" },
   { type: "set_mode", mode: "acceptEdits" },
   { type: "mode_changed", mode: "plan" },
+  { type: "conversation_reset", sessionId: "s1", newConversationId: "c2" },
 ];
 
 const guards: Record<
@@ -56,6 +58,7 @@ const guards: Record<
   error: isErrorMessage,
   set_mode: isSetModeMessage,
   mode_changed: isModeChanged,
+  conversation_reset: isConversationReset,
 };
 
 describe("protocol type guards", () => {
