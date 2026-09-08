@@ -89,10 +89,20 @@ export interface AssistantDelta {
   text: string;
 }
 
-/** Le modèle invoque un outil. */
+/**
+ * Le modèle invoque un outil.
+ *
+ * Deux identifiants distincts, à ne pas confondre :
+ * - `id` : id du TOUR (turn) en cours, cohérent avec `AssistantDelta.id` et
+ *   `ToolResult.id` — plusieurs `tool_use` d'un même tour partagent ce `id`.
+ * - `toolUseId` : id du BLOC tool_use côté SDK (`block.id`, ex.
+ *   "toolu_01…"), unique par appel d'outil — c'est la clé qui apparie ce
+ *   `tool_use` avec le `ToolResult.toolUseId` correspondant.
+ */
 export interface ToolUse {
   type: "tool_use";
   id: string;
+  toolUseId: string;
   name: string;
   input: unknown;
 }
@@ -178,6 +188,18 @@ export interface ModeChanged {
   mode: PermissionModeId;
 }
 
+/**
+ * Le SDK a réinitialisé la conversation (`/clear`, sortie de plan mode,
+ * fresh-session flow — cf. sdk.d.ts `SDKConversationResetMessage`). L'UI
+ * doit vider le fil affiché : le contexte réel est reparti à zéro sous
+ * `newConversationId`.
+ */
+export interface ConversationReset {
+  type: "conversation_reset";
+  sessionId: string;
+  newConversationId: string;
+}
+
 export type SidecarToUIMessage =
   | AssistantDelta
   | ToolUse
@@ -187,7 +209,8 @@ export type SidecarToUIMessage =
   | SessionInfo
   | Done
   | ErrorMessage
-  | ModeChanged;
+  | ModeChanged
+  | ConversationReset;
 
 /**
  * Messages affichables dans le fil de conversation : le wire sidecar -> UI
@@ -273,6 +296,12 @@ export function isErrorMessage(msg: DenProtocolMessage): msg is ErrorMessage {
 
 export function isModeChanged(msg: DenProtocolMessage): msg is ModeChanged {
   return msg.type === "mode_changed";
+}
+
+export function isConversationReset(
+  msg: DenProtocolMessage,
+): msg is ConversationReset {
+  return msg.type === "conversation_reset";
 }
 
 export function isUserEcho(msg: ConversationMessage): msg is UserEcho {

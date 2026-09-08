@@ -1,5 +1,6 @@
 import {
   isAssistantDelta,
+  isConversationReset,
   isDone,
   isErrorMessage,
   isModeChanged,
@@ -12,7 +13,12 @@ import {
   type SidecarToUIMessage,
 } from "../types/protocol";
 import { NdjsonLineBuffer } from "./ndjson";
-import { reduceTabLifecycle, type TabLifecycleState } from "./lifecycle";
+import {
+  INITIAL_TAB_LIFECYCLE,
+  reduceTabLifecycle,
+  type TabLifecycle,
+  type TabLifecycleState,
+} from "./lifecycle";
 
 export interface RoutedMessage {
   tabId: string;
@@ -21,7 +27,7 @@ export interface RoutedMessage {
 
 interface TabEntry {
   buffer: NdjsonLineBuffer;
-  state: TabLifecycleState;
+  lifecycle: TabLifecycle;
 }
 
 /**
@@ -34,17 +40,22 @@ export class TabRouter {
   private readonly tabs = new Map<string, TabEntry>();
 
   registerTab(tabId: string): void {
-    this.tabs.set(tabId, { buffer: new NdjsonLineBuffer(), state: "idle" });
+    this.tabs.set(tabId, {
+      buffer: new NdjsonLineBuffer(),
+      lifecycle: { ...INITIAL_TAB_LIFECYCLE },
+    });
   }
 
+  /** Toujours l'état (string) du lifecycle du tab — `pendingTurns` reste
+   * interne au router/lifecycle, jamais exposé par cette API publique. */
   getState(tabId: string): TabLifecycleState | undefined {
-    return this.tabs.get(tabId)?.state;
+    return this.tabs.get(tabId)?.lifecycle.state;
   }
 
   markPromptSubmitted(tabId: string): void {
     const entry = this.tabs.get(tabId);
     if (!entry) return;
-    entry.state = reduceTabLifecycle(entry.state, { kind: "prompt_submitted" });
+    entry.lifecycle = reduceTabLifecycle(entry.lifecycle, { kind: "prompt_submitted" });
   }
 
   closeTab(tabId: string): void {
@@ -69,7 +80,7 @@ export class TabRouter {
     for (const line of entry.buffer.push(chunk)) {
       const message = parseSidecarMessage(line);
       if (!message) continue;
-      entry.state = reduceTabLifecycle(entry.state, {
+      entry.lifecycle = reduceTabLifecycle(entry.lifecycle, {
         kind: "sidecar_message",
         message,
       });
@@ -109,7 +120,8 @@ function parseSidecarMessage(line: string): SidecarToUIMessage | null {
     isSessionInfo(candidate) ||
     isDone(candidate) ||
     isErrorMessage(candidate) ||
-    isModeChanged(candidate);
+    isModeChanged(candidate) ||
+    isConversationReset(candidate);
 
   return isKnownSidecarMessage ? (candidate as SidecarToUIMessage) : null;
 }

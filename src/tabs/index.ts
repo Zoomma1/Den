@@ -13,6 +13,27 @@
  *   (`detail: { tabId: string | null, projectId: string | null }`) à chaque
  *   changement de tab actif, y compris `{ null, null }` quand le dernier tab
  *   se ferme (aucune session restante).
+ * - `den:tab-state-changed` (`detail: { tabId: string, state: TabLifecycleState }`) :
+ *   émis quand l'état de lifecycle d'un tab (cf. `./lifecycle.ts`, seule
+ *   source de vérité — DEN-10) change réellement, après chaque
+ *   `router.handleChunk` et après chaque `router.markPromptSubmitted`. Le
+ *   spinner du fil (module markdown) s'y abonne pour afficher "réfléchit…"
+ *   (`running`) ou "attend ta réponse" (`waiting`) ; ce module s'y abonne
+ *   lui-même (cf. `syncSubmitButton`) pour transformer le bouton d'envoi en
+ *   Stop tant que le tab ACTIF tourne un tour.
+ * - `den:edit-prompt` (`detail: { tabId: string, text: string }`), émis par
+ *   `src/markdown/conversationView.ts` (bouton `.den-edit` sur une bulle
+ *   user, D5) : reprend `text` dans la textarea du prompt SSI `tabId` est le
+ *   tab actif — n'interrompt rien, l'utilisateur fait Stop lui-même d'abord
+ *   si un tour tourne encore.
+ *
+ * Stop (D4) : pendant qu'un tour tourne sur le tab actif, le bouton
+ * d'envoi devient "Stop" (`syncSubmitButton`, lu depuis `router.getState` —
+ * aucun second compteur ici) et un clic envoie `{ type: "interrupt" }` au
+ * sidecar (`sendInterrupt`) sans toucher au contenu de la textarea. Le
+ * bouton ne redevient "Envoyer" que sur le `done` qui fait retomber l'état à
+ * `idle` — jamais d'optimisme. `Escape` dans la textarea fait la même chose
+ * quand le tab actif tourne.
  *
  * Sélecteur de mode de permission par tab (DEN-03) : un unique `<select>`
  * reflète le mode EFFECTIF du tab actif (jamais optimiste — cf.
@@ -29,7 +50,6 @@ import { Channel, invoke } from "@tauri-apps/api/core";
 import "./tabs.css";
 import type { DenContext } from "../core/registry";
 import {
-  isDone,
   isErrorMessage,
   isModeChanged,
   isSessionInfo,
@@ -38,6 +58,7 @@ import {
 } from "../types/protocol";
 import { addProject, getProjects, pickProjectDirectory } from "../workspace";
 import { displayName, type Project } from "../workspace/store";
+import type { TabLifecycleState } from "./lifecycle";
 import { TabRouter } from "./router";
 
 interface Tab {
@@ -169,6 +190,84 @@ export async function init(ctx: DenContext): Promise<void> {
     );
   }
 
+  /** Reflète en direct l'état `running` du tab ACTIF sur le bouton d'envoi
+   * (D4) — "Stop" (`type="button"`, cf. `sendInterrupt`) tant qu'un tour
+   * tourne sur ce tab, "Envoyer" (`type="submit"`, comportement natif du
+   * form) sinon. Lit `router.getState`, ne compte rien elle-même (seule
+   * source de vérité : `./lifecycle.ts`). Idempotente : rappelable sans
+   * condition depuis n'importe quel point qui peut avoir changé l'état
+   * affiché (tab actif changé, ou état du tab actif changé). */
+  function syncSubmitButton(): void {
+    if (!promptSubmitEl) return;
+    const state = activeTabId ? router.getState(activeTabId) : undefined;
+    // `waiting` aussi (review 07/09) : un tour bloqué sur une permission
+    // doit pouvoir être stoppé — `interrupt()` annule le tool call en attente.
+    if (state === "running" || state === "waiting") {
+      promptSubmitEl.type = "button";
+      promptSubmitEl.textContent = "Stop";
+      promptSubmitEl.classList.add("den-prompt-bar__submit--stop");
+    } else {
+      promptSubmitEl.type = "submit";
+      promptSubmitEl.textContent = "Envoyer";
+      promptSubmitEl.classList.remove("den-prompt-bar__submit--stop");
+    }
+  }
+
+  /** Émet `den:tab-state-changed` ssi l'état de lifecycle du tab a
+   * effectivement changé depuis `previousState` — un tab fermé entre-temps
+   * (`getState` -> undefined) n'émet rien. Unique point d'émission de cet
+   * événement (cf. docstring de tête), appelé après chaque
+   * `router.handleChunk` et après chaque `router.markPromptSubmitted`. */
+  function emitStateIfChanged(
+    tabId: string,
+    previousState: TabLifecycleState | undefined,
+  ): void {
+    const state = router.getState(tabId);
+    if (state === undefined || state === previousState) return;
+    window.dispatchEvent(
+      new CustomEvent("den:tab-state-changed", { detail: { tabId, state } }),
+    );
+    // Au même endroit que l'émission (jamais via un listener window sur son
+    // propre événement, cf. docstring de tête) — le tab qui a changé n'est
+    // pas forcément le tab actif, mais `syncSubmitButton` relit toujours
+    // l'état du tab actif : un appel pour un tab en arrière-plan est un
+    // no-op observable.
+    syncSubmitButton();
+  }
+
+  /** Envoie `{ type: "interrupt" }` au sidecar du tab (D4) — clic sur le
+   * bouton Stop, ou `Escape` dans la textarea pendant que le tab actif
+   * tourne. Ne touche jamais au contenu de la textarea : seul le prochain
+   * `done` (via `syncSubmitButton`) fait revenir le bouton à "Envoyer". */
+  async function sendInterrupt(tabId: string): Promise<void> {
+    const tab = tabs.get(tabId);
+    try {
+      await invoke("sidecar_send", {
+        tabId,
+        message: JSON.stringify({ type: "interrupt" }),
+      });
+    } catch (err) {
+      // Même traitement que les autres échecs d'envoi (cf. sendPrompt) : un
+      // interrupt perdu sans signal UI laisserait croire à un Stop qui n'a
+      // jamais atteint le sidecar.
+      if (tab) markTabError(tab, err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  /** Reflète l'état de lifecycle sur le chip d'onglet — "…" tant qu'un tour
+   * tourne ou qu'un tab attend une réponse utilisateur, vide sinon. Ne
+   * touche jamais l'état `error` : son texte (message complet) est posé par
+   * `markTabError`, jamais écrasé ici. Remplace l'ancien
+   * `isDone(...) && getState !== "error"` — un `done` peut désormais laisser
+   * le tab `running` s'il reste un tour en file (compteur lifecycle). */
+  function updateTabChip(tab: Tab, state: TabLifecycleState): void {
+    if (state === "running" || state === "waiting") {
+      tab.statusEl.textContent = "…";
+    } else if (state === "idle") {
+      tab.statusEl.textContent = "";
+    }
+  }
+
   function updateSessionHeader(): void {
     const tab = activeTabId ? tabs.get(activeTabId) : undefined;
     if (!tab) {
@@ -193,6 +292,7 @@ export async function init(ctx: DenContext): Promise<void> {
     modeSelect.disabled = idle;
     if (promptInputEl) promptInputEl.disabled = idle;
     if (promptSubmitEl) promptSubmitEl.disabled = idle;
+    syncSubmitButton();
   }
 
   function setActiveTab(tabId: string | null): void {
@@ -208,6 +308,7 @@ export async function init(ctx: DenContext): Promise<void> {
     setModeSelectValue(modeSelect, active ? active.mode : "default");
     updateSessionHeader();
     updateEmptyState();
+    syncSubmitButton();
     dispatchActiveTabChanged(tabId, active?.projectId ?? null);
   }
 
@@ -283,14 +384,13 @@ export async function init(ctx: DenContext): Promise<void> {
 
     const channel = new Channel<string>();
     channel.onmessage = (chunk) => {
+      const previousState = router.getState(id);
       for (const { message } of router.handleChunk(id, chunk)) {
         if (isSessionInfo(message)) {
           tab.sessionId = message.sessionId;
           updateTabTitle(tab);
         } else if (isErrorMessage(message)) {
           markTabError(tab, message.message);
-        } else if (isDone(message) && router.getState(id) !== "error") {
-          tab.statusEl.textContent = "";
         } else if (isModeChanged(message)) {
           // Idempotent : un doublon de mode_changed réécrit la même valeur
           // sans effet observable.
@@ -302,6 +402,11 @@ export async function init(ctx: DenContext): Promise<void> {
         // d'événement reste uniforme (cf. docstring de tête).
         dispatchSessionMessage(id, message);
       }
+      // Chip et événement de lifecycle basés sur l'état RÉSULTANT du chunk
+      // entier (pas message par message) — cf. `emitStateIfChanged`.
+      const state = router.getState(id);
+      if (state && state !== "error") updateTabChip(tab, state);
+      emitStateIfChanged(id, previousState);
     };
 
     invoke("sidecar_spawn", { tabId: id, cwd: project.path, onMessage: channel }).catch(
@@ -318,9 +423,11 @@ export async function init(ctx: DenContext): Promise<void> {
   async function sendPrompt(tabId: string, text: string): Promise<boolean> {
     const trimmed = text.trim();
     if (trimmed.length === 0) return true;
-    if (router.getState(tabId) === "error") return false;
+    const previousState = router.getState(tabId);
+    if (previousState === "error") return false;
 
     router.markPromptSubmitted(tabId);
+    emitStateIfChanged(tabId, previousState);
     const tab = tabs.get(tabId);
     if (tab) tab.statusEl.textContent = "…";
 
@@ -357,12 +464,20 @@ export async function init(ctx: DenContext): Promise<void> {
     const textarea = document.createElement("textarea");
     textarea.className = "den-prompt-bar__input";
     textarea.rows = 2;
-    textarea.placeholder = "Message pour Claude…";
+    textarea.placeholder = "Message pour Claude… (⌘⏎ pour envoyer)";
 
     const submitEl = document.createElement("button");
     submitEl.type = "submit";
     submitEl.className = "den-prompt-bar__submit";
     submitEl.textContent = "Envoyer";
+    // Mode Stop (D4, cf. syncSubmitButton) : le bouton passe en
+    // `type="button"` — ce clic-ci n'est alors PAS un submit de form, donc
+    // le listener "submit" du form ci-dessous ne s'en charge pas.
+    submitEl.addEventListener("click", () => {
+      if (submitEl.type === "button" && activeTabId) {
+        void sendInterrupt(activeTabId);
+      }
+    });
 
     // Colonne de droite : bouton d'envoi + sélecteur de mode dessous
     // (retour grill DEN-03 : le sélecteur vit près de la saisie, pas dans la
@@ -388,11 +503,26 @@ export async function init(ctx: DenContext): Promise<void> {
       });
     });
 
-    // Entrée envoie, Maj+Entrée insère un saut de ligne.
+    // Entrée seule : comportement natif (saut de ligne, on ne fait rien) —
+    // Entrée + Ctrl/Cmd/Maj envoie (D3, retour grill : des messages
+    // partaient par accident sur un simple Entrée). `requestSubmit()` marche
+    // même quand le bouton est en `type="button"` (mode Stop) : le submit du
+    // form ne dépend pas du bouton qui le déclenche.
     textarea.addEventListener("keydown", (event) => {
-      if (event.key === "Enter" && !event.shiftKey) {
+      if (event.key === "Enter") {
+        if (event.ctrlKey || event.metaKey || event.shiftKey) {
+          event.preventDefault();
+          form.requestSubmit();
+        }
+        return;
+      }
+      // Escape interrompt le tour en cours du tab actif (D4) — rien si le
+      // tab actif n'est pas `running` (ex. laisser Escape à son usage
+      // natif ailleurs, comme fermer un select ouvert).
+      const activeState = activeTabId ? router.getState(activeTabId) : undefined;
+      if (event.key === "Escape" && activeTabId && (activeState === "running" || activeState === "waiting")) {
         event.preventDefault();
-        form.requestSubmit();
+        void sendInterrupt(activeTabId);
       }
     });
 
@@ -466,6 +596,19 @@ export async function init(ctx: DenContext): Promise<void> {
   ctx.mounts.conversation.append(emptyStateEl);
 
   buildPromptBar();
+
+  // Éditer (D5) : reprend le texte d'une bulle user dans la textarea du
+  // prompt, SSI le message vient du tab actif — un tabId différent (bulle
+  // d'un autre tab, éventuellement en arrière-plan) ne touche à rien. Pas
+  // d'interruption automatique du tour en cours (cf. docstring de tête).
+  window.addEventListener("den:edit-prompt", (event) => {
+    const detail = (event as CustomEvent<{ tabId: string; text: string }>).detail;
+    if (!detail || detail.tabId !== activeTabId || !promptInputEl) return;
+    promptInputEl.value = detail.text;
+    promptInputEl.focus();
+    const len = promptInputEl.value.length;
+    promptInputEl.setSelectionRange(len, len);
+  });
 
   // Aucun tab au démarrage (DEN-04 A1) — état vide affiché jusqu'au premier
   // « Launch Claude in… ».

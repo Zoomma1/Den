@@ -96,6 +96,27 @@ function currentTurnId(): string {
   return pendingTurnIds[0] ?? "unknown";
 }
 
+/**
+ * État du streaming réel (DEN-10 lot 1b, `includePartialMessages: true`).
+ *
+ * `streamingMessageId` : id du message API (`message.id`, stable entre le
+ * `message_start` et le `assistant` final qui le clôt) actuellement en cours
+ * de stream — posé au `message_start`, jamais lu ailleurs qu'au moment d'un
+ * `text_delta`.
+ *
+ * `streamedTextMessageIds` : ids des messages pour lesquels AU MOINS UN
+ * `text_delta` a effectivement été relayé. Dédup PAR OBSERVATION (pas "tout
+ * `assistant` texte est un doublon") : on n'ignore un bloc `text` du message
+ * `assistant` final que si on a nous-même streamé du texte pour ce
+ * `message.id`. C'est ce qui garde vivant le cas S-b (sonde 05/09) — un tour
+ * comme `/model claude-inexistant-99` produit un `assistant` texte SANS
+ * aucun `stream_event` avant lui (sdk.d.ts l.3283 : "a turn that produces no
+ * stream events still stamps its first assistant message") ; ignorer ce
+ * bloc à l'aveugle le perdrait en silence.
+ */
+let streamingMessageId: string | null = null;
+const streamedTextMessageIds = new Set<string>();
+
 function parseIncoming(line: string): DenProtocolMessage | null {
   const trimmed = line.trim();
   if (trimmed.length === 0) return null;
@@ -138,7 +159,12 @@ async function handleSetMode(mode: PermissionModeId): Promise<void> {
 
 const queryHandle = query({
   prompt: inputQueue,
-  options: { canUseTool: permissionBroker.canUseTool },
+  // `includePartialMessages` (DEN-10 lot 1b) : sans ce flag, les messages
+  // `assistant` arrivent ENTIERS en fin de génération (silence total pendant
+  // le tour, cf. sonde 05/09) — avec lui, le SDK émet en plus des
+  // `stream_event` (`SDKPartialAssistantMessage`, sdk.d.ts l.4748) au fil de
+  // la génération, relayés en `assistant_delta` ci-dessous.
+  options: { canUseTool: permissionBroker.canUseTool, includePartialMessages: true },
 });
 
 async function pump(): Promise<void> {
@@ -161,9 +187,51 @@ async function pump(): Promise<void> {
         if (sdkMessage.permissionMode) {
           send({ type: "mode_changed", mode: sdkMessage.permissionMode });
         }
+      } else if (sdkMessage.type === "stream_event") {
+        // Sous-agents (DEN-10 lot 1b) : `parent_tool_use_id` non nul signale
+        // un event émis par un sous-agent. Le rendu des sous-agents est hors
+        // scope (pas de `forwardSubagentText`, cf. Options.forwardSubagentText
+        // dans sdk.d.ts) — on ignore silencieusement ces events ; le
+        // tool_use/tool_result du sous-agent reste relayé par ailleurs (cas
+        // "assistant"/"user" ci-dessous, jamais affecté par ce filtre).
+        if (sdkMessage.parent_tool_use_id !== null) {
+          continue;
+        }
+        const event = sdkMessage.event;
+        if (event.type === "message_start") {
+          streamingMessageId = event.message.id;
+        } else if (
+          event.type === "content_block_delta" &&
+          event.delta.type === "text_delta"
+        ) {
+          // On note avoir streamé du texte pour CE message.id — c'est cette
+          // observation, pas la simple présence d'un `assistant` texte, qui
+          // pilote la dédup au message final (cf. docstring
+          // `streamedTextMessageIds`).
+          if (streamingMessageId !== null) {
+            streamedTextMessageIds.add(streamingMessageId);
+          }
+          send({
+            type: "assistant_delta",
+            id: currentTurnId(),
+            text: event.delta.text,
+          });
+        }
+        // Tout autre event (thinking_delta — jamais relayé, input_json_delta,
+        // content_block_start/stop, message_delta/stop, ping...) : rien à
+        // faire ici.
       } else if (sdkMessage.type === "assistant") {
         for (const block of sdkMessage.message.content) {
           if (block.type === "text") {
+            // Sonde 05/09 : le message `assistant` final répète tout le
+            // texte déjà envoyé par les `stream_event` (même `message.id`)
+            // — sans cette dédup, l'UI afficherait le texte deux fois. Cas
+            // S-b (voir docstring `streamedTextMessageIds`) : ce message.id
+            // n'a jamais été streamé, donc le `has` est faux et le texte est
+            // bien relayé — seul filet de sécurité pour ce cas.
+            if (streamedTextMessageIds.has(sdkMessage.message.id)) {
+              continue;
+            }
             send({
               type: "assistant_delta",
               id: currentTurnId(),
@@ -173,6 +241,7 @@ async function pump(): Promise<void> {
             send({
               type: "tool_use",
               id: currentTurnId(),
+              toolUseId: block.id,
               name: block.name,
               input: block.input,
             });
@@ -197,9 +266,34 @@ async function pump(): Promise<void> {
             }
           }
         }
+      } else if (sdkMessage.type === "conversation_reset") {
+        // /clear, sortie de plan mode ou fresh-session flow (cf. sdk.d.ts
+        // `SDKConversationResetMessage`) : jamais de string-matching sur
+        // "/clear" ici, le SDK nous le dit explicitement par ce type.
+        send({
+          type: "conversation_reset",
+          sessionId: sdkMessage.session_id,
+          newConversationId: sdkMessage.new_conversation_id,
+        });
       } else if (sdkMessage.type === "result") {
+        // Reset par tour (DEN-10 lot 1b) : la dédup ne doit pas fuiter sur le
+        // tour suivant — un `message.id` réutilisé par erreur (ou un état
+        // resté à un ancien id) avalerait à tort le texte d'un nouveau tour.
+        streamedTextMessageIds.clear();
+        streamingMessageId = null;
         pendingTurnIds.shift();
-        if (sdkMessage.is_error) {
+        // Sonde S-a (05/09) : un tour interrompu via `queryHandle.interrupt()`
+        // se termine par `is_error: true, terminal_reason: "aborted_streaming"`
+        // (et de même pour "aborted_tools") — ce n'est pas une erreur, c'est
+        // l'utilisateur qui a stoppé le tour (ex. Escap côté UI). Émettre
+        // `error` ici rendrait le tab "error" sticky (cf. lifecycle.ts) pour
+        // un Stop normal. Les autres `is_error` (règle générale recoverable,
+        // hors scope DEN-09) restent inchangés.
+        const isUserInterrupt =
+          sdkMessage.is_error &&
+          (sdkMessage.terminal_reason === "aborted_streaming" ||
+            sdkMessage.terminal_reason === "aborted_tools");
+        if (sdkMessage.is_error && !isUserInterrupt) {
           // subtype "success" avec is_error: le texte d'erreur est dans
           // `result` (cf. sdk.d.ts). Les autres subtypes ("error_*") le
           // portent dans `errors`.

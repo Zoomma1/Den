@@ -217,3 +217,12 @@
 .den-prompt-bar__submit:hover {
   filter: brightness(1.08);
 }
+
+/* Mode Stop (D4) — le bouton d'envoi devient Stop tant que le tab actif
+ * tourne un tour (cf. syncSubmitButton, src/tabs/index.ts). Même langage
+ * que .den-tab--error : teinte --den-status-error plutôt que l'accent. */
+.den-prompt-bar__submit--stop {
+  border-color: var(--den-status-error);
+  background: color-mix(in srgb, var(--den-status-error) 12%, var(--den-bg-elevated));
+  color: var(--den-status-error);
+}
