@@ -33,10 +33,18 @@
   box-sizing: border-box;
 }
 
+/* Mesuré dans l'app le 05/09 : la chaîne de hauteur tient (pas de débordement
+ * réel du document, scrollHeight - innerHeight = 0) et pourtant scrollTop
+ * bougeait à la molette sur le terminal ou la barre d'onglets -> rebond
+ * élastique du webview macOS (rubber band), pas un vrai scroll de document.
+ * `overflow: hidden` + `overscroll-behavior: none` neutralisent ce rebond
+ * sans toucher au scroll interne de `.den-conversation-tab`. */
 html,
 body {
   margin: 0;
   height: 100%;
+  overflow: hidden;
+  overscroll-behavior: none;
 }
 
 body {
@@ -50,6 +58,7 @@ body {
   display: grid;
   grid-template-rows: auto 1fr auto;
   height: 100vh;
+  overflow: hidden;
 }
 
 #den-tabs {
