@@ -24,8 +24,10 @@
 }
 
 /* Écho du prompt utilisateur (UserEcho, protocol.ts) — bulle alignée à
- * droite, texte brut. */
+ * droite, texte brut. `position: relative` : ancre le bouton copier (D8,
+ * cf. .den-copy) posé en absolu dans ce même bloc. */
 .den-msg-user {
+  position: relative;
   align-self: flex-end;
   max-width: 85%;
   margin: var(--den-space-2) 0 var(--den-space-2) auto;
@@ -76,7 +78,9 @@
   padding: 0 4px;
 }
 
+/* `position: relative` : ancre le bouton copier (D8, cf. .den-copy). */
 .den-code {
+  position: relative;
   background: var(--den-bg-elevated);
   border: 1px solid var(--den-border);
   border-radius: var(--den-radius);
@@ -111,13 +115,26 @@
   border-color: var(--den-status-error);
 }
 
+/* `position: relative` : ancre le bouton copier (D8, cf. .den-copy). */
 .den-tool-input,
 .den-tool-result pre {
+  position: relative;
   font-family: var(--den-font-mono);
   white-space: pre-wrap;
   word-break: break-word;
   margin: var(--den-space-2) 0 0;
   color: var(--den-fg-secondary);
+}
+
+/* Le contenu est maintenant dans un <code> (D8, cf. conversationView.ts) —
+ * ces règles gardent le rendu identique à l'ancien textContent posé
+ * directement sur le <pre>. */
+.den-tool-input code,
+.den-tool-result pre code {
+  font: inherit;
+  white-space: inherit;
+  background: none;
+  padding: 0;
 }
 
 .den-tool-result {
@@ -146,4 +163,83 @@
   border: 1px dashed var(--den-border);
   border-radius: var(--den-radius);
   padding: var(--den-space-2);
+}
+
+/* Bouton copier (D8) — convention unique : précède immédiatement l'élément
+ * dont le textContent est copié (cf. conversationView.ts, renderer.ts).
+ * Caché par défaut (opacity 0) : ne pollue pas le fil au repos, révélé au
+ * survol de son conteneur ou au focus clavier. */
+.den-copy {
+  position: absolute;
+  top: var(--den-space-1);
+  right: var(--den-space-1);
+  padding: 2px var(--den-space-1);
+  border: 1px solid var(--den-border);
+  border-radius: var(--den-radius);
+  background: var(--den-bg-elevated);
+  color: var(--den-fg-muted);
+  font-size: 0.9em;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.den-code:hover > .den-copy,
+.den-tool-input:hover > .den-copy,
+.den-tool-result pre:hover > .den-copy,
+.den-msg-user:hover > .den-copy,
+.den-copy:focus-visible {
+  opacity: 1;
+}
+
+/* Bouton éditer (D5) — même look/comportement que .den-copy (caché par
+ * défaut, révélé au survol de la bulle ou au focus clavier), posé APRÈS
+ * .den-msg-user__text (cf. conversationView.ts). Les deux boutons
+ * partagent .den-msg-user en haut à droite : .den-copy se décale à gauche
+ * pour laisser sa place à .den-edit, sans se chevaucher. */
+.den-edit {
+  position: absolute;
+  top: var(--den-space-1);
+  right: var(--den-space-1);
+  padding: 2px var(--den-space-1);
+  border: 1px solid var(--den-border);
+  border-radius: var(--den-radius);
+  background: var(--den-bg-elevated);
+  color: var(--den-fg-muted);
+  font-size: 0.9em;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.den-msg-user > .den-copy {
+  right: 28px;
+}
+
+.den-msg-user:hover > .den-edit,
+.den-edit:focus-visible {
+  opacity: 1;
+}
+
+/* Spinner de lifecycle (DEN-10) — "réfléchit…"/"attend ta réponse", en bas
+ * du fil (enfant de la vue APRÈS le flow, cf. conversationView.ts).
+ * Pulsation discrète : juste assez pour signaler une activité, sans
+ * distraire de la lecture du fil au-dessus. */
+.den-thinking {
+  padding: var(--den-space-1) var(--den-space-3);
+  color: var(--den-fg-muted);
+  font-size: 0.9em;
+  animation: den-thinking-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes den-thinking-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.4;
+  }
 }

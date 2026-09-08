@@ -35,7 +35,7 @@
 {"type":"assistant_delta","id":"asst-0001","text":"luide même à gr"}
 {"type":"assistant_delta","id":"asst-0001","text":"ande vitesse de"}
 {"type":"assistant_delta","id":"asst-0001","text":" streaming."}
-{"type":"tool_use","id":"tool-0001","name":"Read","input":{"file_path":"/synthetic/den/module-0.ts"}}
+{"type":"tool_use","id":"tool-0001","toolUseId":"tool-0001","name":"Read","input":{"file_path":"/synthetic/den/module-0.ts"}}
 {"type":"tool_result","id":"tool-0001-result","toolUseId":"tool-0001","output":{"content":"// contenu synthétique du module 0\nexport const value = 0;"},"isError":false}
 {"type":"assistant_delta","id":"asst-0002","text":"Voyons ensemble "}
 {"type":"assistant_delta","id":"asst-0002","text":"la suite de la g"}
@@ -92,7 +92,7 @@
 {"type":"assistant_delta","id":"asst-0003","text":" fluide même à gr"}
 {"type":"assistant_delta","id":"asst-0003","text":"ande vitesse de s"}
 {"type":"assistant_delta","id":"asst-0003","text":"treaming."}
-{"type":"tool_use","id":"tool-0002","name":"Bash","input":{"command":"npx vitest run --reporter=dot # turn 1"}}
+{"type":"tool_use","id":"tool-0002","toolUseId":"tool-0002","name":"Bash","input":{"command":"npx vitest run --reporter=dot # turn 1"}}
 {"type":"tool_result","id":"tool-0002-result","toolUseId":"tool-0002","output":{"stdout":"Test Files  1 passed (1)\nTests  4 passed (4)","exitCode":0},"isError":false}
 {"type":"assistant_delta","id":"asst-0004","text":"Voyons ensemble la"}
 {"type":"assistant_delta","id":"asst-0004","text":" suite de le proto"}
@@ -146,7 +146,7 @@
 {"type":"assistant_delta","id":"asst-0005","text":"it rester fluide mê"}
 {"type":"assistant_delta","id":"asst-0005","text":"me à grande vitesse"}
 {"type":"assistant_delta","id":"asst-0005","text":" de streaming."}
-{"type":"tool_use","id":"tool-0003","name":"Grep","input":{"pattern":"IncrementalMarkdownRenderer","path":"src/markdown"}}
+{"type":"tool_use","id":"tool-0003","toolUseId":"tool-0003","name":"Grep","input":{"pattern":"IncrementalMarkdownRenderer","path":"src/markdown"}}
 {"type":"tool_result","id":"tool-0003-result","toolUseId":"tool-0003","output":{"matches":["src/markdown/renderer.ts:1: turn 2"]},"isError":false}
 {"type":"assistant_delta","id":"asst-0006","text":"Voyons ensembl"}
 {"type":"assistant_delta","id":"asst-0006","text":"e la suite de "}
@@ -203,7 +203,7 @@
 {"type":"assistant_delta","id":"asst-0007","text":" à grande vites"}
 {"type":"assistant_delta","id":"asst-0007","text":"se de streaming"}
 {"type":"assistant_delta","id":"asst-0007","text":"."}
-{"type":"tool_use","id":"tool-0004","name":"Read","input":{"file_path":"/synthetic/den/module-3.ts"}}
+{"type":"tool_use","id":"tool-0004","toolUseId":"tool-0004","name":"Read","input":{"file_path":"/synthetic/den/module-3.ts"}}
 {"type":"tool_result","id":"tool-0004-result","toolUseId":"tool-0004","output":{"content":"// contenu synthétique du module 3\nexport const value = 3;"},"isError":false}
 {"type":"assistant_delta","id":"asst-0008","text":"Voyons ensemble "}
 {"type":"assistant_delta","id":"asst-0008","text":"la suite de la m"}
@@ -266,7 +266,7 @@
 {"type":"assistant_delta","id":"asst-0009","text":"fluide même à gra"}
 {"type":"assistant_delta","id":"asst-0009","text":"nde vitesse de st"}
 {"type":"assistant_delta","id":"asst-0009","text":"reaming."}
-{"type":"tool_use","id":"tool-0005","name":"Bash","input":{"command":"npx vitest run --reporter=dot # turn 4"}}
+{"type":"tool_use","id":"tool-0005","toolUseId":"tool-0005","name":"Bash","input":{"command":"npx vitest run --reporter=dot # turn 4"}}
 {"type":"tool_result","id":"tool-0005-result","toolUseId":"tool-0005","output":{"stdout":"Test Files  1 passed (1)\nTests  7 passed (7)","exitCode":0},"isError":false}
 {"type":"assistant_delta","id":"asst-0010","text":"Voyons ensemble la"}
 {"type":"assistant_delta","id":"asst-0010","text":" suite de l'auto-s"}
@@ -319,7 +319,7 @@
 {"type":"assistant_delta","id":"asst-0011","text":"oit rester fluide m"}
 {"type":"assistant_delta","id":"asst-0011","text":"ême à grande vitess"}
 {"type":"assistant_delta","id":"asst-0011","text":"e de streaming."}
-{"type":"tool_use","id":"tool-0006","name":"Grep","input":{"pattern":"IncrementalMarkdownRenderer","path":"src/markdown"}}
+{"type":"tool_use","id":"tool-0006","toolUseId":"tool-0006","name":"Grep","input":{"pattern":"IncrementalMarkdownRenderer","path":"src/markdown"}}
 {"type":"tool_result","id":"tool-0006-result","toolUseId":"tool-0006","output":{"matches":["src/markdown/renderer.ts:1: turn 5"]},"isError":false}
 {"type":"assistant_delta","id":"asst-0012","text":"Voyons ensembl"}
 {"type":"assistant_delta","id":"asst-0012","text":"e la suite de "}
@@ -390,7 +390,7 @@
 {"type":"assistant_delta","id":"asst-0013","text":"ide même à gran"}
 {"type":"assistant_delta","id":"asst-0013","text":"de vitesse de s"}
 {"type":"assistant_delta","id":"asst-0013","text":"treaming."}
-{"type":"tool_use","id":"tool-0007","name":"Read","input":{"file_path":"/synthetic/den/module-6.ts"}}
+{"type":"tool_use","id":"tool-0007","toolUseId":"tool-0007","name":"Read","input":{"file_path":"/synthetic/den/module-6.ts"}}
 {"type":"tool_result","id":"tool-0007-result","toolUseId":"tool-0007","output":{"content":"// contenu synthétique du module 6\nexport const value = 6;"},"isError":false}
 {"type":"assistant_delta","id":"asst-0014","text":"Voyons ensemble "}
 {"type":"assistant_delta","id":"asst-0014","text":"la suite de la c"}
@@ -442,7 +442,7 @@
 {"type":"assistant_delta","id":"asst-0015","text":"ter fluide même à"}
 {"type":"assistant_delta","id":"asst-0015","text":" grande vitesse d"}
 {"type":"assistant_delta","id":"asst-0015","text":"e streaming."}
-{"type":"tool_use","id":"tool-0008","name":"Bash","input":{"command":"npx vitest run --reporter=dot # turn 7"}}
+{"type":"tool_use","id":"tool-0008","toolUseId":"tool-0008","name":"Bash","input":{"command":"npx vitest run --reporter=dot # turn 7"}}
 {"type":"tool_result","id":"tool-0008-result","toolUseId":"tool-0008","output":{"stdout":"Test Files  1 passed (1)\nTests  10 passed (10)","exitCode":0},"isError":false}
 {"type":"assistant_delta","id":"asst-0016","text":"Voyons ensemble la"}
 {"type":"assistant_delta","id":"asst-0016","text":" suite de la gesti"}
