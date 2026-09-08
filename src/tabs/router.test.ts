@@ -78,4 +78,39 @@ describe("TabRouter", () => {
       { tabId: "tab-a", message: { type: "mode_changed", mode: "plan" } },
     ]);
   });
+
+  it("route une ligne conversation_reset valide (guard isConversationReset, cf. DEN-10)", () => {
+    const router = new TabRouter();
+    router.registerTab("tab-a");
+    const routed = router.handleChunk(
+      "tab-a",
+      '{"type":"conversation_reset","sessionId":"s1","newConversationId":"c2"}\n',
+    );
+    expect(routed).toEqual([
+      {
+        tabId: "tab-a",
+        message: { type: "conversation_reset", sessionId: "s1", newConversationId: "c2" },
+      },
+    ]);
+  });
+
+  it("deux markPromptSubmitted puis un done -> running (un tour reste en file, cf. lifecycle DEN-10)", () => {
+    const router = new TabRouter();
+    router.registerTab("tab-a");
+    router.markPromptSubmitted("tab-a");
+    router.markPromptSubmitted("tab-a");
+    router.handleChunk("tab-a", '{"type":"done"}\n');
+    expect(router.getState("tab-a")).toBe("running");
+  });
+
+  it("un permission_request valide fait passer le tab à waiting", () => {
+    const router = new TabRouter();
+    router.registerTab("tab-a");
+    router.markPromptSubmitted("tab-a");
+    router.handleChunk(
+      "tab-a",
+      '{"type":"permission_request","requestId":"r1","toolName":"Bash","input":{}}\n',
+    );
+    expect(router.getState("tab-a")).toBe("waiting");
+  });
 });
