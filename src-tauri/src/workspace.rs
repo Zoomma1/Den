@@ -18,6 +18,10 @@
 //! d'une copie `workspace.json.bak` de la version courante — ce fichier est
 //! l'unique copie de l'état utilisateur ; ni un crash en pleine écriture, ni
 //! un écrasement après un fallback de parsing côté TS ne doivent le perdre.
+//!
+//! `workspace_canonicalize` (DEN-04 A2) : résout un path choisi par le picker
+//! en chemin canonique (`fs::canonicalize`) avant `addProject` côté TS — deux
+//! paths qui désignent le même dossier (symlink, `..`) doivent dédupliquer.
 
 use std::fs;
 use std::io::ErrorKind;
@@ -69,6 +73,16 @@ pub fn workspace_read(app: tauri::AppHandle) -> Result<String, String> {
         Err(e) if e.kind() == ErrorKind::NotFound => Ok(String::new()),
         Err(e) => Err(format!("lecture de {} impossible: {e}", path.display())),
     }
+}
+
+/// Canonicalise `path` (résout symlinks/`..`) pour que `addProject` déduplique
+/// deux chemins désignant le même dossier. Erreur formatée en français comme
+/// les autres commands de ce module.
+#[tauri::command]
+pub fn workspace_canonicalize(path: String) -> Result<String, String> {
+    fs::canonicalize(&path)
+        .map(|p| p.to_string_lossy().into_owned())
+        .map_err(|e| format!("canonicalisation de {path} impossible: {e}"))
 }
 
 #[tauri::command]

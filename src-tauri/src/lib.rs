@@ -20,6 +20,7 @@ pub fn run() {
             theme::theme_watch,
             workspace::workspace_read,
             workspace::workspace_write,
+            workspace::workspace_canonicalize,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
