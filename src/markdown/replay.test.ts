@@ -43,7 +43,7 @@ describe("replay du transcript synthétique", () => {
     conversationMount = document.createElement("section");
     init({
       mounts: {
-        tabs: document.createElement("nav"),
+        sidebar: document.createElement("aside"),
         conversation: conversationMount,
         terminal: document.createElement("section"),
         status: document.createElement("footer"),

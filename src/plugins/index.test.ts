@@ -12,7 +12,7 @@ import { buildPluginContext, mountPlugins, type PluginModule } from "./index";
 
 function makeMounts(): DenMounts {
   return {
-    tabs: document.createElement("nav"),
+    sidebar: document.createElement("aside"),
     conversation: document.createElement("section"),
     terminal: document.createElement("section"),
     status: document.createElement("footer"),

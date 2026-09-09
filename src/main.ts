@@ -18,7 +18,7 @@ function mount(id: string): HTMLElement {
 
 const ctx: DenContext = {
   mounts: {
-    tabs: mount("den-tabs"),
+    sidebar: mount("den-sidebar"),
     conversation: mount("den-conversation"),
     terminal: mount("den-terminal"),
     status: mount("den-status"),
@@ -30,8 +30,9 @@ const registry = new Registry();
 // Ordre d'initialisation fixe — ne pas réordonner sans raison documentée :
 // - theme en premier (pose les tokens CSS avant tout rendu) ;
 // - workspace avant tabs : `workspace.init` charge workspace.json dans
-//   l'objet module-level que `getProjects()` expose — tabs le lit dès qu'un
-//   tab existe, et la sidebar (A2) dès son premier rendu ;
+//   l'objet module-level que `getProjects()` expose — tabs le lit dès son
+//   premier rendu de la sidebar (`mounts.sidebar`, DEN-04 A2), avant même
+//   qu'un tab existe ;
 // - markdown avant tabs : invariant DOM, pas d'événement en jeu — les deux
 //   font `prepend` dans #den-conversation, et tabs doit passer en dernier
 //   pour que son header de session se retrouve au-dessus de `.den-views`.

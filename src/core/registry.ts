@@ -8,9 +8,11 @@
  * un nouveau module s'ajoute en l'enregistrant via `registry.register(...)`.
  */
 
-/** Points de montage DOM exposés à tous les modules. */
+/** Points de montage DOM exposés à tous les modules. `sidebar` (DEN-04 A2,
+ * `<aside id="den-sidebar">`) remplace l'ancienne barre d'onglets `tabs` —
+ * projets persistés + leurs sessions, rendu par `src/tabs/sidebar.ts`. */
 export interface DenMounts {
-  tabs: HTMLElement;
+  sidebar: HTMLElement;
   conversation: HTMLElement;
   terminal: HTMLElement;
   status: HTMLElement;
