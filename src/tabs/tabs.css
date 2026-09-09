@@ -1,25 +1,77 @@
 /*
- * Styles du module `tabs` — chips d'onglets et prompt bar.
+ * Styles du module `tabs` — sidebar projets/sessions et prompt bar.
  * Utilise les tokens --den-* posés par le module `theme` sur :root
  * (cf. src/styles.css).
  *
- * Langage visuel : la barre (#den-tabs) est la surface "élevée" ; les chips
- * inactives sont en retrait (--den-bg-surface, plus sombre que la barre) —
- * la hiérarchie vient du contraste de fond, pas de bordures. La chip
- * active bascule en surbrillance pleine (accent).
+ * Langage visuel : la sidebar (#den-sidebar) est la surface "élevée" ; les
+ * rows session inactives sont en retrait (--den-bg-surface, plus sombre que
+ * la sidebar) — la hiérarchie vient du contraste de fond, pas de bordures.
+ * La row session active bascule en surbrillance pleine (accent).
  */
 
-.den-tab-list {
+.den-project-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--den-space-2);
+  min-height: 0;
+}
+
+.den-project__row {
   display: flex;
   align-items: center;
   gap: var(--den-space-1);
 }
 
+.den-project__name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+  color: var(--den-fg);
+}
+
+/* Slot vide — DEN-05 y rend un indicateur d'état au niveau projet. */
+.den-project__badge {
+  min-width: 0;
+}
+
+.den-project__new,
+.den-project__remove {
+  padding: 0 var(--den-space-1);
+  border: 1px solid transparent;
+  border-radius: var(--den-radius);
+  background: transparent;
+  color: var(--den-fg-muted);
+  font-family: var(--den-font-sans);
+  font-size: 0.85em;
+  line-height: 1.6;
+  cursor: pointer;
+  transition: background-color 0.1s ease-out;
+}
+
+.den-project__new:hover {
+  background: var(--den-bg-elevated);
+  color: var(--den-fg);
+}
+
+.den-project__remove:hover {
+  background: var(--den-bg-elevated);
+  color: var(--den-status-error);
+}
+
+.den-project__sessions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--den-space-1);
+  padding-left: var(--den-space-3);
+}
+
 .den-tab {
-  display: inline-flex;
+  display: flex;
   align-items: center;
   gap: var(--den-space-1);
-  max-width: 220px;
+  width: 100%;
   padding: var(--den-space-1) var(--den-space-2);
   border: 1px solid transparent;
   border-radius: var(--den-radius);

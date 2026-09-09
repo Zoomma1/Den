@@ -1,7 +1,11 @@
 /**
- * Module `tabs` — barre d'onglets, un sidecar par session/tab, ancré dans un
- * projet (DEN-04 A1 : plus de tab auto au démarrage, plus de `cwd` "." par
- * défaut — chaque tab naît d'un projet choisi via « Launch Claude in… »).
+ * Module `tabs` — sidebar projets/sessions (DEN-04 A2 : remplace la barre
+ * d'onglets horizontale `#den-tabs` par `#den-sidebar`, cf. `./sidebar.ts`
+ * pour le rendu DOM pur des rows — ce module garde toute la logique
+ * sidecar/router et fournit les handlers). Un sidecar par session/tab,
+ * ancré dans un projet (DEN-04 A1 : plus de tab auto au démarrage, plus de
+ * `cwd` "." par défaut — chaque tab naît d'un projet choisi via « Launch
+ * Claude in… », ou du bouton `+` d'un projet déjà listé).
  *
  * Contrat inter-lots (événements DOM sur `window` ; `tabs` consomme en plus
  * l'API du module `workspace` — projets, picker, cf. `src/workspace/index.ts`) :
@@ -13,6 +17,13 @@
  *   (`detail: { tabId: string | null, projectId: string | null }`) à chaque
  *   changement de tab actif, y compris `{ null, null }` quand le dernier tab
  *   se ferme (aucune session restante).
+ * - `den:project-removed` (`detail: { projectId: string }`), émis par
+ *   `onRemoveProject` APRÈS que tous les tabs du projet ont fini de fermer
+ *   (chaque `sidecar_kill` attendu, séquentiellement) et que le projet a été
+ *   retiré du workspace persisté. Ancrage DEN-04 A4 : le module terminal y
+ *   fera le `pty_kill` du groupe de terminaux du projet — aucun consommateur
+ *   aujourd'hui, cet événement est un no-op observable tant qu'A4 n'est pas
+ *   fait.
  * - `den:tab-state-changed` (`detail: { tabId: string, state: TabLifecycleState }`) :
  *   émis quand l'état de lifecycle d'un tab (cf. `./lifecycle.ts`, seule
  *   source de vérité — DEN-10) change réellement, après chaque
@@ -56,10 +67,11 @@ import {
   type ConversationMessage,
   type PermissionModeId,
 } from "../types/protocol";
-import { addProject, getProjects, pickProjectDirectory } from "../workspace";
+import { addProject, getProjects, pickProjectDirectory, removeProject } from "../workspace";
 import { displayName, type Project } from "../workspace/store";
 import type { TabLifecycleState } from "./lifecycle";
 import { TabRouter } from "./router";
+import { createSidebar, type Sidebar } from "./sidebar";
 
 interface Tab {
   id: string;
@@ -130,6 +142,10 @@ export async function init(ctx: DenContext): Promise<void> {
   const router = new TabRouter();
   const tabs = new Map<string, Tab>();
   let activeTabId: string | null = null;
+  // Assignée plus bas (setup DOM, cf. bas de `init`) — les fonctions qui la
+  // ferment (`createTab`, `onRemoveProject`...) ne sont appelées qu'après
+  // cette assignation (clic utilisateur), jamais avant.
+  let sidebar: Sidebar;
   // Renseignés par buildPromptBar — désactivés tant qu'aucune session n'est
   // active (cf. updateEmptyState).
   let promptInputEl: HTMLTextAreaElement | null = null;
@@ -312,10 +328,12 @@ export async function init(ctx: DenContext): Promise<void> {
     dispatchActiveTabChanged(tabId, active?.projectId ?? null);
   }
 
+  /** Titre de la row session : `sessionId` court (dès `session_info`), ou
+   * placeholder avant — le nom du projet est déjà porté par la row parente
+   * (`.den-project__name`, sidebar.ts), pas besoin de le répéter ici. Le
+   * header du pane (`updateSessionHeader`), lui, garde `tabLabel + sessionId`. */
   function updateTabTitle(tab: Tab): void {
-    tab.titleEl.textContent = tab.sessionId
-      ? `${tabLabel(tab)} ${tab.sessionId.slice(0, 8)}`
-      : tabLabel(tab);
+    tab.titleEl.textContent = tab.sessionId ? tab.sessionId.slice(0, 8) : "nouvelle session";
     if (activeTabId === tab.id) updateSessionHeader();
   }
 
@@ -374,8 +392,7 @@ export async function init(ctx: DenContext): Promise<void> {
     buttonEl.append(titleEl, statusEl, closeEl);
     buttonEl.addEventListener("click", () => setActiveTab(id));
 
-    const list = ctx.mounts.tabs.querySelector(".den-tab-list");
-    if (list) list.appendChild(buttonEl);
+    sidebar.appendSessionRow(project.id, buttonEl);
 
     const tab: Tab = { id, projectId: project.id, mode: "default", buttonEl, titleEl, statusEl };
     tabs.set(id, tab);
@@ -542,17 +559,60 @@ export async function init(ctx: DenContext): Promise<void> {
       const path = await pickProjectDirectory();
       if (path === null) return;
       const project = await addProject(path);
+      // AVANT `createTab` : un projet ajouté peut créer une collision de
+      // basename avec un projet existant — `setProjects` recalcule tous les
+      // noms de rows projet, et la row de CE projet doit déjà exister pour
+      // que `appendSessionRow` (dans `createTab`) trouve où placer le tab.
+      sidebar.setProjects(getProjects());
       const tab = createTab(project);
-      // Un projet ajouté peut créer une collision de basename avec un tab
-      // existant : tous les titres sont recalculés, pas seulement le nouveau.
-      for (const other of tabs.values()) updateTabTitle(other);
       setActiveTab(tab.id);
     } finally {
       launching = false;
     }
   }
 
-  /** Un même bouton « Launch Claude in… », dupliqué dans la barre d'onglets
+  /** Ouvre une nouvelle session dans un projet déjà listé (bouton `+` d'une
+   * row projet de la sidebar). `projectId` inconnu (projet retiré entre le
+   * clic et l'exécution) : no-op silencieux. */
+  function onNewSession(projectId: string): void {
+    // Retrait en cours : la row est encore visible le temps des IPC, mais un
+    // tab créé ici échapperait au snapshot de `onRemoveProject` (sidecar
+    // fuité, tab orphelin).
+    if (removingProjects.has(projectId)) return;
+    const project = getProjects().find((p) => p.id === projectId);
+    if (!project) return;
+    const tab = createTab(project);
+    setActiveTab(tab.id);
+  }
+
+  /** Retire un projet (bouton `×` d'une row projet) : ferme d'abord toutes
+   * ses sessions (`closeTab` -> `sidecar_kill`, séquentiel), puis retire le
+   * projet du workspace persisté, re-rend la sidebar (row retirée, noms recalculés), puis émet
+   * `den:project-removed` (cf. docstring de tête). Anti-réentrance par
+   * `projectId` : un second clic sur le même `×` pendant le retrait en cours
+   * est un no-op — sans ça, deux retraits concurrents fermeraient les mêmes
+   * tabs deux fois. */
+  const removingProjects = new Set<string>();
+  async function onRemoveProject(projectId: string): Promise<void> {
+    if (removingProjects.has(projectId)) return;
+    removingProjects.add(projectId);
+    try {
+      const tabsOfProject = [...tabs.values()].filter((tab) => tab.projectId === projectId);
+      for (const tab of tabsOfProject) {
+        await closeTab(tab.id);
+      }
+      await removeProject(projectId);
+      // `setProjects` plutôt que `removeProject` : retire la row ET recalcule
+      // les noms des projets restants (une collision de basename levée par
+      // ce retrait doit faire retomber le jumeau sur son simple basename).
+      sidebar.setProjects(getProjects());
+      window.dispatchEvent(new CustomEvent("den:project-removed", { detail: { projectId } }));
+    } finally {
+      removingProjects.delete(projectId);
+    }
+  }
+
+  /** Un même bouton « Launch Claude in… », dupliqué en tête de la sidebar
    * et dans l'état vide (même libellé, même action). */
   function createLaunchButton(): HTMLButtonElement {
     const button = document.createElement("button");
@@ -568,11 +628,19 @@ export async function init(ctx: DenContext): Promise<void> {
     return button;
   }
 
-  ctx.mounts.tabs.textContent = "";
-  const list = document.createElement("div");
-  list.className = "den-tab-list";
-  list.setAttribute("role", "tablist");
-  ctx.mounts.tabs.append(list, createLaunchButton());
+  sidebar = createSidebar(
+    ctx.mounts.sidebar,
+    {
+      onNewSession,
+      onRemoveProject: (projectId) => {
+        void onRemoveProject(projectId).catch((err: unknown) => {
+          console.error(`Den: échec du retrait du projet ${projectId}`, err);
+        });
+      },
+    },
+    createLaunchButton,
+  );
+  sidebar.setProjects(getProjects());
 
   // Header de session, en tête du mount conversation — `prepend` s'exécute
   // après celui de `markdown` (`.den-views`, cf. ordre d'init dans main.ts) :
