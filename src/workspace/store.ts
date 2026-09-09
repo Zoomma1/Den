@@ -118,25 +118,54 @@ export function serializeWorkspace(ws: Workspace): string {
 }
 
 /**
- * Nom affichable d'un projet : basename du path ; sur collision de basename
- * avec un autre projet de `all`, `parent/basename` pour lever l'ambiguïté.
+ * Nom affichable d'un projet : basename du path (profondeur k=1) ; tant
+ * qu'un autre projet de `all` partage les k derniers segments (et qu'il
+ * reste des segments à remonter dans `project.path`), k augmente — jusqu'à
+ * unicité ou à épuiser le path. Ex. `/Users/vico/Dev/Den` vs
+ * `/Volumes/x/Dev/Den` : basename ET parent ("Dev/Den") identiques pour les
+ * deux -> k monte à 3, `vico/Dev/Den` vs `x/Dev/Den`.
  */
 export function displayName(project: Project, all: Project[]): string {
-  const segments = project.path.split("/").filter((s) => s.length > 0);
-  const base = basenameOf(project.path);
-
-  const hasCollision = all.some(
-    (other) => other.id !== project.id && basenameOf(other.path) === base,
-  );
-  if (!hasCollision) return base;
-
-  const parent = segments[segments.length - 2];
-  return parent ? `${parent}/${base}` : base;
+  const segments = segmentsOf(project.path);
+  let k = 1;
+  while (k < segments.length && hasSuffixCollision(project, all, segments, k)) {
+    k++;
+  }
+  // Path sans segment (`/`) : repli sur le path brut plutôt qu'un libellé vide.
+  if (segments.length === 0) return project.path;
+  return segments.slice(-k).join("/");
 }
 
-function basenameOf(path: string): string {
-  const segments = path.split("/").filter((s) => s.length > 0);
-  return segments[segments.length - 1] ?? path;
+/** Vrai si un autre projet de `all` a les mêmes k derniers segments de path
+ * que `project` (comparaison de tableaux de segments, pas de string brute —
+ * un path plus court dont le path entier est un suffixe complet compte). */
+function hasSuffixCollision(
+  project: Project,
+  all: Project[],
+  segments: string[],
+  k: number,
+): boolean {
+  const suffix = segments.slice(-k);
+  return all.some(
+    (other) => other.id !== project.id && sameSuffix(segmentsOf(other.path), suffix),
+  );
+}
+
+function sameSuffix(segments: string[], suffix: string[]): boolean {
+  if (segments.length < suffix.length) return false;
+  const otherSuffix = segments.slice(-suffix.length);
+  return otherSuffix.every((segment, i) => segment === suffix[i]);
+}
+
+function segmentsOf(path: string): string[] {
+  return path.split("/").filter((s) => s.length > 0);
+}
+
+/** Retire le projet `id` de `ws` — pur, nouvel objet (`projects` filtré),
+ * jamais de mutation. Id inconnu : retourne un workspace au même contenu
+ * (nouvelle référence de `projects`, mêmes éléments). */
+export function withoutProject(ws: Workspace, id: string): Workspace {
+  return { ...ws, projects: ws.projects.filter((p) => p.id !== id) };
 }
 
 /** Accès I/O injecté — l'implémentation `invoke` vit dans `workspace/index.ts`. */

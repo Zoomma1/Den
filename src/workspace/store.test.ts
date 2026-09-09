@@ -5,6 +5,7 @@ import {
   displayName,
   parseWorkspace,
   serializeWorkspace,
+  withoutProject,
   type Project,
   type Workspace,
   type WorkspaceIO,
@@ -88,6 +89,54 @@ describe("displayName", () => {
     ];
     expect(displayName(projects[0], projects)).toBe("Dev/Den");
     expect(displayName(projects[1], projects)).toBe("04 - Projects/Den");
+  });
+
+  it("climbs past parent/basename when both also collide at that depth (collision à 2 niveaux)", () => {
+    const projects: Project[] = [
+      { id: "a", path: "/Users/vico/Dev/Den" },
+      { id: "b", path: "/Volumes/x/Dev/Den" },
+    ];
+    expect(displayName(projects[0], projects)).toBe("vico/Dev/Den");
+    expect(displayName(projects[1], projects)).toBe("x/Dev/Den");
+  });
+
+  it("stops climbing once the other project's path is a complete suffix (path plus court épuisé)", () => {
+    const projects: Project[] = [
+      { id: "a", path: "/Users/vico/Dev/Den" },
+      { id: "b", path: "/Dev/Den" },
+    ];
+    expect(displayName(projects[0], projects)).toBe("vico/Dev/Den");
+    expect(displayName(projects[1], projects)).toBe("Dev/Den");
+  });
+});
+
+describe("displayName — path sans segment", () => {
+  it("falls back to the raw path for the filesystem root", () => {
+    const projects: Project[] = [{ id: "a", path: "/" }];
+    expect(displayName(projects[0], projects)).toBe("/");
+  });
+});
+
+describe("withoutProject", () => {
+  it("removes the project matching the id", () => {
+    const ws = defaultWorkspace();
+    ws.projects.push({ id: "a", path: "/tmp/a" }, { id: "b", path: "/tmp/b" });
+    expect(withoutProject(ws, "a").projects).toEqual([{ id: "b", path: "/tmp/b" }]);
+  });
+
+  it("does not mutate the input workspace", () => {
+    const ws = defaultWorkspace();
+    ws.projects.push({ id: "a", path: "/tmp/a" });
+    withoutProject(ws, "a");
+    expect(ws.projects).toEqual([{ id: "a", path: "/tmp/a" }]);
+  });
+
+  it("returns the same content when the id is unknown", () => {
+    const ws = defaultWorkspace();
+    ws.projects.push({ id: "a", path: "/tmp/a" });
+    const result = withoutProject(ws, "unknown-id");
+    expect(result.projects).toEqual(ws.projects);
+    expect(result).not.toBe(ws);
   });
 });
 

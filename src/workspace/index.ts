@@ -9,6 +9,12 @@
  * par défaut + `console.warn` (même posture que `theme/index.ts`) : jamais de
  * crash au démarrage.
  *
+ * `addProject` canonicalise le path via `workspace_canonicalize` (Rust,
+ * `fs::canonicalize`) avant dédup/insert — deux paths qui désignent le même
+ * dossier doivent fusionner. Échec IPC (permission, path déjà disparu) :
+ * `console.warn` + repli sur le path brut, même posture que le reste du
+ * module (jamais de crash sur un échec de canonicalisation).
+ *
  * Pas de mount point dédié — ce module n'a pas de DOM propre, `tabs` le
  * consomme via son API exportée. Enregistré dans `main.ts` **entre `theme`
  * et `markdown`** : les projets doivent être chargés avant que `tabs` (qui
@@ -20,6 +26,7 @@ import type { DenContext } from "../core/registry";
 import {
   createStore,
   defaultWorkspace,
+  withoutProject,
   type Project,
   type Workspace,
   type WorkspaceIO,
@@ -58,15 +65,37 @@ export async function pickProjectDirectory(): Promise<string | null> {
   return typeof result === "string" ? result : null;
 }
 
-/** Retrouve le projet de ce `path` exact, sinon en crée un et sauvegarde. */
+/** Canonicalise `path` via la command Rust `workspace_canonicalize`. Échec
+ * IPC (permission, dossier déjà disparu) → `console.warn` + repli sur `path`
+ * brut, jamais de throw : un path non canonicalisé reste un path valide pour
+ * `addProject`, juste potentiellement dédupliqué en moins de cas. */
+async function canonicalizePath(path: string): Promise<string> {
+  try {
+    return await invoke<string>("workspace_canonicalize", { path });
+  } catch (err) {
+    console.warn("den: workspace_canonicalize a échoué, path brut conservé.", err);
+    return path;
+  }
+}
+
+/** Retrouve le projet de ce path canonique, sinon en crée un et sauvegarde. */
 export async function addProject(path: string): Promise<Project> {
-  const existing = workspace.projects.find((p) => p.path === path);
+  const canonical = await canonicalizePath(path);
+  const existing = workspace.projects.find((p) => p.path === canonical);
   if (existing) return existing;
 
-  const project: Project = { id: crypto.randomUUID(), path };
+  const project: Project = { id: crypto.randomUUID(), path: canonical };
   workspace.projects.push(project);
   await saveWorkspace();
   return project;
+}
+
+/** Retire le projet `id` (filtre pur `withoutProject` + persistance) — ne
+ * touche à aucune session : c'est `tabs/index.ts` qui ferme les tabs du
+ * projet AVANT d'appeler cette fonction (cf. docstring de `onRemoveProject`). */
+export async function removeProject(id: string): Promise<void> {
+  workspace = withoutProject(workspace, id);
+  await saveWorkspace();
 }
 
 export async function saveWorkspace(): Promise<void> {
