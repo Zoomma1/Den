@@ -1,7 +1,7 @@
 mod pty;
 mod sidecar;
+mod state;
 mod theme;
-mod workspace;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -18,9 +18,10 @@ pub fn run() {
             sidecar::sidecar_kill_all,
             theme::theme_read,
             theme::theme_watch,
-            workspace::workspace_read,
-            workspace::workspace_write,
-            workspace::workspace_canonicalize,
+            state::state_read,
+            state::state_write,
+            state::path_canonicalize,
+            state::state_migrated,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

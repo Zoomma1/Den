@@ -56,7 +56,7 @@ body {
 
 /* Grille provisoire 2 colonnes x 2 lignes ([sidebar | main] au-dessus de
  * [status], sur toute la largeur) — A3 passe en grid-template-areas +
- * splitters (layout redimensionnable, cf. workspace.json `layout`). */
+ * splitters (layout redimensionnable, cf. state.json `layout`). */
 #den-app {
   display: grid;
   grid-template-columns: 240px 1fr;

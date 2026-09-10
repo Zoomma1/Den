@@ -67,7 +67,13 @@ import {
   type ConversationMessage,
   type PermissionModeId,
 } from "../types/protocol";
-import { addProject, getProjects, pickProjectDirectory, removeProject } from "../workspace";
+import {
+  addProject,
+  ensureDefaultWorkspace,
+  getProjects,
+  pickProjectDirectory,
+  removeProject,
+} from "../workspace";
 import { displayName, type Project } from "../workspace/store";
 import type { TabLifecycleState } from "./lifecycle";
 import { TabRouter } from "./router";
@@ -558,7 +564,10 @@ export async function init(ctx: DenContext): Promise<void> {
     try {
       const path = await pickProjectDirectory();
       if (path === null) return;
-      const project = await addProject(path);
+      // Lot A2bis-1 : rattaché au premier workspace (ou à « Défaut », créé à
+      // la volée) — A2bis-2 rattachera au workspace de la session active.
+      const workspace = await ensureDefaultWorkspace();
+      const project = await addProject(workspace.id, path);
       // AVANT `createTab` : un projet ajouté peut créer une collision de
       // basename avec un projet existant — `setProjects` recalcule tous les
       // noms de rows projet, et la row de CE projet doit déjà exister pour
