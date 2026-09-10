@@ -33,5 +33,8 @@ src-tauri/gen/schemas
 
 # Workspace utilisateur (projets, layout) en dev — jamais versionné. Ancré à
 # la racine : un fixture nommé workspace.json ailleurs dans l'arbre reste
-# versionnable. Couvre aussi .tmp / .bak (écriture atomique + sauvegarde).
+# versionnable. Couvre aussi .tmp / .bak (écriture atomique + sauvegarde), et
+# workspace.json.migrated (legacy v1 renommé après migration vers state.json,
+# cf. src-tauri/src/state.rs::state_migrated).
 /workspace.json*
+/state.json*
