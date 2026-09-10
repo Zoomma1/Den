@@ -29,7 +29,7 @@ const registry = new Registry();
 
 // Ordre d'initialisation fixe — ne pas réordonner sans raison documentée :
 // - theme en premier (pose les tokens CSS avant tout rendu) ;
-// - workspace avant tabs : `workspace.init` charge workspace.json dans
+// - workspace avant tabs : `workspace.init` charge state.json dans
 //   l'objet module-level que `getProjects()` expose — tabs le lit dès son
 //   premier rendu de la sidebar (`mounts.sidebar`, DEN-04 A2), avant même
 //   qu'un tab existe ;
