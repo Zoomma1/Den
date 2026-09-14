@@ -7,10 +7,12 @@
  *   (`detail: { tabId: string, message: ConversationMessage }`) pour chaque
  *   message reçu d'un sidecar (plus l'écho local `user_echo`), et
  *   `CustomEvent<'den:active-tab-changed'>`
- *   (`detail: { tabId: string | null, projectId: string | null }`) à chaque
- *   changement de tab actif — `null` quand plus aucun tab n'existe (dernier
- *   tab fermé, ou aucune session lancée : DEN-04 A1 ne crée plus de tab au
- *   démarrage).
+ *   (`detail: { tabId: string | null, cwd: string | null, owner: Owner | null }`,
+ *   cf. `src/tabs/owner.ts`) à chaque changement de tab actif — tout à
+ *   `null` quand plus aucun tab n'existe (dernier tab fermé, ou aucune
+ *   session lancée : DEN-04 A1 ne crée plus de tab au démarrage). Ce module
+ *   n'utilise que `tabId` ; `cwd`/`owner` sont portés par le contrat pour les
+ *   autres consommateurs (header de session, DEN-05).
  * - ce module maintient un container de conversation PAR tabId dans
  *   #den-conversation ; seul celui du tab actif est visible. `tabId === null`
  *   masque toutes les vues existantes sans en créer.
@@ -21,6 +23,7 @@
  */
 import type { DenContext } from "../core/registry";
 import type { ConversationMessage, CustomBlock } from "../types/protocol";
+import type { Owner } from "../tabs/owner";
 import { ConversationView } from "./conversationView";
 import "./markdown.css";
 
@@ -31,7 +34,8 @@ interface SessionMessageDetail {
 
 interface ActiveTabChangedDetail {
   tabId: string | null;
-  projectId: string | null;
+  cwd: string | null;
+  owner: Owner | null;
 }
 
 const views = new Map<string, ConversationView>();
