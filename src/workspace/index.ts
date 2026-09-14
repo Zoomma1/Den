@@ -28,9 +28,10 @@
  * module (jamais de crash sur un échec de canonicalisation).
  *
  * API workspaces (`getWorkspaces`, `addWorkspace`, `renameWorkspace`,
- * `setWorkspaceRoot`, `removeWorkspace`) : surface posée pour la sidebar 3
- * niveaux du lot A2bis-2 — **aucun consommateur UI dans ce lot-ci**. Seule la
- * logique pure est testée (`store.ts`) ; ces wrappers IPC ne le sont pas.
+ * `setWorkspaceRoot`, `removeWorkspace`) : posée par A2bis-1, consommée par
+ * la sidebar 3 niveaux depuis A2bis-2 (`src/tabs/index.ts` et `sidebar.ts`).
+ * Seule la logique pure est testée (`store.ts`) ; ces wrappers IPC ne le
+ * sont pas.
  *
  * Pas de mount point dédié — ce module n'a pas de DOM propre, `tabs` le
  * consomme via son API exportée. Enregistré dans `main.ts` **entre `theme`
@@ -104,18 +105,32 @@ export function getState(): PersistedState {
   return state;
 }
 
-export function getProjects(): Project[] {
-  return state.projects;
-}
-
 export function getWorkspaces(): Workspace[] {
   return state.workspaces;
 }
 
-/** Ouvre le picker natif de dossier. `null` = annulé — aucun projet ajouté. */
-export async function pickProjectDirectory(): Promise<string | null> {
-  const result = await open({ directory: true, multiple: false });
+/** Ouvre le picker natif de dossier. `title` personnalise le titre de la
+ * fenêtre (ex. « Choisis la racine du workspace », ou une variante
+ * « Racine introuvable… » quand le picker rouvre après une racine disparue
+ * — cf. `onNewSession` dans `src/tabs/index.ts`) ; absent, le picker garde
+ * son titre par défaut. `null` = annulé — rien n'est créé/modifié. */
+export async function pickProjectDirectory(title?: string): Promise<string | null> {
+  const result = await open({ directory: true, multiple: false, title });
   return typeof result === "string" ? result : null;
+}
+
+/** Vrai si `path` existe et est résolvable (délègue à `path_canonicalize`
+ * côté Rust), faux sinon — jamais de throw. Distinct de `canonicalizePath`
+ * ci-dessous, qui replie silencieusement sur le path brut en cas d'échec :
+ * `probePath` sert au contraire à DÉTECTER une racine de workspace disparue
+ * (dossier déplacé/supprimé) avant de tenter un spawn dessus. */
+export async function probePath(path: string): Promise<boolean> {
+  try {
+    await invoke<string>("path_canonicalize", { path });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /** Canonicalise `path` via la command Rust `path_canonicalize`. Échec IPC
@@ -177,9 +192,16 @@ export async function removeWorkspace(id: string): Promise<void> {
 
 /** Retrouve le projet de ce path canonique dans `workspaceId`, sinon en crée
  * un et sauvegarde. Dédup par path canonique **dans ce workspace** — le même
- * dossier peut être un projet distinct dans un autre workspace. */
-export async function addProject(workspaceId: string, path: string): Promise<Project> {
+ * dossier peut être un projet distinct dans un autre workspace.
+ *
+ * `null` (aucune écriture) si `workspaceId` ne référence plus aucun workspace
+ * au moment de l'insertion — vérifié APRÈS l'`await` de canonicalisation :
+ * un retrait de workspace concurrent (review A2bis-2) aurait sinon persisté
+ * un projet orphelin, que le parser v2 rejette en bloc au relaunch (perte de
+ * tout l'état). L'appelant traite `null` comme un no-op. */
+export async function addProject(workspaceId: string, path: string): Promise<Project | null> {
   const canonical = await canonicalizePath(path);
+  if (!state.workspaces.some((w) => w.id === workspaceId)) return null;
   const existing = state.projects.find(
     (p) => p.workspaceId === workspaceId && p.path === canonical,
   );
@@ -193,19 +215,11 @@ export async function addProject(workspaceId: string, path: string): Promise<Pro
 
 /** Retire le projet `id` (filtre pur `withoutProject` + persistance) — ne
  * touche à aucune session : c'est `tabs/index.ts` qui ferme les tabs du
- * projet AVANT d'appeler cette fonction (cf. docstring de `onRemoveProject`). */
+ * projet AVANT d'appeler cette fonction (cf. docstring de `onRemove`,
+ * `src/tabs/index.ts`). */
 export async function removeProject(id: string): Promise<void> {
   state = withoutProject(state, id);
   await saveState();
-}
-
-/** Retourne le premier workspace de l'état, ou crée « Défaut » s'il n'y en a
- * aucun. Branche de repli de « Launch Claude in… » dans ce lot (A2bis-1) —
- * le lot A2bis-2 ajoutera la branche « workspace de la session active ». */
-export async function ensureDefaultWorkspace(): Promise<Workspace> {
-  const first = state.workspaces[0];
-  if (first) return first;
-  return addWorkspace("Défaut");
 }
 
 export async function saveState(): Promise<void> {
