@@ -90,9 +90,10 @@ function defaultLayout(): LayoutState {
   };
 }
 
-/** État par défaut : 0 workspace, 0 projet — `ensureDefaultWorkspace`
- * (`src/workspace/index.ts`) crée le premier workspace « Défaut » à la
- * demande, pas ce module. */
+/** État par défaut : 0 workspace, 0 projet. Aucun workspace n'est créé
+ * implicitement (ni ici ni ailleurs) : « + Workspace » dans la sidebar est
+ * le seul geste qui en crée un ; « Launch Claude in… » ouvre une session
+ * orpheline au niveau racine sans toucher à l'état. */
 export function defaultState(): PersistedState {
   return {
     version: 2,

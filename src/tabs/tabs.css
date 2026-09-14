@@ -1,19 +1,70 @@
 /*
- * Styles du module `tabs` — sidebar projets/sessions et prompt bar.
- * Utilise les tokens --den-* posés par le module `theme` sur :root
- * (cf. src/styles.css).
+ * Styles du module `tabs` — sidebar workspace/projets/sessions (arbre 3
+ * niveaux, DEN-04 A2bis-2) et prompt bar. Utilise les tokens --den-* posés
+ * par le module `theme` sur :root (cf. src/styles.css).
  *
  * Langage visuel : la sidebar (#den-sidebar) est la surface "élevée" ; les
  * rows session inactives sont en retrait (--den-bg-surface, plus sombre que
  * la sidebar) — la hiérarchie vient du contraste de fond, pas de bordures.
- * La row session active bascule en surbrillance pleine (accent).
+ * La row session active bascule en surbrillance pleine (accent). Structure
+ * seulement ici — le style fin de l'arbre reste DEN-02.
  */
 
-.den-project-list {
+/* Barre racine : bouton launch (session orpheline) + « + Workspace » — wrap
+ * plutôt que déborder si la sidebar est étroite. */
+.den-root-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--den-space-1);
+}
+
+/* Sessions directement sous la racine ou sous un workspace — même retrait
+ * que .den-project__sessions ; la racine, elle, n'a rien au-dessus d'elle
+ * à indenter. */
+.den-root__sessions,
+.den-workspace__sessions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--den-space-1);
+}
+
+.den-workspace__sessions {
+  padding-left: var(--den-space-3);
+}
+
+.den-workspace-list {
   display: flex;
   flex-direction: column;
   gap: var(--den-space-2);
   min-height: 0;
+}
+
+.den-workspace {
+  display: flex;
+  flex-direction: column;
+  gap: var(--den-space-1);
+}
+
+.den-workspace__row {
+  display: flex;
+  align-items: center;
+  gap: var(--den-space-1);
+}
+
+.den-workspace__name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+  color: var(--den-fg);
+  cursor: text;
+}
+
+/* Slot vide — DEN-05 y rend un indicateur d'état au niveau workspace. */
+.den-workspace__badge {
+  min-width: 0;
 }
 
 .den-project__row {
@@ -36,8 +87,15 @@
   min-width: 0;
 }
 
+/* Boutons d'action des rows workspace et projet — même chrome sobre,
+ * regroupés pour ne pas dupliquer la déclaration. Les deux `__remove`
+ * partagent leur survol rouge. */
 .den-project__new,
-.den-project__remove {
+.den-project__remove,
+.den-workspace__add-project,
+.den-workspace__new,
+.den-workspace__root,
+.den-workspace__remove {
   padding: 0 var(--den-space-1);
   border: 1px solid transparent;
   border-radius: var(--den-radius);
@@ -50,12 +108,16 @@
   transition: background-color 0.1s ease-out;
 }
 
-.den-project__new:hover {
+.den-project__new:hover,
+.den-workspace__add-project:hover,
+.den-workspace__new:hover,
+.den-workspace__root:hover {
   background: var(--den-bg-elevated);
   color: var(--den-fg);
 }
 
-.den-project__remove:hover {
+.den-project__remove:hover,
+.den-workspace__remove:hover {
   background: var(--den-bg-elevated);
   color: var(--den-status-error);
 }
@@ -65,6 +127,26 @@
   flex-direction: column;
   gap: var(--den-space-1);
   padding-left: var(--den-space-3);
+}
+
+.den-workspace__projects {
+  display: flex;
+  flex-direction: column;
+  gap: var(--den-space-2);
+  padding-left: var(--den-space-3);
+}
+
+/* Input de renommage inline d'un workspace (cf. beginRename, sidebar.ts) —
+ * mêmes tokens que .den-prompt-bar__input, en compact. */
+.den-workspace__rename {
+  width: 100%;
+  padding: var(--den-space-1);
+  border: 1px solid var(--den-border);
+  border-radius: var(--den-radius);
+  background: var(--den-bg-elevated);
+  color: var(--den-fg);
+  font-family: var(--den-font-sans);
+  font-size: inherit;
 }
 
 .den-tab {
@@ -166,6 +248,9 @@
   color: var(--den-fg-secondary);
   font-family: var(--den-font-sans);
   font-size: 0.85em;
+  /* Même hauteur visuelle que le bouton `+ Workspace` de la barre racine
+   * (ligne 1.6, comme .den-workspace__new et consorts). */
+  line-height: 1.6;
   cursor: pointer;
   transition: background-color 0.1s ease-out;
 }
@@ -175,9 +260,10 @@
   color: var(--den-fg);
 }
 
-/* Header de session — nom du projet (collision -> parent/basename, cf.
- * displayName dans workspace/store.ts) + sessionId court, en tête du mount
- * conversation, au-dessus du fil. */
+/* Header de session — basename(cwd) (dossier de la session, pas le nom de
+ * row sidebar désambiguïsé — cf. displayName dans workspace/store.ts, qui
+ * ne s'applique qu'aux rows projet) + chemin raccourci (~) + sessionId
+ * court, en tête du mount conversation, au-dessus du fil. */
 .den-session-header {
   display: flex;
   align-items: baseline;
@@ -190,6 +276,15 @@
 
 .den-session-header__name {
   font-weight: 600;
+}
+
+.den-session-header__path {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--den-fg-muted);
+  font-family: var(--den-font-mono);
+  font-size: 0.85em;
 }
 
 .den-session-header__id {
