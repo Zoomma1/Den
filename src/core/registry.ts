@@ -1,7 +1,7 @@
 /**
  * Registre d'initialisation des modules feature de Den.
  *
- * Contrat : chaque module feature (theme, workspace, markdown, tabs,
+ * Contrat : chaque module feature (theme, workspace, layout, markdown, tabs,
  * terminal, interactive, plugins) exporte une fonction `init(ctx)`. `main.ts` les
  * enregistre ici dans un ordre fixe et appelle `initAll` une seule fois au
  * démarrage. Aucun lot futur ne doit avoir besoin de retoucher `main.ts` :

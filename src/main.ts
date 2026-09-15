@@ -2,6 +2,7 @@ import "./styles.css";
 import { Registry, type DenContext } from "./core/registry";
 import * as theme from "./theme";
 import * as workspace from "./workspace";
+import * as layout from "./layout";
 import * as tabs from "./tabs";
 import * as markdown from "./markdown";
 import * as terminal from "./terminal";
@@ -33,11 +34,16 @@ const registry = new Registry();
 //   l'objet module-level que `getState()` expose — tabs le lit dès son
 //   premier rendu de la sidebar (`mounts.sidebar`, DEN-04 A2), avant même
 //   qu'un tab existe ;
+// - layout juste après workspace, avant markdown/tabs/terminal : il lit
+//   `getState().layout` (doit être chargé) et pose la grille CSS sur
+//   `#den-app` — la grille doit être en place avant le premier `fit()`
+//   xterm (module terminal, DEN-04 A3) ;
 // - markdown avant tabs : invariant DOM, pas d'événement en jeu — les deux
 //   font `prepend` dans #den-conversation, et tabs doit passer en dernier
 //   pour que son header de session se retrouve au-dessus de `.den-views`.
 registry.register({ name: "theme", init: theme.init });
 registry.register({ name: "workspace", init: workspace.init });
+registry.register({ name: "layout", init: layout.init });
 registry.register({ name: "markdown", init: markdown.init });
 registry.register({ name: "tabs", init: tabs.init });
 registry.register({ name: "terminal", init: terminal.init });
