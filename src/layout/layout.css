@@ -1,0 +1,168 @@
+/*
+ * Styles du module `layout` — grilles des deux presets sur `#den-app` et
+ * chrome des deux splitters. `#den-app` est aplati (DEN-04 A3, cf.
+ * `index.html`) : `#den-sidebar`, `#den-conversation`, `#den-terminal`,
+ * `#den-status` et les deux `.den-splitter` (créés par `./index.ts`) sont
+ * tous des enfants directs, placés uniquement par `grid-area` — l'ordre DOM
+ * n'a plus d'importance.
+ *
+ * Les tailles ne sont pas des constantes CSS : `--den-sidebar-px`,
+ * `--den-conversation-fr`, `--den-terminal-fr` sont posées dynamiquement par
+ * `applyLayout` (`layout.ts`) sur `#den-app`, depuis l'état persisté.
+ */
+#den-app {
+  display: grid;
+  height: 100vh;
+  overflow: hidden;
+}
+
+#den-sidebar,
+#den-conversation,
+#den-terminal {
+  min-width: 0;
+  min-height: 0;
+}
+
+/* Preset actuel : sidebar | conversation | terminal, une seule ligne de
+ * contenu au-dessus de la barre de statut pleine largeur. */
+#den-app[data-layout="side-by-side"] {
+  grid-template-areas: "sidebar sp1 conversation sp2 terminal" "status status status status status";
+  grid-template-columns:
+    var(--den-sidebar-px) 4px minmax(0, var(--den-conversation-fr)) 4px
+    minmax(0, var(--den-terminal-fr));
+  grid-template-rows: 1fr auto;
+}
+
+/* Preset cible : sidebar sur toute la hauteur, conversation au-dessus du
+ * terminal — un seul splitter horizontal (sp2) entre les deux. */
+#den-app[data-layout="stacked"] {
+  grid-template-areas:
+    "sidebar sp1 conversation"
+    "sidebar sp1 sp2"
+    "sidebar sp1 terminal"
+    "status status status";
+  grid-template-columns: var(--den-sidebar-px) 4px 1fr;
+  grid-template-rows: minmax(0, var(--den-conversation-fr)) 4px minmax(0, var(--den-terminal-fr)) auto;
+}
+
+#den-sidebar {
+  grid-area: sidebar;
+}
+
+#den-conversation {
+  grid-area: conversation;
+}
+
+#den-terminal {
+  grid-area: terminal;
+}
+
+#den-status {
+  grid-area: status;
+}
+
+.den-splitter[data-splitter="sidebar"] {
+  grid-area: sp1;
+}
+
+.den-splitter[data-splitter="panes"] {
+  grid-area: sp2;
+}
+
+/* Sidebar masquée (raccourci ⌘B/Ctrl+B, `withSidebarHidden`) : elle et son
+ * splitter disparaissent, la colonne sidebar est ramenée à 0. Une règle par
+ * preset, chacune scopée sur les DEUX attributs : plus spécifique que la
+ * règle du preset seul, donc indépendante de l'ordre dans le fichier (gate
+ * review A3). */
+#den-app[data-layout="side-by-side"][data-sidebar="hidden"] {
+  grid-template-columns: 0 0 minmax(0, var(--den-conversation-fr)) 4px minmax(0, var(--den-terminal-fr));
+}
+
+#den-app[data-layout="stacked"][data-sidebar="hidden"] {
+  grid-template-columns: 0 0 1fr;
+}
+
+#den-app[data-sidebar="hidden"] #den-sidebar,
+#den-app[data-sidebar="hidden"] .den-splitter[data-splitter="sidebar"] {
+  display: none;
+}
+
+/* Terminal masqué (raccourci ⌘J/Ctrl+J, `withTerminalHidden`) : il et son
+ * splitter disparaissent. Asymétrie réelle avec la sidebar : masquer le
+ * terminal joue sur les COLONNES en side-by-side (les panes sont côte à
+ * côte) mais sur les LIGNES en stacked (le terminal est sous la
+ * conversation) — cf. la grille de chaque preset ci-dessus. */
+#den-app[data-layout="side-by-side"][data-terminal="hidden"] {
+  grid-template-columns: var(--den-sidebar-px) 4px 1fr 0 0;
+}
+
+#den-app[data-layout="stacked"][data-terminal="hidden"] {
+  grid-template-rows: 1fr 0 0 auto;
+}
+
+#den-app[data-terminal="hidden"] #den-terminal,
+#den-app[data-terminal="hidden"] .den-splitter[data-splitter="panes"] {
+  display: none;
+}
+
+/* Piège de spécificité (relevé à la gate review A3, reproduit ici) : quand
+ * sidebar ET terminal sont masqués en même temps en side-by-side, la règle
+ * sidebar (ligne ~77) et la règle terminal ci-dessus portent TOUTES DEUX sur
+ * `grid-template-columns`, avec la MÊME spécificité (1 id + 2 attributs) —
+ * avec les deux attributs posés, seule la dernière du fichier s'appliquerait
+ * et un des deux panes resterait visible. D'où cette règle combinée, plus
+ * spécifique (1 id + 3 attributs), qui tranche sans dépendre de l'ordre des
+ * déclarations. En stacked, aucune règle combinée n'est nécessaire : la
+ * règle sidebar porte sur les colonnes, la règle terminal sur les lignes —
+ * deux propriétés différentes se composent sans conflit. */
+#den-app[data-layout="side-by-side"][data-sidebar="hidden"][data-terminal="hidden"] {
+  grid-template-columns: 0 0 1fr 0 0;
+}
+
+/* Piste de 4 px = zone de prise, mais transparente au repos : le trait
+ * visible reste la bordure 1 px des panes (sidebar `border-right`, terminal
+ * `border-left`/`border-top` ci-dessous) — sinon 1 + 4 + 1 px de couleur
+ * bordure, séparateur visiblement plus gros qu'avant A3 (grill A3, 14/09).
+ * Le splitter ne s'allume qu'au survol ou pendant un drag. */
+.den-splitter {
+  background: transparent;
+  transition: background-color 0.1s ease-out;
+}
+
+.den-splitter:hover,
+#den-app[data-dragging="sidebar"] .den-splitter[data-splitter="sidebar"],
+#den-app[data-dragging="panes"] .den-splitter[data-splitter="panes"] {
+  background: var(--den-accent);
+}
+
+.den-splitter[data-splitter="sidebar"] {
+  cursor: col-resize;
+}
+
+/* Splitter `panes` : axe de resize selon le preset — X (largeur) en
+ * side-by-side, Y (hauteur) en stacked. */
+#den-app[data-layout="side-by-side"] .den-splitter[data-splitter="panes"] {
+  cursor: col-resize;
+}
+
+#den-app[data-layout="stacked"] .den-splitter[data-splitter="panes"] {
+  cursor: row-resize;
+}
+
+/* Pendant un drag (posé par `./index.ts` au pointerdown, retiré au
+ * pointerup/pointercancel) : neutralise la sélection de texte sous le
+ * pointeur pendant qu'on tire un splitter. */
+#den-app[data-dragging] {
+  user-select: none;
+}
+
+/* Bordure entre conversation et terminal : à gauche en side-by-side (les
+ * deux panes sont côte à côte), en haut en stacked (le terminal est sous la
+ * conversation) — déplacée ici depuis styles.css (dépend du preset). */
+#den-app[data-layout="side-by-side"] #den-terminal {
+  border-left: 1px solid var(--den-border);
+}
+
+#den-app[data-layout="stacked"] #den-terminal {
+  border-top: 1px solid var(--den-border);
+}

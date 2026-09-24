@@ -113,7 +113,15 @@ export function init(ctx: DenContext): void {
   loadWebglWithFallback(term);
 
   term.open(viewport);
-  fitAddon.fit();
+  // Même garde qu'`applyResize` (DEN-04 A4-1, gate review) : si le pane est
+  // masqué au démarrage (`terminalHidden` persisté), le viewport est 0×0 et
+  // `fit()` n'y calculerait rien d'utile — `term.cols`/`term.rows` restent
+  // aux défauts xterm (80×24) pour ce premier spawn, corrigés dès le premier
+  // `pty_resize` du `ResizeObserver` au réaffichage (rien à faire de plus,
+  // le shell relit `stty size` sur SIGWINCH).
+  if (viewport.clientWidth > 0 && viewport.clientHeight > 0) {
+    fitAddon.fit();
+  }
 
   let ptyId: number | undefined;
   let spawnFailed = false;
@@ -143,6 +151,13 @@ export function init(ctx: DenContext): void {
   });
 
   const applyResize = (): void => {
+    // Garde dimensionnelle (DEN-04 A4-1) : un pane masqué (`display:none`,
+    // cf. `layout.css`) a un viewport 0×0 — `fitAddon.fit()` y calculerait
+    // une grille dégénérée et enverrait 2 col × 1 ligne au PTY, repliant
+    // tout ce qui s'écrit pendant le masquage. Rien à faire au réaffichage :
+    // le `ResizeObserver` ci-dessous observe déjà `viewport` et refire dès
+    // qu'il repasse d'une taille nulle à une taille réelle.
+    if (viewport.clientWidth === 0 || viewport.clientHeight === 0) return;
     fitAddon.fit();
     if (ptyId === undefined) {
       return;

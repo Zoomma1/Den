@@ -46,6 +46,7 @@ import {
   defaultState,
   withoutProject,
   withoutWorkspace,
+  type LayoutState,
   type PersistedState,
   type Project,
   type StateIO,
@@ -220,6 +221,18 @@ export async function addProject(workspaceId: string, path: string): Promise<Pro
 export async function removeProject(id: string): Promise<void> {
   state = withoutProject(state, id);
   await saveState();
+}
+
+/** Remplace `state.layout` (preset, tailles, `sidebarHidden`) **en mémoire
+ * seulement**, de façon synchrone — contrairement aux autres setters, pas de
+ * `saveState()` ici : c'est l'appelant (`src/layout/index.ts`) qui persiste
+ * via `saveState()`, débouncé pendant un drag. Motif (review A3) :
+ * `getState().layout` est la source de vérité que chaque geste relit ; si la
+ * mise à jour mémoire attendait le tir du debounce, un second geste (autre
+ * splitter, changement de preset, ⌘B) dans la fenêtre relirait un layout
+ * périmé et écraserait le premier. */
+export function setLayout(layout: LayoutState): void {
+  state = { ...state, layout };
 }
 
 export async function saveState(): Promise<void> {

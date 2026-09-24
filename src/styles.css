@@ -54,17 +54,6 @@ body {
   font-size: var(--den-font-size-base);
 }
 
-/* Grille provisoire 2 colonnes x 2 lignes ([sidebar | main] au-dessus de
- * [status], sur toute la largeur) — A3 passe en grid-template-areas +
- * splitters (layout redimensionnable, cf. state.json `layout`). */
-#den-app {
-  display: grid;
-  grid-template-columns: 240px 1fr;
-  grid-template-rows: 1fr auto;
-  height: 100vh;
-  overflow: hidden;
-}
-
 #den-sidebar {
   display: flex;
   flex-direction: column;
@@ -76,31 +65,21 @@ body {
   border-right: 1px solid var(--den-border);
 }
 
-#den-main {
-  display: flex;
-  min-height: 0;
-  min-width: 0;
-}
-
 #den-conversation {
   display: flex;
   flex-direction: column;
-  flex: 1 1 60%;
   min-width: 0;
   min-height: 0;
   padding: var(--den-space-4) var(--den-space-4) 0;
 }
 
 #den-terminal {
-  flex: 1 1 40%;
   min-width: 0;
-  border-left: 1px solid var(--den-border);
   background: var(--den-bg-surface);
   font-family: var(--den-font-mono);
 }
 
 #den-status {
-  grid-column: 1 / -1;
   display: flex;
   align-items: center;
   gap: var(--den-space-3);

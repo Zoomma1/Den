@@ -57,6 +57,16 @@ export interface LayoutSizes {
 export interface LayoutState {
   preset: LayoutPreset;
   sizes: Record<LayoutPreset, LayoutSizes>;
+  /** Sidebar masquée (raccourci ⌘B/Ctrl+B, DEN-04 A3, retour du grill A2).
+   * Absent dans un payload existant -> `false` (cf. `isLayout` et
+   * `tryParsePersistedState` : un champ nouveau ne doit jamais faire perdre
+   * un état déjà persisté). */
+  sidebarHidden: boolean;
+  /** Terminal masqué (raccourci ⌘J/Ctrl+J, DEN-04 A4-1, retour du grill A3).
+   * Absent dans un payload existant -> `false` (cf. `isLayout` et
+   * `tryParsePersistedState` : un champ nouveau ne doit jamais faire perdre
+   * un état déjà persisté). */
+  terminalHidden: boolean;
 }
 
 export interface PersistedState {
@@ -87,6 +97,8 @@ function defaultLayout(): LayoutState {
       "side-by-side": defaultLayoutSizes(),
       stacked: defaultLayoutSizes(),
     },
+    sidebarHidden: false,
+    terminalHidden: false,
   };
 }
 
@@ -114,11 +126,26 @@ function isLayoutSizes(value: unknown): value is LayoutSizes {
   );
 }
 
+/** `sidebarHidden` absent (`undefined`) est valide — un `state.json` v1 ou
+ * v2 écrit avant A3 n'a pas ce champ ; `tryParsePersistedState` le normalise
+ * ensuite à `false`. Présent mais non booléen -> invalide (même sévérité
+ * que `rootPath`, cf. docstring de tête). */
 function isLayout(value: unknown): value is LayoutState {
   if (typeof value !== "object" || value === null) return false;
-  const candidate = value as { preset?: unknown; sizes?: unknown };
+  const candidate = value as {
+    preset?: unknown;
+    sizes?: unknown;
+    sidebarHidden?: unknown;
+    terminalHidden?: unknown;
+  };
   if (!LAYOUT_PRESETS.includes(candidate.preset as LayoutPreset)) return false;
   if (typeof candidate.sizes !== "object" || candidate.sizes === null) return false;
+  if (candidate.sidebarHidden !== undefined && typeof candidate.sidebarHidden !== "boolean") {
+    return false;
+  }
+  if (candidate.terminalHidden !== undefined && typeof candidate.terminalHidden !== "boolean") {
+    return false;
+  }
   const sizes = candidate.sizes as Record<string, unknown>;
   return LAYOUT_PRESETS.every((preset) => isLayoutSizes(sizes[preset]));
 }
@@ -155,9 +182,23 @@ function isProject(value: unknown): value is Project {
   );
 }
 
+/** Normalise un `layout` déjà validé par `isLayout` (qui accepte
+ * `sidebarHidden` absent) en un `LayoutState` complet — `sidebarHidden ??
+ * false`. Appelée sur les DEUX chemins v1 et v2 : un `layout` v1 repris tel
+ * quel par `migrateV1` doit être normalisé comme n'importe quel payload
+ * existant, pas seulement le v2. */
+function normalizeLayout(layout: LayoutState): LayoutState {
+  return {
+    ...layout,
+    sidebarHidden: layout.sidebarHidden ?? false,
+    terminalHidden: layout.terminalHidden ?? false,
+  };
+}
+
 /** Migre un payload v1 valide en état v2 : un unique workspace « Défaut »
  * (id produit par `newId`) auquel tous les projets v1 sont rattachés — map
- * 1:1, aucun projet perdu par construction. `layout` repris tel quel. */
+ * 1:1, aucun projet perdu par construction. `layout` repris tel quel (déjà
+ * normalisé par l'appelant). */
 function migrateV1(
   projects: ProjectV1[],
   layout: LayoutState,
@@ -211,7 +252,8 @@ export function tryParsePersistedState(
       return null;
     }
     if (!isLayout(candidate.layout)) return null;
-    return { state: migrateV1(candidate.projects, candidate.layout, newId), migratedFrom: 1 };
+    const layout = normalizeLayout(candidate.layout);
+    return { state: migrateV1(candidate.projects, layout, newId), migratedFrom: 1 };
   }
 
   if (candidate.version === 2) {
@@ -229,7 +271,7 @@ export function tryParsePersistedState(
         version: 2,
         workspaces: candidate.workspaces,
         projects: candidate.projects,
-        layout: candidate.layout,
+        layout: normalizeLayout(candidate.layout),
       },
       migratedFrom: null,
     };
