@@ -62,6 +62,11 @@ export interface LayoutState {
    * `tryParsePersistedState` : un champ nouveau ne doit jamais faire perdre
    * un état déjà persisté). */
   sidebarHidden: boolean;
+  /** Terminal masqué (raccourci ⌘J/Ctrl+J, DEN-04 A4-1, retour du grill A3).
+   * Absent dans un payload existant -> `false` (cf. `isLayout` et
+   * `tryParsePersistedState` : un champ nouveau ne doit jamais faire perdre
+   * un état déjà persisté). */
+  terminalHidden: boolean;
 }
 
 export interface PersistedState {
@@ -93,6 +98,7 @@ function defaultLayout(): LayoutState {
       stacked: defaultLayoutSizes(),
     },
     sidebarHidden: false,
+    terminalHidden: false,
   };
 }
 
@@ -126,10 +132,18 @@ function isLayoutSizes(value: unknown): value is LayoutSizes {
  * que `rootPath`, cf. docstring de tête). */
 function isLayout(value: unknown): value is LayoutState {
   if (typeof value !== "object" || value === null) return false;
-  const candidate = value as { preset?: unknown; sizes?: unknown; sidebarHidden?: unknown };
+  const candidate = value as {
+    preset?: unknown;
+    sizes?: unknown;
+    sidebarHidden?: unknown;
+    terminalHidden?: unknown;
+  };
   if (!LAYOUT_PRESETS.includes(candidate.preset as LayoutPreset)) return false;
   if (typeof candidate.sizes !== "object" || candidate.sizes === null) return false;
   if (candidate.sidebarHidden !== undefined && typeof candidate.sidebarHidden !== "boolean") {
+    return false;
+  }
+  if (candidate.terminalHidden !== undefined && typeof candidate.terminalHidden !== "boolean") {
     return false;
   }
   const sizes = candidate.sizes as Record<string, unknown>;
@@ -174,7 +188,11 @@ function isProject(value: unknown): value is Project {
  * quel par `migrateV1` doit être normalisé comme n'importe quel payload
  * existant, pas seulement le v2. */
 function normalizeLayout(layout: LayoutState): LayoutState {
-  return { ...layout, sidebarHidden: layout.sidebarHidden ?? false };
+  return {
+    ...layout,
+    sidebarHidden: layout.sidebarHidden ?? false,
+    terminalHidden: layout.terminalHidden ?? false,
+  };
 }
 
 /** Migre un payload v1 valide en état v2 : un unique workspace « Défaut »

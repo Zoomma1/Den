@@ -34,6 +34,7 @@ describe("tryParsePersistedState / parsePersistedState / serializePersistedState
           stacked: { sidebarPx: 240, conversationRatio: 0.7 },
         },
         sidebarHidden: false,
+        terminalHidden: false,
       },
     };
     expect(parsePersistedState(serializePersistedState(state))).toEqual(state);
@@ -172,6 +173,37 @@ describe("tryParsePersistedState / parsePersistedState / serializePersistedState
       workspaces: [],
       projects: [],
       layout: { ...defaultState().layout, sidebarHidden: "yes" },
+    });
+    expect(tryParsePersistedState(raw)).toBeNull();
+  });
+
+  it("normalizes a v2 layout missing terminalHidden to false", () => {
+    const layout = defaultState().layout as Partial<PersistedState["layout"]>;
+    delete layout.terminalHidden;
+    const raw = JSON.stringify({ version: 2, workspaces: [], projects: [], layout });
+    expect(tryParsePersistedState(raw)?.state.layout.terminalHidden).toBe(false);
+  });
+
+  it("normalizes a migrated v1 layout missing terminalHidden to false", () => {
+    const layout = defaultState().layout as Partial<PersistedState["layout"]>;
+    delete layout.terminalHidden;
+    const raw = JSON.stringify({ version: 1, projects: [{ id: "p1", path: "/a" }], layout });
+    const result = tryParsePersistedState(raw, () => "ws");
+    expect(result?.migratedFrom).toBe(1);
+    expect(result?.state.layout.terminalHidden).toBe(false);
+  });
+
+  it("roundtrips terminalHidden: true", () => {
+    const state: PersistedState = { ...defaultState(), layout: { ...defaultState().layout, terminalHidden: true } };
+    expect(parsePersistedState(serializePersistedState(state))).toEqual(state);
+  });
+
+  it("returns null when terminalHidden is not a boolean", () => {
+    const raw = JSON.stringify({
+      version: 2,
+      workspaces: [],
+      projects: [],
+      layout: { ...defaultState().layout, terminalHidden: "yes" },
     });
     expect(tryParsePersistedState(raw)).toBeNull();
   });
