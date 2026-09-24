@@ -41,7 +41,7 @@
  */
 import type { DenContext } from "../core/registry";
 import { getState, saveState, setLayout } from "../workspace";
-import type { LayoutPreset } from "../workspace/store";
+import type { LayoutPreset, LayoutState } from "../workspace/store";
 import { debounce, type Debounced } from "../terminal/debounce";
 import {
   applyLayout,
@@ -49,6 +49,7 @@ import {
   sidebarPxFromDrag,
   withPreset,
   withSidebarHidden,
+  withTerminalHidden,
   withSizes,
 } from "./layout";
 import "./layout.css";
@@ -79,7 +80,8 @@ export function init(ctx: DenContext): void {
   wireSidebarDrag(app, sidebarSplitter, persist);
   wirePanesDrag(app, panesSplitter, persist);
   wireLayoutSelect(ctx, app, panesSplitter);
-  wireSidebarShortcut(app);
+  wirePaneShortcut(app, "b", (layout) => withSidebarHidden(layout, !layout.sidebarHidden));
+  wirePaneShortcut(app, "j", (layout) => withTerminalHidden(layout, !layout.terminalHidden));
 }
 
 function createSplitter(kind: SplitterKind, ariaLabel: string): HTMLDivElement {
@@ -223,30 +225,39 @@ function wireLayoutSelect(ctx: DenContext, app: HTMLElement, panesSplitter: HTML
   ctx.mounts.status.appendChild(select);
 }
 
-/** ⌘B sur macOS, Ctrl+B ailleurs — un seul modificateur par plateforme,
- * jamais les deux (`Ctrl+B` est le préfixe tmux dans le terminal). Écoute
- * en capture sur `window` : la capture donne l'ORDRE (avant xterm), pas
- * l'exclusivité — `stopPropagation` est ce qui empêche la frappe d'atteindre
- * le `<textarea>` de xterm (son `_keyDown` ne regarde jamais
- * `defaultPrevented` et enverrait `Ctrl+B` = STX au PTY). `preventDefault`
- * + `stopPropagation` seulement quand le raccourci matche vraiment.
- * `event.repeat` ignoré : une touche maintenue ne doit produire qu'un seul
- * toggle (et une seule écriture), pas un clignotement à la cadence de
- * répétition de l'OS. */
-function wireSidebarShortcut(app: HTMLElement): void {
+/** ⌘<key> sur macOS, Ctrl+<key> ailleurs — un seul modificateur par
+ * plateforme, jamais les deux (`Ctrl+B` est le préfixe tmux dans le
+ * terminal, `Ctrl+J` un LF brut). Écoute en capture sur `window` : la
+ * capture donne l'ORDRE (avant xterm), pas l'exclusivité —
+ * `stopPropagation` est ce qui empêche la frappe d'atteindre le
+ * `<textarea>` de xterm (son `_keyDown` ne regarde jamais
+ * `defaultPrevented` et enverrait le caractère de contrôle correspondant au
+ * PTY). `preventDefault` + `stopPropagation` seulement quand le raccourci
+ * matche vraiment. `event.repeat` ignoré : une touche maintenue ne doit
+ * produire qu'un seul toggle (et une seule écriture), pas un clignotement à
+ * la cadence de répétition de l'OS.
+ *
+ * Factorisé pour `⌘B`/`Ctrl+B` (sidebar) et `⌘J`/`Ctrl+J` (terminal, DEN-04
+ * A4-1) : la doctrine ci-dessus ne doit être écrite qu'une fois. `toggle`
+ * reçoit le `layout` courant et rend le nouvel état — `withSidebarHidden`/
+ * `withTerminalHidden` appliqués à la négation de leur propre champ. */
+function wirePaneShortcut(
+  app: HTMLElement,
+  key: string,
+  toggle: (layout: LayoutState) => LayoutState,
+): void {
   const isMac = /Mac/i.test(navigator.userAgent) || /Mac/i.test(navigator.platform);
 
   window.addEventListener(
     "keydown",
     (e) => {
       const modifierMatches = isMac ? e.metaKey : e.ctrlKey;
-      if (!modifierMatches || e.key.toLowerCase() !== "b") return;
+      if (!modifierMatches || e.key.toLowerCase() !== key) return;
       e.preventDefault();
       e.stopPropagation();
       if (e.repeat) return;
 
-      const current = getState().layout;
-      const next = withSidebarHidden(current, !current.sidebarHidden);
+      const next = toggle(getState().layout);
       setLayout(next);
       applyLayout(app, next);
       void saveState();
