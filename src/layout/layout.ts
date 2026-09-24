@@ -71,6 +71,11 @@ export function applyLayout(app: HTMLElement, layout: LayoutState): void {
   } else {
     delete app.dataset.sidebar;
   }
+  if (layout.terminalHidden) {
+    app.dataset.terminal = "hidden";
+  } else {
+    delete app.dataset.terminal;
+  }
 
   app.style.setProperty("--den-sidebar-px", `${sidebarPx}px`);
   app.style.setProperty("--den-conversation-fr", `${roundFr(ratio)}fr`);
@@ -121,4 +126,9 @@ export function withSizes(layout: LayoutState, preset: LayoutPreset, sizes: Layo
 /** Nouvel état avec `sidebarHidden` remplacé. Immuable. */
 export function withSidebarHidden(layout: LayoutState, hidden: boolean): LayoutState {
   return { ...layout, sidebarHidden: hidden };
+}
+
+/** Nouvel état avec `terminalHidden` remplacé. Immuable. */
+export function withTerminalHidden(layout: LayoutState, hidden: boolean): LayoutState {
+  return { ...layout, terminalHidden: hidden };
 }

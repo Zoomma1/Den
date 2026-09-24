@@ -15,6 +15,7 @@ import {
   sidebarPxFromDrag,
   withPreset,
   withSidebarHidden,
+  withTerminalHidden,
   withSizes,
 } from "./layout";
 import { defaultState, type LayoutState } from "../workspace/store";
@@ -50,6 +51,15 @@ describe("applyLayout", () => {
 
     applyLayout(app, makeLayout({ sidebarHidden: false }));
     expect(app.dataset.sidebar).toBeUndefined();
+  });
+
+  it("pose data-terminal=hidden quand terminalHidden est vrai, absent sinon", () => {
+    const app = document.createElement("div");
+    applyLayout(app, makeLayout({ terminalHidden: true }));
+    expect(app.dataset.terminal).toBe("hidden");
+
+    applyLayout(app, makeLayout({ terminalHidden: false }));
+    expect(app.dataset.terminal).toBeUndefined();
   });
 
   it("clamp sidebarPx et conversationRatio hors bornes à l'application", () => {
@@ -168,6 +178,15 @@ describe("with* — immuabilité", () => {
 
     expect(next.sidebarHidden).toBe(true);
     expect(layout.sidebarHidden).toBe(false);
+    expect(next).not.toBe(layout);
+  });
+
+  it("withTerminalHidden remplace le booléen sans mutation", () => {
+    const layout = makeLayout({ terminalHidden: false });
+    const next = withTerminalHidden(layout, true);
+
+    expect(next.terminalHidden).toBe(true);
+    expect(layout.terminalHidden).toBe(false);
     expect(next).not.toBe(layout);
   });
 });
