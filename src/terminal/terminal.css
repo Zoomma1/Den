@@ -1,10 +1,11 @@
 /*
  * Styles du module `terminal`. `#den-terminal` (défini dans styles.css
  * racine) reste le point de montage ; on n'y ajoute ici que ce qui est
- * spécifique à l'agencement interne toolbar + viewport xterm.js. Les
- * couleurs internes de xterm (thème du Terminal xterm.js lui-même) sont
- * hors scope — seuls le chrome de la toolbar et le fond du viewport sont
- * stylés ici.
+ * spécifique à l'agencement interne toolbar + groupes/onglets + viewport
+ * xterm.js (DEN-04 A4-2 : un groupe de shells par nœud propriétaire, cf.
+ * `./index.ts`). Les couleurs internes de xterm (thème du Terminal xterm.js
+ * lui-même) sont hors scope — seuls le chrome de la toolbar et le fond du
+ * viewport sont stylés ici.
  *
  * Langage visuel : la toolbar est du chrome (--den-bg-elevated, cohérent
  * avec les barres tabs/status) ; le viewport reste sur --den-bg-surface
@@ -19,6 +20,8 @@
 
 .den-terminal__toolbar {
   flex: 0 0 auto;
+  display: flex;
+  align-items: center;
   padding: var(--den-space-1) var(--den-space-3);
   background: var(--den-bg-elevated);
   border-bottom: 1px solid var(--den-border);
@@ -26,6 +29,100 @@
   font-size: 0.8em;
   font-family: var(--den-font-sans);
   user-select: none;
+}
+
+/* Visible ssi aucun groupe n'est affiché (`labelEl.hidden`, cf. `showGroup`
+   dans `./index.ts`) — sans session active, la toolbar retombe sur ce
+   libellé plutôt que sur une barre d'onglets vide. */
+.den-terminal__label {
+  flex: 1 1 auto;
+}
+
+/* Une barre PAR groupe de terminaux (`.den-terminal__tabs`), montée/masquée
+   avec son groupe — jamais reconstruite au changement d'onglet actif. */
+.den-terminal__tabs {
+  display: flex;
+  align-items: center;
+  gap: var(--den-space-1);
+  flex: 1 1 auto;
+}
+
+/* `display` auteur bat toujours la règle UA `[hidden]{display:none}` en
+   cascade, quelle que soit la spécificité — sans ce garde explicite,
+   `groupEl.hidden`/`tabsBarEl.hidden` (posés par `showGroup` dans
+   `./index.ts`) n'auraient aucun effet visuel dès qu'un second groupe existe
+   (même patron que `markdown.css` / `tabs.css`). */
+.den-terminal__tabs[hidden] {
+  display: none;
+}
+
+.den-terminal__tab {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--den-space-1);
+  padding: 2px var(--den-space-2);
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--den-fg-muted);
+  font: inherit;
+  cursor: pointer;
+}
+
+.den-terminal__tab:hover {
+  background: var(--den-bg-surface);
+}
+
+.den-terminal__tab--active {
+  background: var(--den-bg-surface);
+  border-color: var(--den-border);
+  color: var(--den-fg);
+}
+
+.den-terminal__tab-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 3px;
+  opacity: 0.6;
+}
+
+.den-terminal__tab-close:hover {
+  opacity: 1;
+  background: var(--den-bg-elevated);
+}
+
+.den-terminal__add {
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--den-fg-muted);
+  font: inherit;
+  line-height: 1;
+  padding: 2px var(--den-space-2);
+  cursor: pointer;
+}
+
+.den-terminal__add:hover {
+  background: var(--den-bg-surface);
+  color: var(--den-fg);
+}
+
+.den-terminal__views {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+}
+
+.den-terminal__group {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+}
+
+/* Même garde que `.den-terminal__tabs` ci-dessus — cf. son commentaire. */
+.den-terminal__group[hidden] {
+  display: none;
 }
 
 .den-terminal__viewport {

@@ -5,7 +5,10 @@
 //! débit).
 //!
 //! Signatures figées (contrat inter-lots) — ne pas changer sans mettre à
-//! jour les appelants côté `src/terminal/index.ts`.
+//! jour les appelants côté `src/terminal/index.ts`. `pty_spawn` prend un
+//! `cwd` explicite (DEN-04 A4-2) : chaque groupe de terminaux ouvre son PTY
+//! dans le dossier de la session propriétaire, jamais dans le cwd du
+//! process Den.
 
 use portable_pty::{native_pty_system, ChildKiller, CommandBuilder, MasterPty, PtySize};
 use std::collections::HashMap;
@@ -47,7 +50,7 @@ fn resolve_shell() -> String {
 }
 
 #[tauri::command]
-pub fn pty_spawn(cols: u16, rows: u16, on_data: Channel<Vec<u8>>) -> Result<u32, String> {
+pub fn pty_spawn(cols: u16, rows: u16, cwd: String, on_data: Channel<Vec<u8>>) -> Result<u32, String> {
     let pty_system = native_pty_system();
     let pair = pty_system
         .openpty(PtySize {
@@ -59,6 +62,7 @@ pub fn pty_spawn(cols: u16, rows: u16, on_data: Channel<Vec<u8>>) -> Result<u32,
         .map_err(|err| format!("ouverture du PTY impossible: {err}"))?;
 
     let mut cmd = CommandBuilder::new(resolve_shell());
+    cmd.cwd(&cwd);
     // xterm.js (addon webgl) rend le 256-couleurs et le truecolor : sans ces
     // deux variables, vim & co retombent sur la palette 8/16 couleurs.
     cmd.env("TERM", "xterm-256color");

@@ -26,9 +26,20 @@
  *   workspace, de ses projets) ont fini de fermer (chaque `sidecar_kill`
  *   attendu, séquentiellement) et que le nœud a été retiré de l'état
  *   persisté. Remplace `den:project-removed` (A2) — même contrat, étendu aux
- *   workspaces. Ancrage DEN-04 A4 : le module terminal y fera le `pty_kill`
- *   du groupe de terminaux du nœud — aucun consommateur aujourd'hui, cet
- *   événement est un no-op observable tant qu'A4 n'est pas fait.
+ *   workspaces. Ancrage DEN-04 A4 : le module terminal y fait le `pty_kill`
+ *   du groupe de terminaux du nœud (A4-2). Retrait d'un workspace : UN
+ *   événement par nœud retiré — le workspace lui-même PUIS un par projet
+ *   enfant cascadé (`kind: "project"`) — sans ça les groupes de terminaux
+ *   `project:<id>` de ses projets restent orphelins (review DEN-04 A4-2,
+ *   25/09 : seul l'événement du workspace était émis, PTY jamais tués).
+ * - `den:session-closed` (`detail: { tabId, owner, cwd }`), émis par
+ *   `closeTab` juste après `tabs.delete(tabId)`, avec l'`owner`/`cwd` de la
+ *   session fermée (capturés AVANT le retrait de la `Map`). Ancrage DEN-04
+ *   A4-2 : le module terminal s'en sert pour savoir quand un groupe de
+ *   terminaux `root` n'a plus aucune session vivante (pas d'ancrage dans
+ *   l'arbre sidebar pour `root` — un groupe sans session devient
+ *   inatteignable, donc tué ; un groupe `workspace`/`project` survit, lui,
+ *   à la fermeture de ses sessions).
  * - `den:tab-state-changed` (`detail: { tabId: string, state: TabLifecycleState }`) :
  *   émis quand l'état de lifecycle d'un tab (cf. `./lifecycle.ts`, seule
  *   source de vérité — DEN-10) change réellement, après chaque
@@ -399,7 +410,11 @@ export async function init(ctx: DenContext): Promise<void> {
     }
     router.closeTab(tabId);
     tab.buttonEl.remove();
+    const { owner, cwd } = tab;
     tabs.delete(tabId);
+    window.dispatchEvent(
+      new CustomEvent("den:session-closed", { detail: { tabId, owner, cwd } }),
+    );
 
     if (activeTabId === tabId) {
       const remaining = [...tabs.keys()];
@@ -766,6 +781,15 @@ export async function init(ctx: DenContext): Promise<void> {
       window.dispatchEvent(
         new CustomEvent("den:owner-removed", { detail: { kind: owner.kind, id } }),
       );
+      // Cascade : un workspace retiré emporte ses projets, mais chacun a son
+      // propre groupe de terminaux (`project:<id>`, cf. A4-2) — sans un
+      // événement PAR projet, ceux-ci restent orphelins dans la Map du
+      // module terminal (review 25/09).
+      for (const pid of projectIds) {
+        window.dispatchEvent(
+          new CustomEvent("den:owner-removed", { detail: { kind: "project", id: pid } }),
+        );
+      }
     } finally {
       for (const k of keys) removing.delete(k);
     }
