@@ -1,22 +1,48 @@
 /*
- * Styles du module `tabs` — sidebar workspace/projets/sessions (arbre 3
- * niveaux, DEN-04 A2bis-2) et prompt bar. Utilise les tokens --den-* posés
- * par le module `theme` sur :root (cf. src/styles.css).
- *
- * Langage visuel : la sidebar (#den-sidebar) est la surface "élevée" ; les
- * rows session inactives sont en retrait (--den-bg-surface, plus sombre que
- * la sidebar) — la hiérarchie vient du contraste de fond, pas de bordures.
- * La row session active bascule en surbrillance pleine (accent). Structure
- * seulement ici — le style fin de l'arbre reste DEN-02.
+ * Styles du module `tabs` — sidebar workspace/projets et prompt bar. Utilise
+ * les tokens --den-* posés par le module `theme` sur :root (cf. src/styles.css).
  */
 
-/* Barre racine : bouton launch + « + Workspace » — wrap
- * plutôt que déborder si la sidebar est étroite. */
+/* Barre de boutons en bas de la sidebar (margin-top:auto la pousse après la liste). */
 .den-root-bar {
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--den-space-1);
+  flex-direction: column;
+  gap: var(--den-space-2);
+  margin-top: auto;
+}
+
+.den-root-bar > button {
+  display: flex;
+  justify-content: center;
+  padding: var(--den-space-2) var(--den-space-3);
+  border-radius: var(--den-radius-lg, var(--den-radius));
+  font-family: var(--den-font-sans);
+  font-size: 0.85em;
+  font-weight: 600;
+  line-height: 1.4;
+  cursor: pointer;
+}
+
+.den-root-bar__add-workspace {
+  border: 1px solid var(--den-edge, var(--den-border));
+  background: var(--den-glass-2, var(--den-bg-surface));
+  color: var(--den-fg);
+}
+
+.den-root-bar__add-workspace:hover {
+  background: var(--den-glass-3, var(--den-bg-elevated));
+}
+
+.den-root-bar > .den-launch {
+  border-color: transparent;
+  background: var(--den-accent-gradient, var(--den-accent));
+  color: var(--den-accent-fg);
+}
+
+.den-root-bar > .den-launch:hover {
+  background: var(--den-accent-gradient, var(--den-accent));
+  color: var(--den-accent-fg);
+  filter: brightness(1.08);
 }
 
 .den-workspace-list {
@@ -40,27 +66,63 @@
 
 .den-workspace__name {
   flex: 1;
+  min-width: 0;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+  overflow-wrap: anywhere;
   font-weight: 600;
   color: var(--den-fg);
   cursor: text;
 }
 
-/* Slot vide — DEN-05 y rend un indicateur d'état au niveau workspace. */
-.den-workspace__badge {
-  min-width: 0;
+/* Slots d'état (DEN-05) : invisibles tant qu'ils n'ont pas de data-status ; la puce est le slot lui-même. */
+.den-workspace__badge,
+.den-project__badge {
+  display: none;
+  flex: none;
+  box-sizing: border-box;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
 }
 
-/* Pill seulement quand le slot est rempli, sinon une pastille vide s'afficherait. */
-.den-workspace__badge:not(:empty),
-.den-project__badge:not(:empty) {
-  padding: 0 var(--den-space-2);
-  border-radius: 999px;
-  background: var(--den-glass-3, var(--den-bg-elevated));
-  color: var(--den-fg-secondary);
-  font-size: 0.8em;
+.den-workspace__badge[data-status],
+.den-project__badge[data-status] {
+  display: block;
+}
+
+.den-workspace__badge[data-status="running"],
+.den-project__badge[data-status="running"] {
+  background: var(--den-status-running, #35d0ff);
+  animation: den-badge-pulse 1.6s infinite;
+}
+
+.den-workspace__badge[data-status="needs_input"],
+.den-project__badge[data-status="needs_input"] {
+  background: var(--den-status-needs-input, #ffc15e);
+  box-shadow: 0 0 8px color-mix(in srgb, var(--den-status-needs-input, #ffc15e) 60%, transparent);
+}
+
+.den-workspace__badge[data-status="done"],
+.den-project__badge[data-status="done"] {
+  background: transparent;
+  border: 1.5px solid var(--den-status-done, #5ee6a8);
+}
+
+.den-workspace__badge[data-status="error"],
+.den-project__badge[data-status="error"] {
+  background: var(--den-status-error-state, #ff6b8a);
+  border-radius: 2px;
+  transform: rotate(45deg) scale(0.85);
+}
+
+@keyframes den-badge-pulse {
+  0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--den-status-running, #35d0ff) 55%, transparent); }
+  70% { box-shadow: 0 0 0 7px color-mix(in srgb, var(--den-status-running, #35d0ff) 0%, transparent); }
+  100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--den-status-running, #35d0ff) 0%, transparent); }
 }
 
 .den-project__row {
@@ -71,22 +133,55 @@
 
 .den-project__name {
   flex: 1;
+  min-width: 0;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+  overflow-wrap: anywhere;
   font-weight: 600;
   color: var(--den-fg);
 }
 
-/* Slot vide — DEN-05 y rend un indicateur d'état au niveau projet. */
-.den-project__badge {
-  min-width: 0;
+/* Projet sélectionné : fond accent-soft + barre d'accent 3px à gauche. */
+/* Même padding sélectionné ou non : la sélection ne doit pas décaler le texte. */
+.den-project {
+  position: relative;
+  padding: var(--den-space-1) var(--den-space-2);
+  border-radius: var(--den-radius);
+  cursor: pointer;
+}
+
+.den-project--selected {
+  background: var(--den-accent-soft, var(--den-glass-2));
+  box-shadow: inset 0 0 0 1px var(--den-edge-hi, transparent);
+}
+
+.den-project--selected::before {
+  content: "";
+  position: absolute;
+  left: -1px;
+  top: 7px;
+  bottom: 7px;
+  width: 3px;
+  border-radius: 3px;
+  background: var(--den-accent-gradient, var(--den-accent));
+}
+
+.den-project__path {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--den-fg-muted);
+  font-family: var(--den-font-mono);
+  font-size: 0.8em;
 }
 
 /* Boutons d'action des rows workspace et projet — même chrome sobre,
  * regroupés pour ne pas dupliquer la déclaration. Les deux `__remove`
  * partagent leur survol rouge. */
-.den-project__new,
 .den-project__remove,
 .den-workspace__add-project,
 .den-workspace__root,
@@ -103,7 +198,6 @@
   transition: background-color 0.1s ease-out;
 }
 
-.den-project__new:hover,
 .den-workspace__add-project:hover,
 .den-workspace__root:hover {
   background: var(--den-glass-2, var(--den-bg-elevated));
@@ -115,13 +209,6 @@
 .den-workspace__remove:hover {
   background: var(--den-glass-2, var(--den-bg-elevated));
   color: var(--den-status-error);
-}
-
-.den-project__sessions {
-  display: flex;
-  flex-direction: column;
-  gap: var(--den-space-1);
-  padding-left: var(--den-space-3);
 }
 
 .den-workspace__projects {
@@ -147,76 +234,6 @@
   color: var(--den-fg);
   font-family: var(--den-font-sans);
   font-size: inherit;
-}
-
-.den-tab {
-  display: flex;
-  align-items: center;
-  gap: var(--den-space-1);
-  width: 100%;
-  padding: var(--den-space-1) var(--den-space-2);
-  border: 1px solid transparent;
-  border-radius: var(--den-radius);
-  background: var(--den-glass-1, var(--den-bg-surface));
-  color: var(--den-fg-secondary);
-  font-family: var(--den-font-sans);
-  font-size: 0.85em;
-  cursor: pointer;
-  transition: background-color 0.1s ease-out;
-}
-
-.den-tab:not(.den-tab--active):hover {
-  background: var(--den-glass-2, var(--den-bg-elevated));
-  color: var(--den-fg);
-}
-
-.den-tab__title {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.den-tab__status {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--den-fg-muted);
-}
-
-/* Barre d'accent 3px = couche de fond gauche (un dégradé ne passe pas en box-shadow). */
-.den-tab--active {
-  background:
-    var(--den-accent-gradient, linear-gradient(var(--den-accent), var(--den-accent))) left / 3px 100% no-repeat,
-    var(--den-accent-soft, linear-gradient(var(--den-accent-muted), var(--den-accent-muted)));
-  box-shadow: inset 0 0 0 1px var(--den-edge-hi, transparent);
-  color: var(--den-fg);
-}
-
-.den-tab--active .den-tab__status {
-  color: inherit;
-  opacity: 0.7;
-}
-
-.den-tab--error {
-  border-color: var(--den-status-error);
-}
-
-/* Actif en erreur : garde la barre d'accent et accent-soft, sinon l'état actif disparaît. */
-.den-tab--error:not(.den-tab--active) {
-  background: color-mix(in srgb, var(--den-status-error) 12%, var(--den-glass-1, var(--den-bg-surface)));
-}
-
-.den-tab--error .den-tab__status {
-  color: var(--den-status-error);
-  opacity: 1;
-}
-
-.den-tab__close {
-  color: var(--den-fg-muted);
-}
-
-.den-tab__close:hover {
-  color: var(--den-status-error);
 }
 
 /* Sans session active (état vide), saisie et sélecteur sont désactivés. */
@@ -266,39 +283,6 @@
 .den-launch:hover {
   background: var(--den-glass-3, var(--den-bg-elevated));
   color: var(--den-fg);
-}
-
-/* Header de session — basename(cwd) (dossier de la session, pas le nom de
- * row sidebar désambiguïsé — cf. displayName dans workspace/store.ts, qui
- * ne s'applique qu'aux rows projet) + chemin raccourci (~) + sessionId
- * court, en tête du mount conversation, au-dessus du fil. */
-.den-session-header {
-  display: flex;
-  align-items: baseline;
-  gap: var(--den-space-2);
-  padding-bottom: var(--den-space-2);
-  border-bottom: 1px solid var(--den-edge, var(--den-border));
-  color: var(--den-fg);
-  font-family: var(--den-font-sans);
-}
-
-.den-session-header__name {
-  font-weight: 600;
-}
-
-.den-session-header__path {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--den-fg-muted);
-  font-family: var(--den-font-mono);
-  font-size: 0.85em;
-}
-
-.den-session-header__id {
-  color: var(--den-fg-muted);
-  font-family: var(--den-font-mono);
-  font-size: 0.85em;
 }
 
 /* État vide — aucune session active (démarrage, ou dernier tab fermé). */
@@ -382,7 +366,7 @@
 
 /* Mode Stop (D4) — le bouton d'envoi devient Stop tant que le tab actif
  * tourne un tour (cf. syncSubmitButton, src/tabs/index.ts). Même langage
- * que .den-tab--error : teinte --den-status-error plutôt que l'accent. */
+ * que les onglets en erreur : teinte --den-status-error plutôt que l'accent. */
 .den-prompt-bar__submit--stop {
   border-color: var(--den-status-error);
   background: color-mix(in srgb, var(--den-status-error) 12%, var(--den-bg-elevated));

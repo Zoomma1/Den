@@ -1,6 +1,6 @@
 /**
  * Module `tabs` — sidebar workspace → projet → sessions (DEN-04 A2bis-2 :
- * arbre à 3 niveaux, remplace la liste plate de projets d'A2 — cf.
+ * arbre workspace → projet, les sessions vivent dans les onglets — cf.
  * `./sidebar.ts` pour le rendu DOM pur des rows, `./owner.ts` pour les
  * fonctions pures autour du nœud de rangement d'une session). Un sidecar
  * par session/tab, ancré à un `owner` (toujours un projet, DEN-17) — le
@@ -20,8 +20,9 @@
  *   `src/types/protocol.ts` — `UserEcho` n'est jamais sur le wire).
  * - `den:active-tab-changed`
  *   (`detail: { tabId: string | null, cwd: string | null, owner: Owner | null }`)
- *   à chaque changement de tab actif, tout à `null` quand le dernier tab se
- *   ferme (aucune session restante).
+ *   à chaque changement de tab actif ; tout à `null` quand aucun onglet n'est
+ *   actif (dernier onglet du projet fermé, projet sans session sélectionné,
+ *   sélection retirée).
  * - `den:owner-removed` (`detail: { kind: "project", id: string }`),
  *   émis par `onRemove` pour CHAQUE projet retiré, APRÈS que tous ses tabs
  *   ont fini de fermer (chaque `sidecar_kill` attendu, séquentiellement) et
@@ -39,8 +40,8 @@
  *   émis quand l'état de lifecycle d'un tab (cf. `./lifecycle.ts`, seule
  *   source de vérité — DEN-10) change réellement, après chaque
  *   `router.handleChunk` et après chaque `router.markPromptSubmitted`. Le
- *   spinner du fil (module markdown) s'y abonne pour afficher "réfléchit…"
- *   (`running`) ou "attend ta réponse" (`waiting`) ; ce module s'y abonne
+ *   spinner du fil (module markdown) s'y abonne pour afficher "thinking…"
+ *   (`running`) ou "waiting for your reply" (`waiting`) ; ce module s'y abonne
  *   lui-même (cf. `syncSubmitButton`) pour transformer le bouton d'envoi en
  *   Stop tant que le tab ACTIF tourne un tour.
  * - `den:edit-prompt` (`detail: { tabId: string, text: string }`), émis par
@@ -53,7 +54,7 @@
  * d'envoi devient "Stop" (`syncSubmitButton`, lu depuis `router.getState` —
  * aucun second compteur ici) et un clic envoie `{ type: "interrupt" }` au
  * sidecar (`sendInterrupt`) sans toucher au contenu de la textarea. Le
- * bouton ne redevient "Envoyer" que sur le `done` qui fait retomber l'état à
+ * bouton ne redevient "Send" que sur le `done` qui fait retomber l'état à
  * `idle` — jamais d'optimisme. `Escape` dans la textarea fait la même chose
  * quand le tab actif tourne.
  *
@@ -64,12 +65,12 @@
  * d'un `mode_changed` (guard `isModeChanged`, routé par `router.ts` comme
  * les autres messages sidecar -> UI).
  *
- * Header de session (`updateSessionHeader`) : `basename(cwd)` (pas de
- * désambiguïsation — c'est le rôle de `displayName` côté rows sidebar, pas
- * du header) + `shortPath(cwd, home)` sous forme d'un second span, `title`
- * du header = `cwd` complet. `home` (repli `~`) vient de `homeDir()`
- * (`@tauri-apps/api/path`), résolu une fois dans `init` ; indisponible ->
- * `null`, jamais de crash, juste pas de substitution `~`.
+ * Onglets de session (`./sessionTabs.ts`) : barre au-dessus du fil, un onglet
+ * par session du projet SÉLECTIONNÉ (`selectedProjectId`, aligné sur le tab
+ * actif ou choisi dans la sidebar ; on retient par projet son dernier onglet
+ * actif). Le `+` de la barre ouvre une session dans ce projet. `home` (repli
+ * `~` du chemin affiché) vient de `homeDir()` (`@tauri-apps/api/path`),
+ * résolu une fois dans `init` ; indisponible -> `null`, pas de substitution.
  *
  * Un seul verrou (`withBusy`) garde tous les gestes de création — launch,
  * + Workspace, racine…, + projet — anti-
@@ -104,7 +105,6 @@ import {
 } from "../workspace";
 import { isLooseWorkspace, LOOSE_WORKSPACE_ID, projectsOfWorkspace } from "../workspace/store";
 import {
-  basename,
   ownerKey,
   resolveCwd,
   shortPath,
@@ -114,6 +114,7 @@ import {
 } from "./owner";
 import type { TabLifecycleState } from "./lifecycle";
 import { TabRouter } from "./router";
+import { createSessionTabButton, createSessionTabs, type SessionTabs } from "./sessionTabs";
 import { createSidebar, type Sidebar } from "./sidebar";
 
 interface Tab {
@@ -130,7 +131,6 @@ interface Tab {
   mode: PermissionModeId;
   buttonEl: HTMLButtonElement;
   titleEl: HTMLSpanElement;
-  statusEl: HTMLSpanElement;
 }
 
 /** Options fixes du sélecteur de mode — libellés en anglais (arbitrage
@@ -186,12 +186,13 @@ export async function init(ctx: DenContext): Promise<void> {
     console.error("Den: échec sidecar_kill_all au démarrage", err);
   }
 
-  // Repli `~` du header de session (cf. docstring de tête) — couvert par
+  // Repli `~` du chemin du projet sélectionné (cf. docstring de tête) — couvert par
   // `core:default` (`core:path:default`), aucune permission nouvelle. Échec
   // = pas de substitution `~`, jamais de crash : `shortPath` gère `null`.
   let home: string | null = null;
   try {
-    home = (await homeDir()).replace(/\/+$/, "");
+    // `homeDir()` = "/" donne une chaîne vide : sans repli, tout chemin absolu deviendrait « ~/… ».
+    home = (await homeDir()).replace(/\/+$/, "") || null;
   } catch (err) {
     console.warn("den: homeDir indisponible, pas de substitution ~ dans le header.", err);
   }
@@ -203,6 +204,10 @@ export async function init(ctx: DenContext): Promise<void> {
   // ferment (`createTab`, `onRemove`...) ne sont appelées qu'après cette
   // assignation (clic utilisateur), jamais avant.
   let sidebar: Sidebar;
+  let sessionTabs: SessionTabs;
+  let selectedProjectId: string | null = null;
+  // Ordre d'activation (le plus récent en dernier) : fermer un onglet retombe sur le dernier utilisé du projet.
+  const recentTabIds: string[] = [];
   // Renseignés par buildPromptBar — désactivés tant qu'aucune session n'est
   // active (cf. updateEmptyState).
   let promptInputEl: HTMLTextAreaElement | null = null;
@@ -259,7 +264,7 @@ export async function init(ctx: DenContext): Promise<void> {
 
   /** Reflète en direct l'état `running` du tab ACTIF sur le bouton d'envoi
    * (D4) — "Stop" (`type="button"`, cf. `sendInterrupt`) tant qu'un tour
-   * tourne sur ce tab, "Envoyer" (`type="submit"`, comportement natif du
+   * tourne sur ce tab, "Send" (`type="submit"`, comportement natif du
    * form) sinon. Lit `router.getState`, ne compte rien elle-même (seule
    * source de vérité : `./lifecycle.ts`). Idempotente : rappelable sans
    * condition depuis n'importe quel point qui peut avoir changé l'état
@@ -275,7 +280,7 @@ export async function init(ctx: DenContext): Promise<void> {
       promptSubmitEl.classList.add("den-prompt-bar__submit--stop");
     } else {
       promptSubmitEl.type = "submit";
-      promptSubmitEl.textContent = "Envoyer";
+      promptSubmitEl.textContent = "Send";
       promptSubmitEl.classList.remove("den-prompt-bar__submit--stop");
     }
   }
@@ -305,7 +310,7 @@ export async function init(ctx: DenContext): Promise<void> {
   /** Envoie `{ type: "interrupt" }` au sidecar du tab (D4) — clic sur le
    * bouton Stop, ou `Escape` dans la textarea pendant que le tab actif
    * tourne. Ne touche jamais au contenu de la textarea : seul le prochain
-   * `done` (via `syncSubmitButton`) fait revenir le bouton à "Envoyer". */
+   * `done` (via `syncSubmitButton`) fait revenir le bouton à "Send". */
   async function sendInterrupt(tabId: string): Promise<void> {
     const tab = tabs.get(tabId);
     try {
@@ -321,41 +326,45 @@ export async function init(ctx: DenContext): Promise<void> {
     }
   }
 
-  /** Reflète l'état de lifecycle sur le chip d'onglet — "…" tant qu'un tour
-   * tourne ou qu'un tab attend une réponse utilisateur, vide sinon. Ne
-   * touche jamais l'état `error` : son texte (message complet) est posé par
-   * `markTabError`, jamais écrasé ici. Remplace l'ancien
-   * `isDone(...) && getState !== "error"` — un `done` peut désormais laisser
-   * le tab `running` s'il reste un tour en file (compteur lifecycle). */
-  function updateTabChip(tab: Tab, state: TabLifecycleState): void {
-    if (state === "running" || state === "waiting") {
-      tab.statusEl.textContent = "…";
-    } else if (state === "idle") {
-      tab.statusEl.textContent = "";
-    }
+  function projectPathText(projectId: string): string | null {
+    const project = getState().projects.find((p) => p.id === projectId);
+    return project ? shortPath(project.path, home) : null;
   }
 
-  function updateSessionHeader(): void {
-    const tab = activeTabId ? tabs.get(activeTabId) : undefined;
-    if (!tab) {
-      sessionHeaderNameEl.textContent = "Aucune session";
-      sessionHeaderPathEl.textContent = "";
-      sessionHeaderEl.removeAttribute("title");
-      sessionHeaderIdEl.textContent = "";
-      return;
-    }
-    sessionHeaderNameEl.textContent = basename(tab.cwd);
-    sessionHeaderPathEl.textContent = shortPath(tab.cwd, home);
-    sessionHeaderEl.title = tab.cwd;
-    sessionHeaderIdEl.textContent = tab.sessionId ? tab.sessionId.slice(0, 8) : "";
+  /** Propage la sélection à la sidebar et à la barre d'onglets. */
+  function syncSelection(): void {
+    const pathText = selectedProjectId ? projectPathText(selectedProjectId) : null;
+    sidebar.setSelectedProject(selectedProjectId);
+    sessionTabs.setProject(selectedProjectId, pathText);
   }
 
-  /** Sans session active : état vide visible, et prompt bar + sélecteur de
-   * mode désactivés — sinon un « Envoyer » ne fait rien en silence, et un
-   * mode choisi avant le lancement serait affiché sans jamais être envoyé. */
+  function mostRecentTabOf(projectId: string | null): Tab | undefined {
+    for (let i = recentTabIds.length - 1; i >= 0; i--) {
+      const tab = tabs.get(recentTabIds[i]);
+      if (tab && tab.owner.id === projectId) return tab;
+    }
+    return [...tabs.values()].find((t) => t.owner.id === projectId);
+  }
+
+  function selectProject(projectId: string | null): void {
+    const target = projectId ? mostRecentTabOf(projectId)?.id ?? null : null;
+    // Assigné avant setActiveTab(null), qui ne touche pas à la sélection.
+    selectedProjectId = projectId;
+    setActiveTab(target);
+  }
+
+  /** Sans session active : état vide visible (texte selon projet sélectionné),
+   * et prompt bar + sélecteur de mode désactivés — sinon un « Send » ne fait
+   * rien en silence, et un mode choisi avant le lancement serait affiché sans
+   * jamais être envoyé. */
   function updateEmptyState(): void {
     const idle = activeTabId === null;
     emptyStateEl.hidden = !idle;
+    const noProject = selectedProjectId === null;
+    emptyStateTextEl.textContent = noProject
+      ? "Pick a folder to start a session"
+      : "No session — press +";
+    emptyLaunchEl.hidden = !noProject;
     modeSelect.disabled = idle;
     if (promptInputEl) promptInputEl.disabled = idle;
     if (promptSubmitEl) promptSubmitEl.disabled = idle;
@@ -365,36 +374,36 @@ export async function init(ctx: DenContext): Promise<void> {
   function setActiveTab(tabId: string | null): void {
     activeTabId = tabId;
     const active = tabId ? tabs.get(tabId) : undefined;
-    for (const tab of tabs.values()) {
-      const selected = tab.id === tabId;
-      tab.buttonEl.setAttribute("aria-selected", String(selected));
-      tab.buttonEl.classList.toggle("den-tab--active", selected);
+    if (active) {
+      selectedProjectId = active.owner.id;
+      const seen = recentTabIds.indexOf(active.id);
+      if (seen !== -1) recentTabIds.splice(seen, 1);
+      recentTabIds.push(active.id);
     }
+    // syncSelection d'abord : l'onglet cible doit être visible (projet affiché) avant le scrollIntoView de setActive.
+    syncSelection();
+    sessionTabs.setActive(active ? active.buttonEl : null);
     // Sans tab actif, le select ne reflète plus aucun mode effectif : retour
     // au défaut plutôt qu'un mode périmé du tab qui vient de fermer.
     setModeSelectValue(modeSelect, active ? active.mode : "default");
-    updateSessionHeader();
     updateEmptyState();
     syncSubmitButton();
     dispatchActiveTabChanged(active ?? null);
   }
 
-  /** Titre de la row session : `sessionId` court (dès `session_info`), ou
-   * placeholder avant — le nom du nœud parent est déjà porté par la row
-   * (`.den-workspace__name` / `.den-project__name`, sidebar.ts), pas besoin
-   * de le répéter ici. Le header du pane (`updateSessionHeader`), lui, garde
-   * `basename(cwd) + shortPath(cwd) + sessionId`. */
+  /** Titre de l'onglet : `sessionId` court (dès `session_info`), ou
+   * placeholder avant ; le titre complet reste en tooltip (titre clampé). */
   function updateTabTitle(tab: Tab): void {
-    tab.titleEl.textContent = tab.sessionId ? tab.sessionId.slice(0, 8) : "nouvelle session";
-    if (activeTabId === tab.id) updateSessionHeader();
+    const full = tab.sessionId ?? "new session";
+    tab.titleEl.textContent = tab.sessionId ? tab.sessionId.slice(0, 8) : full;
+    tab.titleEl.title = full;
+    // Un onglet en erreur garde le message d'erreur en tooltip.
+    if (!tab.buttonEl.classList.contains("den-session-tab--error")) tab.buttonEl.title = full;
   }
 
   function markTabError(tab: Tab, message: string): void {
-    // Le chip tronque déjà par ellipsis CSS (.den-tab__status) — le message
-    // complet reste lisible au survol (title).
-    tab.statusEl.textContent = `Erreur: ${message}`;
-    tab.statusEl.title = message;
-    tab.buttonEl.classList.add("den-tab--error");
+    tab.buttonEl.title = message;
+    tab.buttonEl.classList.add("den-session-tab--error");
   }
 
   async function closeTab(tabId: string): Promise<void> {
@@ -406,18 +415,19 @@ export async function init(ctx: DenContext): Promise<void> {
       console.error(`Den: échec sidecar_kill pour le tab ${tabId}`, err);
     }
     router.closeTab(tabId);
-    tab.buttonEl.remove();
+    sessionTabs.removeTab(tab.buttonEl);
     const { owner, cwd } = tab;
     tabs.delete(tabId);
+    const recent = recentTabIds.indexOf(tabId);
+    if (recent !== -1) recentTabIds.splice(recent, 1);
     window.dispatchEvent(
       new CustomEvent("den:session-closed", { detail: { tabId, owner, cwd } }),
     );
 
     if (activeTabId === tabId) {
-      const remaining = [...tabs.keys()];
-      // Dernier tab fermé -> tout `null` (contrat inter-lots) : sans ça la
-      // conversation du tab mort restait affichée (bug corrigé au passage).
-      setActiveTab(remaining.length > 0 ? remaining[0] : null);
+      // Plus d'onglet dans le projet -> `null` (contrat inter-lots) : sans ça la
+      // conversation du tab mort restait affichée ; le projet reste sélectionné.
+      setActiveTab(mostRecentTabOf(owner.id)?.id ?? null);
     }
   }
 
@@ -427,33 +437,16 @@ export async function init(ctx: DenContext): Promise<void> {
   function createTab(owner: Owner, cwd: string): Tab {
     const id = crypto.randomUUID();
 
-    const buttonEl = document.createElement("button");
-    buttonEl.type = "button";
-    buttonEl.className = "den-tab";
-    buttonEl.setAttribute("role", "tab");
-
-    const titleEl = document.createElement("span");
-    titleEl.className = "den-tab__title";
-
-    const statusEl = document.createElement("span");
-    statusEl.className = "den-tab__status";
-
-    const closeEl = document.createElement("span");
-    closeEl.className = "den-tab__close";
-    closeEl.textContent = "×";
-    closeEl.setAttribute("role", "button");
-    closeEl.setAttribute("aria-label", "Fermer l'onglet");
+    const { buttonEl, titleEl, closeEl } = createSessionTabButton();
     closeEl.addEventListener("click", (event) => {
       event.stopPropagation();
       void closeTab(id);
     });
-
-    buttonEl.append(titleEl, statusEl, closeEl);
     buttonEl.addEventListener("click", () => setActiveTab(id));
 
-    sidebar.appendSessionRow(owner, buttonEl);
+    sessionTabs.addTab(owner.id, buttonEl);
 
-    const tab: Tab = { id, cwd, owner, mode: "default", buttonEl, titleEl, statusEl };
+    const tab: Tab = { id, cwd, owner, mode: "default", buttonEl, titleEl };
     tabs.set(id, tab);
     updateTabTitle(tab);
     router.registerTab(id);
@@ -478,10 +471,8 @@ export async function init(ctx: DenContext): Promise<void> {
         // d'événement reste uniforme (cf. docstring de tête).
         dispatchSessionMessage(id, message);
       }
-      // Chip et événement de lifecycle basés sur l'état RÉSULTANT du chunk
-      // entier (pas message par message) — cf. `emitStateIfChanged`.
-      const state = router.getState(id);
-      if (state && state !== "error") updateTabChip(tab, state);
+      // Événement de lifecycle basé sur l'état RÉSULTANT du chunk entier
+      // (pas message par message) — cf. `emitStateIfChanged`.
       emitStateIfChanged(id, previousState);
     };
 
@@ -505,7 +496,6 @@ export async function init(ctx: DenContext): Promise<void> {
     router.markPromptSubmitted(tabId);
     emitStateIfChanged(tabId, previousState);
     const tab = tabs.get(tabId);
-    if (tab) tab.statusEl.textContent = "…";
 
     const payload = {
       type: "user_message" as const,
@@ -540,12 +530,12 @@ export async function init(ctx: DenContext): Promise<void> {
     const textarea = document.createElement("textarea");
     textarea.className = "den-prompt-bar__input";
     textarea.rows = 2;
-    textarea.placeholder = "Message pour Claude… (⌘⏎ pour envoyer)";
+    textarea.placeholder = "Message Claude… (⌘⏎ to send)";
 
     const submitEl = document.createElement("button");
     submitEl.type = "submit";
     submitEl.className = "den-prompt-bar__submit";
-    submitEl.textContent = "Envoyer";
+    submitEl.textContent = "Send";
     // Mode Stop (D4, cf. syncSubmitButton) : le bouton passe en
     // `type="button"` — ce clic-ci n'est alors PAS un submit de form, donc
     // le listener "submit" du form ci-dessous ne s'en charge pas.
@@ -627,7 +617,7 @@ export async function init(ctx: DenContext): Promise<void> {
   /** « Launch Claude in… » : le dossier devient (ou réutilise, dédup par chemin) un projet du workspace implicite, et une session s'y ouvre. */
   async function launchProjectSession(): Promise<void> {
     await withBusy(async () => {
-      const path = await pickProjectDirectory("Choisis le dossier de la session");
+      const path = await pickProjectDirectory("Choose the session folder");
       if (path === null) return;
       await ensureLooseWorkspace();
       const project = await addProject(LOOSE_WORKSPACE_ID, path);
@@ -646,7 +636,7 @@ export async function init(ctx: DenContext): Promise<void> {
    * workspaces (ni deux inputs de renommage). */
   async function onAddWorkspace(): Promise<void> {
     await withBusy(async () => {
-      const workspace = await addWorkspace("Nouveau workspace");
+      const workspace = await addWorkspace("New workspace");
       sidebar.setState(getState());
       sidebar.beginRename(workspace.id);
     });
@@ -659,7 +649,7 @@ export async function init(ctx: DenContext): Promise<void> {
 
   async function onSetWorkspaceRoot(id: string): Promise<void> {
     await withBusy(async () => {
-      const path = await pickProjectDirectory("Choisis la racine du workspace");
+      const path = await pickProjectDirectory("Choose the workspace root");
       if (path === null) return;
       await setWorkspaceRoot(id, path);
       sidebar.setState(getState());
@@ -676,7 +666,7 @@ export async function init(ctx: DenContext): Promise<void> {
     if (removing.has(workspaceKey(wsId))) return;
     await withBusy(async () => {
       const rootPath = getState().workspaces.find((w) => w.id === wsId)?.rootPath;
-      const path = await pickProjectDirectory("Choisis le dossier du projet", rootPath ?? undefined);
+      const path = await pickProjectDirectory("Choose the project folder", rootPath ?? undefined);
       if (path === null) return;
       const project = await addProject(wsId, path);
       if (project === null) return;
@@ -684,10 +674,11 @@ export async function init(ctx: DenContext): Promise<void> {
     });
   }
 
-  /** Ouvre une nouvelle session sur le projet `owner` (bouton `+` d'une row
-   * projet de la sidebar). Projet retiré entre le clic et l'exécution (en
-   * cours de retrait, ou déjà disparu) : no-op silencieux. */
-  function onNewSession(owner: Owner): void {
+  /** Ouvre une session dans le projet SÉLECTIONNÉ (bouton `+` de la barre
+   * d'onglets). Aucun projet, en cours de retrait ou déjà disparu : no-op. */
+  function onNewSession(): void {
+    if (selectedProjectId === null) return;
+    const owner: Owner = { kind: "project", id: selectedProjectId };
     if (removing.has(ownerKey(owner))) return;
     const cwd = resolveCwd(owner, getState());
     if (cwd === null) return;
@@ -728,6 +719,9 @@ export async function init(ctx: DenContext): Promise<void> {
       if (kind === "workspace") await removeWorkspace(id);
       else await removeProject(id);
       sidebar.setState(getState());
+      if (selectedProjectId !== null && projectIds.includes(selectedProjectId)) {
+        selectProject(null);
+      }
       for (const pid of projectIds) {
         window.dispatchEvent(
           new CustomEvent("den:owner-removed", { detail: { kind: "project", id: pid } }),
@@ -777,7 +771,11 @@ export async function init(ctx: DenContext): Promise<void> {
           console.error(`Den: échec de l'ajout de projet au workspace ${id}`, err);
         });
       },
-      onNewSession,
+      onSelectProject: (projectId) => {
+        selectProject(projectId);
+        // Clic sur un projet sans session : on en ouvre une (la fermeture du dernier onglet, elle, garde l'état vide).
+        if (activeTabId === null) onNewSession();
+      },
       onRemove: (target) => {
         void onRemove(target).catch((err: unknown) => {
           console.error(`Den: échec du retrait de ${target.kind}:${target.id}`, err);
@@ -785,30 +783,19 @@ export async function init(ctx: DenContext): Promise<void> {
       },
     },
     createLaunchButton,
+    (path) => shortPath(path, home),
   );
   sidebar.setState(getState());
 
-  // Header de session, en tête du mount conversation — `prepend` s'exécute
-  // après celui de `markdown` (`.den-views`, cf. ordre d'init dans main.ts) :
-  // le header passe donc au-dessus du fil.
-  const sessionHeaderEl = document.createElement("div");
-  sessionHeaderEl.className = "den-session-header";
-  const sessionHeaderNameEl = document.createElement("span");
-  sessionHeaderNameEl.className = "den-session-header__name";
-  const sessionHeaderPathEl = document.createElement("span");
-  sessionHeaderPathEl.className = "den-session-header__path";
-  const sessionHeaderIdEl = document.createElement("span");
-  sessionHeaderIdEl.className = "den-session-header__id";
-  sessionHeaderEl.append(sessionHeaderNameEl, sessionHeaderPathEl, sessionHeaderIdEl);
-  ctx.mounts.conversation.prepend(sessionHeaderEl);
+  // La barre se monte elle-même en premier enfant, au-dessus de `.den-views` (déjà inséré par `markdown`).
+  sessionTabs = createSessionTabs(ctx.mounts.conversation, { onNew: onNewSession });
 
-  // État vide — visible ssi aucun tab actif (démarrage, ou dernier tab
-  // fermé).
+  // État vide — visible ssi aucun tab actif ; texte et bouton selon la sélection (cf. updateEmptyState).
   const emptyStateEl = document.createElement("div");
   emptyStateEl.className = "den-empty-state";
   const emptyStateTextEl = document.createElement("p");
-  emptyStateTextEl.textContent = "Choisis un dossier pour démarrer une session";
-  emptyStateEl.append(emptyStateTextEl, createLaunchButton());
+  const emptyLaunchEl = createLaunchButton();
+  emptyStateEl.append(emptyStateTextEl, emptyLaunchEl);
   ctx.mounts.conversation.append(emptyStateEl);
 
   buildPromptBar();
@@ -828,6 +815,5 @@ export async function init(ctx: DenContext): Promise<void> {
 
   // Aucun tab au démarrage (DEN-04 A1) — état vide affiché jusqu'au premier
   // « Launch Claude in… ».
-  updateSessionHeader();
   updateEmptyState();
 }
