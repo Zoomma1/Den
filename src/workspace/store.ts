@@ -92,7 +92,7 @@ function defaultLayoutSizes(): LayoutSizes {
 
 function defaultLayout(): LayoutState {
   return {
-    preset: "side-by-side",
+    preset: "stacked",
     sizes: {
       "side-by-side": defaultLayoutSizes(),
       stacked: defaultLayoutSizes(),
