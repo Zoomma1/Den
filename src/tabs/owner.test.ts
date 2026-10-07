@@ -4,6 +4,7 @@ import {
   ownerKey,
   resolveCwd,
   shortPath,
+  workspaceKey,
 } from "./owner";
 import { defaultState, type PersistedState } from "../workspace/store";
 
@@ -12,16 +13,15 @@ function makeState(overrides: Partial<PersistedState> = {}): PersistedState {
 }
 
 describe("ownerKey", () => {
-  it('"root" pour la racine', () => {
-    expect(ownerKey({ kind: "root", id: null })).toBe("root");
-  });
-
-  it('"workspace:<id>" pour un workspace', () => {
-    expect(ownerKey({ kind: "workspace", id: "ws-1" })).toBe("workspace:ws-1");
-  });
-
   it('"project:<id>" pour un projet', () => {
     expect(ownerKey({ kind: "project", id: "p-1" })).toBe("project:p-1");
+  });
+});
+
+describe("workspaceKey", () => {
+  it('"workspace:<id>", distinct de la clé d\'un projet de même id', () => {
+    expect(workspaceKey("x")).toBe("workspace:x");
+    expect(workspaceKey("x")).not.toBe(ownerKey({ kind: "project", id: "x" }));
   });
 });
 
@@ -35,35 +35,11 @@ describe("resolveCwd", () => {
   });
 
   it("project connu -> son path", () => {
-    expect(resolveCwd({ kind: "project", id: "p-1" }, state, null)).toBe(
-      "/Users/vico/Dev/minlay/front",
-    );
+    expect(resolveCwd({ kind: "project", id: "p-1" }, state)).toBe("/Users/vico/Dev/minlay/front");
   });
 
   it("project inconnu (disparu) -> null", () => {
-    expect(resolveCwd({ kind: "project", id: "ghost" }, state, null)).toBeNull();
-  });
-
-  it("workspace avec racine -> rootPath", () => {
-    expect(resolveCwd({ kind: "workspace", id: "ws-1" }, state, null)).toBe(
-      "/Users/vico/Dev/minlay",
-    );
-  });
-
-  it("workspace sans racine -> null", () => {
-    expect(resolveCwd({ kind: "workspace", id: "ws-2" }, state, null)).toBeNull();
-  });
-
-  it("workspace inconnu -> null", () => {
-    expect(resolveCwd({ kind: "workspace", id: "ghost" }, state, null)).toBeNull();
-  });
-
-  it("root avec pickedPath -> pickedPath", () => {
-    expect(resolveCwd({ kind: "root", id: null }, state, "/tmp/chosen")).toBe("/tmp/chosen");
-  });
-
-  it("root avec pickedPath null -> null", () => {
-    expect(resolveCwd({ kind: "root", id: null }, state, null)).toBeNull();
+    expect(resolveCwd({ kind: "project", id: "ghost" }, state)).toBeNull();
   });
 });
 

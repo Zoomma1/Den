@@ -3,29 +3,9 @@ import { groupKey, nextActiveIndex, shellLabel } from "./group";
 import type { Owner } from "../tabs/owner";
 
 describe("groupKey", () => {
-  it("utilise ownerKey pour un owner workspace", () => {
-    const owner: Owner = { kind: "workspace", id: "ws-1" };
-    expect(groupKey(owner, "/some/cwd")).toBe("workspace:ws-1");
-  });
-
   it("utilise ownerKey pour un owner project", () => {
     const owner: Owner = { kind: "project", id: "proj-1" };
-    expect(groupKey(owner, "/some/cwd")).toBe("project:proj-1");
-  });
-
-  it("préfixe root: + cwd pour un owner root", () => {
-    const owner: Owner = { kind: "root", id: null };
-    expect(groupKey(owner, "/Users/vico/Dev/Den")).toBe("root:/Users/vico/Dev/Den");
-  });
-
-  it("deux sessions root sur des cwd différents obtiennent des clés différentes", () => {
-    const owner: Owner = { kind: "root", id: null };
-    expect(groupKey(owner, "/a")).not.toBe(groupKey(owner, "/b"));
-  });
-
-  it("deux sessions workspace sur le même owner obtiennent la même clé quel que soit le cwd passé", () => {
-    const owner: Owner = { kind: "workspace", id: "ws-2" };
-    expect(groupKey(owner, "/a")).toBe(groupKey(owner, "/b"));
+    expect(groupKey(owner)).toBe("project:proj-1");
   });
 });
 
