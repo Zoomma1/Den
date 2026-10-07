@@ -44,6 +44,8 @@ import type { DenContext } from "../core/registry";
 import {
   createStore,
   defaultState,
+  isLooseWorkspace,
+  LOOSE_WORKSPACE_ID,
   withoutProject,
   withoutWorkspace,
   type LayoutState,
@@ -111,27 +113,14 @@ export function getWorkspaces(): Workspace[] {
 }
 
 /** Ouvre le picker natif de dossier. `title` personnalise le titre de la
- * fenêtre (ex. « Choisis la racine du workspace », ou une variante
- * « Racine introuvable… » quand le picker rouvre après une racine disparue
- * — cf. `onNewSession` dans `src/tabs/index.ts`) ; absent, le picker garde
- * son titre par défaut. `null` = annulé — rien n'est créé/modifié. */
-export async function pickProjectDirectory(title?: string): Promise<string | null> {
-  const result = await open({ directory: true, multiple: false, title });
+ * fenêtre ; `defaultPath` fixe le dossier de départ ; absents, le picker
+ * garde ses défauts. `null` = annulé — rien n'est créé/modifié. */
+export async function pickProjectDirectory(
+  title?: string,
+  defaultPath?: string,
+): Promise<string | null> {
+  const result = await open({ directory: true, multiple: false, title, defaultPath });
   return typeof result === "string" ? result : null;
-}
-
-/** Vrai si `path` existe et est résolvable (délègue à `path_canonicalize`
- * côté Rust), faux sinon — jamais de throw. Distinct de `canonicalizePath`
- * ci-dessous, qui replie silencieusement sur le path brut en cas d'échec :
- * `probePath` sert au contraire à DÉTECTER une racine de workspace disparue
- * (dossier déplacé/supprimé) avant de tenter un spawn dessus. */
-export async function probePath(path: string): Promise<boolean> {
-  try {
-    await invoke<string>("path_canonicalize", { path });
-    return true;
-  } catch {
-    return false;
-  }
 }
 
 /** Canonicalise `path` via la command Rust `path_canonicalize`. Échec IPC
@@ -155,9 +144,20 @@ export async function addWorkspace(name: string, rootPath: string | null = null)
   return workspace;
 }
 
+/** Crée à la demande l'unique workspace implicite (idempotent). */
+export async function ensureLooseWorkspace(): Promise<Workspace> {
+  const existing = state.workspaces.find((w) => isLooseWorkspace(w.id));
+  if (existing) return existing;
+  const workspace: Workspace = { id: LOOSE_WORKSPACE_ID, name: "Loose projects", rootPath: null };
+  state = { ...state, workspaces: [...state.workspaces, workspace] };
+  await saveState();
+  return workspace;
+}
+
 /** Renomme le workspace `id` — no-op silencieux (pas de `save`) si `name`
- * est vide/blanc ou si `id` est inconnu. */
+ * est vide/blanc, si `id` est inconnu ou si c'est le workspace implicite. */
 export async function renameWorkspace(id: string, name: string): Promise<void> {
+  if (isLooseWorkspace(id)) return;
   const trimmed = name.trim();
   if (trimmed.length === 0) return;
   const workspace = state.workspaces.find((w) => w.id === id);
@@ -170,8 +170,9 @@ export async function renameWorkspace(id: string, name: string): Promise<void> {
 }
 
 /** Fixe la racine du workspace `id` (path canonicalisé) — no-op silencieux
- * si `id` est inconnu. */
+ * si `id` est inconnu ou si c'est le workspace implicite. */
 export async function setWorkspaceRoot(id: string, path: string): Promise<void> {
+  if (isLooseWorkspace(id)) return;
   const workspace = state.workspaces.find((w) => w.id === id);
   if (!workspace) return;
   const canonical = await canonicalizePath(path);
@@ -184,9 +185,10 @@ export async function setWorkspaceRoot(id: string, path: string): Promise<void> 
 
 /** Retire le workspace `id` et ses projets (`withoutWorkspace` + persistance)
  * — ne touche à aucune session : même contrat que `removeProject`, l'appelant
- * ferme d'abord les tabs de toutes les sessions du workspace ET de ses projets
- * (sinon leurs sidecars fuient). */
+ * ferme d'abord les tabs des sessions de ses projets (sinon leurs sidecars
+ * fuient). No-op silencieux sur le workspace implicite. */
 export async function removeWorkspace(id: string): Promise<void> {
+  if (isLooseWorkspace(id)) return;
   state = withoutWorkspace(state, id);
   await saveState();
 }
