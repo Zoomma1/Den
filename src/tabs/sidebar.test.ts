@@ -4,7 +4,13 @@
 // `../interactive/blocks.test.ts` pour la même annotation par-fichier.
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { createSidebar, type SidebarHandlers } from "./sidebar";
-import { defaultState, type PersistedState, type Project, type Workspace } from "../workspace/store";
+import {
+  defaultState,
+  LOOSE_WORKSPACE_ID,
+  type PersistedState,
+  type Project,
+  type Workspace,
+} from "../workspace/store";
 
 function makeState(overrides: {
   workspaces?: Workspace[];
@@ -60,12 +66,6 @@ describe("createSidebar", () => {
       createSidebar(root, handlers, launchButtonFactory);
       root.querySelector<HTMLButtonElement>(".den-root-bar__add-workspace")!.click();
       expect(handlers.onAddWorkspace).toHaveBeenCalled();
-    });
-
-    it("expose .den-root__sessions[role=tablist]", () => {
-      createSidebar(root, makeHandlers(), launchButtonFactory);
-      const sessions = root.querySelector(".den-root__sessions");
-      expect(sessions?.getAttribute("role")).toBe("tablist");
     });
   });
 
@@ -124,6 +124,59 @@ describe("createSidebar", () => {
     });
   });
 
+  describe("workspace implicite", () => {
+    it("est rendu sans ligne d'en-tête, ses projets en liste plate ; un workspace normal garde la sienne", () => {
+      const sidebar = createSidebar(root, makeHandlers(), launchButtonFactory);
+      sidebar.setState(
+        makeState({
+          workspaces: [
+            { id: LOOSE_WORKSPACE_ID, name: "Loose projects", rootPath: null },
+            { id: "ws-1", name: "A", rootPath: null },
+          ],
+          projects: [
+            { id: "p-1", workspaceId: LOOSE_WORKSPACE_ID, path: "/tmp/p1" },
+            { id: "p-2", workspaceId: "ws-1", path: "/tmp/p2" },
+          ],
+        }),
+      );
+
+      const loose = root.querySelector(`[data-workspace-id="${LOOSE_WORKSPACE_ID}"]`)!;
+      expect(loose.querySelector(".den-workspace__row")).toBeNull();
+      expect(loose.querySelector(".den-workspace__name")).toBeNull();
+      expect(loose.querySelector('[data-project-id="p-1"]')).not.toBeNull();
+
+      const normal = root.querySelector('[data-workspace-id="ws-1"]')!;
+      expect(normal.querySelector(".den-workspace__row")).not.toBeNull();
+      expect(normal.querySelector(".den-workspace__name")?.textContent).toBe("A");
+      expect(normal.querySelector('[data-project-id="p-2"]')).not.toBeNull();
+    });
+
+    it("beginRename sur le workspace implicite est un no-op (aucun input)", () => {
+      const sidebar = createSidebar(root, makeHandlers(), launchButtonFactory);
+      sidebar.setState(
+        makeState({
+          workspaces: [{ id: LOOSE_WORKSPACE_ID, name: "Loose projects", rootPath: null }],
+          projects: [],
+        }),
+      );
+      sidebar.beginRename(LOOSE_WORKSPACE_ID);
+      expect(root.querySelector(".den-workspace__rename")).toBeNull();
+    });
+
+    it("appendSessionRow fonctionne sous un projet du workspace implicite", () => {
+      const sidebar = createSidebar(root, makeHandlers(), launchButtonFactory);
+      sidebar.setState(
+        makeState({
+          workspaces: [{ id: LOOSE_WORKSPACE_ID, name: "Loose projects", rootPath: null }],
+          projects: [{ id: "p-1", workspaceId: LOOSE_WORKSPACE_ID, path: "/tmp/p1" }],
+        }),
+      );
+      const el = document.createElement("button");
+      sidebar.appendSessionRow({ kind: "project", id: "p-1" }, el);
+      expect(root.querySelector('[data-project-id="p-1"] .den-project__sessions')?.contains(el)).toBe(true);
+    });
+  });
+
   describe("displayName par workspace", () => {
     it("deux 'front' dans deux workspaces distincts affichent front/front", () => {
       const sidebar = createSidebar(root, makeHandlers(), launchButtonFactory);
@@ -162,29 +215,6 @@ describe("createSidebar", () => {
   });
 
   describe("setState conserve les nœuds", () => {
-    it("conserve la row session root sur un second setState", () => {
-      const sidebar = createSidebar(root, makeHandlers(), launchButtonFactory);
-      sidebar.setState(makeState({}));
-
-      const sessionEl = document.createElement("button");
-      sidebar.appendSessionRow({ kind: "root", id: null }, sessionEl);
-      sidebar.setState(makeState({}));
-
-      expect(root.querySelector(".den-root__sessions")?.firstElementChild).toBe(sessionEl);
-    });
-
-    it("conserve la row session d'un workspace sur un second setState", () => {
-      const sidebar = createSidebar(root, makeHandlers(), launchButtonFactory);
-      const state = makeState({ workspaces: [{ id: "ws-1", name: "A", rootPath: null }] });
-      sidebar.setState(state);
-
-      const sessionEl = document.createElement("button");
-      sidebar.appendSessionRow({ kind: "workspace", id: "ws-1" }, sessionEl);
-      sidebar.setState(state);
-
-      const sessionsEl = root.querySelector('[data-workspace-id="ws-1"] .den-workspace__sessions');
-      expect(sessionsEl?.firstElementChild).toBe(sessionEl);
-    });
 
     it("conserve la row session d'un projet sur un second setState", () => {
       const sidebar = createSidebar(root, makeHandlers(), launchButtonFactory);
@@ -252,23 +282,6 @@ describe("createSidebar", () => {
   });
 
   describe("appendSessionRow", () => {
-    it("owner root -> .den-root__sessions", () => {
-      const sidebar = createSidebar(root, makeHandlers(), launchButtonFactory);
-      sidebar.setState(makeState({}));
-      const el = document.createElement("button");
-      sidebar.appendSessionRow({ kind: "root", id: null }, el);
-      expect(root.querySelector(".den-root__sessions")?.contains(el)).toBe(true);
-    });
-
-    it("owner workspace -> .den-workspace__sessions du bon workspace", () => {
-      const sidebar = createSidebar(root, makeHandlers(), launchButtonFactory);
-      sidebar.setState(makeState({ workspaces: [{ id: "ws-1", name: "A", rootPath: null }] }));
-      const el = document.createElement("button");
-      sidebar.appendSessionRow({ kind: "workspace", id: "ws-1" }, el);
-      expect(
-        root.querySelector('[data-workspace-id="ws-1"] .den-workspace__sessions')?.contains(el),
-      ).toBe(true);
-    });
 
     it("owner project -> .den-project__sessions du bon projet", () => {
       const sidebar = createSidebar(root, makeHandlers(), launchButtonFactory);
@@ -283,15 +296,6 @@ describe("createSidebar", () => {
       expect(
         root.querySelector('[data-project-id="p-1"] .den-project__sessions')?.contains(el),
       ).toBe(true);
-    });
-
-    it("owner workspace inconnu -> warn + no-op", () => {
-      const sidebar = createSidebar(root, makeHandlers(), launchButtonFactory);
-      sidebar.setState(makeState({}));
-      const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
-      const el = document.createElement("button");
-      expect(() => sidebar.appendSessionRow({ kind: "workspace", id: "ghost" }, el)).not.toThrow();
-      expect(warnSpy).toHaveBeenCalled();
     });
 
     it("owner project inconnu -> warn + no-op", () => {
@@ -450,14 +454,6 @@ describe("createSidebar", () => {
       sidebar.setState(stateWithTree());
       root.querySelector<HTMLButtonElement>(".den-workspace__add-project")!.click();
       expect(handlers.onAddProject).toHaveBeenCalledWith("ws-1");
-    });
-
-    it("+ (workspace) -> onNewSession({kind: workspace, id})", () => {
-      const handlers = makeHandlers();
-      const sidebar = createSidebar(root, handlers, launchButtonFactory);
-      sidebar.setState(stateWithTree());
-      root.querySelector<HTMLButtonElement>(".den-workspace__new")!.click();
-      expect(handlers.onNewSession).toHaveBeenCalledWith({ kind: "workspace", id: "ws-1" });
     });
 
     it("racine… -> onSetWorkspaceRoot(workspaceId)", () => {

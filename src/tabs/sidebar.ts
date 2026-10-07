@@ -1,13 +1,11 @@
 /**
  * Module `tabs/sidebar` — rendu DOM pur de l'arbre workspace → projet →
- * sessions (DEN-04 A2bis-2). Trois niveaux de rangement, chacun capable de
- * porter des sessions directement (racine, workspace, projet) : une barre
- * racine (`.den-root-bar`, bouton launch — session orpheline dans un dossier
- * choisi — + « + Workspace »)
- * suivie des sessions orphelines (owner racine), puis la liste des
- * workspaces — chacun avec son nom (renommable inline), sa racine, ses
- * sessions propres et ses projets (structure `.den-project` inchangée depuis
- * A2).
+ * sessions (DEN-04 A2bis-2). Seul le projet porte des sessions : une barre
+ * racine (`.den-root-bar`, bouton launch + « + Workspace ») suivie de la
+ * liste des workspaces — chacun avec son nom (renommable inline), sa racine
+ * et ses projets (structure `.den-project` inchangée depuis A2). Le workspace
+ * implicite (`LOOSE_WORKSPACE_ID`) est rendu sans en-tête : ses projets
+ * apparaissent en liste plate.
  *
  * Ancrages DEN-05 (classes conservées à la lettre pour le lot notifications
  * à venir) : `.den-workspace__badge`, `.den-project__badge` (slots vides —
@@ -21,8 +19,13 @@
  * lifecycle...) et fournit les handlers + les rows session elles-mêmes (les
  * `.den-tab` existants, ajoutés via `appendSessionRow`).
  */
-import { displayName, projectsOfWorkspace, type PersistedState } from "../workspace/store";
-import type { Owner } from "./owner";
+import {
+  displayName,
+  isLooseWorkspace,
+  projectsOfWorkspace,
+  type PersistedState,
+} from "../workspace/store";
+import type { NodeRef, Owner } from "./owner";
 
 export interface SidebarHandlers {
   onAddWorkspace(): void;
@@ -31,12 +34,8 @@ export interface SidebarHandlers {
   onRenameWorkspace(workspaceId: string, name: string): void;
   onSetWorkspaceRoot(workspaceId: string): void;
   onAddProject(workspaceId: string): void;
-  /** `owner.kind` vaut `"workspace"` ou `"project"` — jamais `"root"` (la
-   * session racine naît du bouton launch, câblé par `launchButtonFactory`,
-   * pas d'un handler de ce module). */
   onNewSession(owner: Owner): void;
-  /** Idem : `"workspace"` ou `"project"`. */
-  onRemove(owner: Owner): void;
+  onRemove(target: NodeRef): void;
 }
 
 export interface Sidebar {
@@ -52,10 +51,8 @@ export interface Sidebar {
    * `beginRename`), son `nameEl` n'est PAS écrasé — l'input reste en place.
    */
   setState(state: PersistedState): void;
-  /** Ajoute `el` sous l'owner donné : racine -> `.den-root__sessions` ;
-   * workspace -> `.den-workspace__sessions` du workspace ; projet ->
-   * `.den-project__sessions` du projet. Owner inconnu (workspace/projet
-   * disparu) -> `console.warn` + no-op. */
+  /** Ajoute `el` sous `.den-project__sessions` du projet `owner`. Projet
+   * disparu -> `console.warn` + no-op. */
   appendSessionRow(owner: Owner, el: HTMLElement): void;
   /** Bascule le nom du workspace `workspaceId` en édition inline (input
    * pré-rempli, sélectionné, focus). `Enter`/`blur` valident, `Escape`
@@ -67,7 +64,6 @@ export interface Sidebar {
 interface WorkspaceRow {
   root: HTMLElement;
   nameEl: HTMLSpanElement;
-  sessionsEl: HTMLElement;
   projectsEl: HTMLElement;
   /** Dernier nom connu (posé par `setState`, ou optimiste après un commit de
    * renommage) — sert de valeur de départ et de repli à `beginRename`. */
@@ -85,13 +81,10 @@ interface ProjectRow {
 
 /** Rend la sidebar dans `root` (vidé au préalable) :
  * - `.den-root-bar` : bouton launch (`launchButtonFactory` — porte déjà son
- *   propre listener, ce module ne câble rien dessus ; il ouvre une session
- *   orpheline au niveau racine), « + Workspace » ;
- * - `.den-root__sessions[role=tablist]` : sessions orphelines (owner
- *   racine) ;
+ *   propre listener, ce module ne câble rien dessus), « + Workspace » ;
  * - `.den-workspace-list` : un `.den-workspace[data-workspace-id]` par
  *   workspace, chacun avec sa row (nom renommable par double-clic, racine,
- *   retrait), ses propres sessions et ses projets.
+ *   retrait) et ses projets — sauf le workspace implicite, sans row.
  *
  * Renommage inline (`beginRename`) : double-clic sur `.den-workspace__name`
  * (ou appel direct depuis `tabs/index.ts` après `onAddWorkspace`) vide le
@@ -128,18 +121,13 @@ export function createSidebar(
   rootBarEl.append(addWorkspaceEl);
   root.append(rootBarEl);
 
-  const rootSessionsEl = document.createElement("div");
-  rootSessionsEl.className = "den-root__sessions";
-  rootSessionsEl.setAttribute("role", "tablist");
-  root.append(rootSessionsEl);
-
   const workspaceListEl = document.createElement("div");
   workspaceListEl.className = "den-workspace-list";
   root.append(workspaceListEl);
 
   function beginRename(workspaceId: string): void {
     const row = workspaceRows.get(workspaceId);
-    if (!row) return;
+    if (!row || isLooseWorkspace(workspaceId)) return;
     // Un renommage déjà en cours sur ce workspace : pas de second input.
     if (row.renameInput) return;
 
@@ -190,6 +178,22 @@ export function createSidebar(
     const workspaceEl = document.createElement("div");
     workspaceEl.className = "den-workspace";
     workspaceEl.dataset.workspaceId = workspaceId;
+    const loose = isLooseWorkspace(workspaceId);
+    if (loose) workspaceEl.classList.add("den-workspace--loose");
+
+    // Workspace implicite : pas de ligne d'en-tête ; nameEl reste un nœud détaché pour que setState n'ait pas de cas particulier.
+    if (loose) {
+      const projectsEl = document.createElement("div");
+      projectsEl.className = "den-workspace__projects";
+      workspaceEl.append(projectsEl);
+      return {
+        root: workspaceEl,
+        nameEl: document.createElement("span"),
+        projectsEl,
+        name: "",
+        renameInput: null,
+      };
+    }
 
     const rowEl = document.createElement("div");
     rowEl.className = "den-workspace__row";
@@ -209,15 +213,6 @@ export function createSidebar(
     addProjectEl.setAttribute("aria-label", "Nouveau projet");
     addProjectEl.addEventListener("click", () => handlers.onAddProject(workspaceId));
 
-    const newEl = document.createElement("button");
-    newEl.type = "button";
-    newEl.className = "den-workspace__new";
-    newEl.textContent = "+";
-    newEl.setAttribute("aria-label", "Nouvelle session");
-    newEl.addEventListener("click", () =>
-      handlers.onNewSession({ kind: "workspace", id: workspaceId }),
-    );
-
     const rootBtnEl = document.createElement("button");
     rootBtnEl.type = "button";
     rootBtnEl.className = "den-workspace__root";
@@ -234,17 +229,13 @@ export function createSidebar(
       handlers.onRemove({ kind: "workspace", id: workspaceId }),
     );
 
-    rowEl.append(nameEl, badgeEl, addProjectEl, newEl, rootBtnEl, removeEl);
-
-    const sessionsEl = document.createElement("div");
-    sessionsEl.className = "den-workspace__sessions";
-    sessionsEl.setAttribute("role", "tablist");
+    rowEl.append(nameEl, badgeEl, addProjectEl, rootBtnEl, removeEl);
 
     const projectsEl = document.createElement("div");
     projectsEl.className = "den-workspace__projects";
 
-    workspaceEl.append(rowEl, sessionsEl, projectsEl);
-    return { root: workspaceEl, nameEl, sessionsEl, projectsEl, name: "", renameInput: null };
+    workspaceEl.append(rowEl, projectsEl);
+    return { root: workspaceEl, nameEl, projectsEl, name: "", renameInput: null };
   }
 
   function createProjectRow(projectId: string): ProjectRow {
@@ -341,20 +332,7 @@ export function createSidebar(
   }
 
   function appendSessionRow(owner: Owner, el: HTMLElement): void {
-    if (owner.kind === "root") {
-      rootSessionsEl.appendChild(el);
-      return;
-    }
-    if (owner.kind === "workspace") {
-      const row = owner.id !== null ? workspaceRows.get(owner.id) : undefined;
-      if (!row) {
-        console.warn(`den: appendSessionRow — workspace inconnu (${owner.id})`);
-        return;
-      }
-      row.sessionsEl.appendChild(el);
-      return;
-    }
-    const row = owner.id !== null ? projectRows.get(owner.id) : undefined;
+    const row = projectRows.get(owner.id);
     if (!row) {
       console.warn(`den: appendSessionRow — projet inconnu (${owner.id})`);
       return;

@@ -3,6 +3,8 @@ import {
   createStore,
   defaultState,
   displayName,
+  isLooseWorkspace,
+  LOOSE_WORKSPACE_ID,
   parsePersistedState,
   projectsOfWorkspace,
   serializePersistedState,
@@ -445,5 +447,31 @@ describe("createStore", () => {
     state.workspaces.push({ id: "ws-1", name: "Défaut", rootPath: null });
     await store.save(state);
     expect(written).toBe(serializePersistedState(state));
+  });
+});
+
+describe("workspace implicite (LOOSE_WORKSPACE_ID)", () => {
+  it("isLooseWorkspace ne reconnaît que l'id constant", () => {
+    expect(isLooseWorkspace(LOOSE_WORKSPACE_ID)).toBe(true);
+    expect(isLooseWorkspace("ws-1")).toBe(false);
+    expect(isLooseWorkspace("")).toBe(false);
+  });
+
+  it("un état avec le workspace constant et un projet est valide (roundtrip)", () => {
+    const state: PersistedState = {
+      ...defaultState(),
+      workspaces: [{ id: LOOSE_WORKSPACE_ID, name: "Loose projects", rootPath: null }],
+      projects: [{ id: "p-1", workspaceId: LOOSE_WORKSPACE_ID, path: "/tmp/p1" }],
+    };
+    expect(tryParsePersistedState(serializePersistedState(state))?.state).toEqual(state);
+  });
+
+  it("un projet pointant un workspaceId inexistant reste rejeté", () => {
+    const state: PersistedState = {
+      ...defaultState(),
+      workspaces: [{ id: "ws-1", name: "A", rootPath: null }],
+      projects: [{ id: "p-1", workspaceId: LOOSE_WORKSPACE_ID, path: "/tmp/p1" }],
+    };
+    expect(tryParsePersistedState(serializePersistedState(state))).toBeNull();
   });
 });

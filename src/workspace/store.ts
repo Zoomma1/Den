@@ -102,10 +102,17 @@ function defaultLayout(): LayoutState {
   };
 }
 
-/** État par défaut : 0 workspace, 0 projet. Aucun workspace n'est créé
- * implicitement (ni ici ni ailleurs) : « + Workspace » dans la sidebar est
- * le seul geste qui en crée un ; « Launch Claude in… » ouvre une session
- * orpheline au niveau racine sans toucher à l'état. */
+/** Id en dur (jamais généré : il doit survivre aux builds) du workspace implicite des projets lancés via Launch. */
+export const LOOSE_WORKSPACE_ID = "7f815188-7af0-4eda-8efd-0ffa464b11e6";
+
+export function isLooseWorkspace(id: string): boolean {
+  return id === LOOSE_WORKSPACE_ID;
+}
+
+/** État par défaut : 0 workspace, 0 projet. Le workspace implicite
+ * (`LOOSE_WORKSPACE_ID`) n'est pas créé ici mais à la demande, au premier
+ * Launch (`ensureLooseWorkspace`, `workspace/index.ts`) ; « + Workspace »
+ * crée les autres. */
 export function defaultState(): PersistedState {
   return {
     version: 2,

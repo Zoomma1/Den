@@ -1,9 +1,9 @@
 /**
  * Module `tabs/owner` — types et fonctions pures autour du nœud de rangement
- * d'une session (DEN-04 A2bis-2). L'arbre de la sidebar organise
- * **l'attention de l'utilisateur**, pas le disque : le `cwd` d'un tab est
- * figé au spawn (jamais recalculé après coup), tandis que son `owner` (le
- * nœud — racine, workspace ou projet — sous lequel la row session est
+ * d'une session (DEN-04 A2bis-2, DEN-17 : le projet est le seul owner).
+ * L'arbre de la sidebar organise **l'attention de l'utilisateur**, pas le
+ * disque : le `cwd` d'un tab est figé au spawn (jamais recalculé après
+ * coup), tandis que son `owner` (le projet sous lequel la row session est
  * rangée) reste indépendant. Les deux ne se synchronisent jamais après
  * création : déplacer un projet ou changer la racine d'un workspace ne
  * bouge aucune session déjà ouverte.
@@ -15,48 +15,34 @@
  */
 import type { PersistedState } from "../workspace/store";
 
-export type OwnerKind = "root" | "workspace" | "project";
-
-/** Nœud de rangement d'une session. `id` vaut `null` pour `root` (pas
- * d'identifiant — la racine n'est pas une entité persistée), et l'id de
- * l'entité pour `workspace`/`project`. */
+/** Nœud de rangement d'une session : toujours un projet. */
 export interface Owner {
-  kind: OwnerKind;
-  id: string | null;
+  kind: "project";
+  id: string;
 }
 
-/** Clé stable pour indexer un `Owner` dans une `Map`/`Set` (ex. le suivi des
- * retraits en cours dans `tabs/index.ts`) : `"root"` pour la racine,
- * `"workspace:<id>"` / `"project:<id>"` sinon. */
+/** Cible de suppression dans l'arbre (workspace ou projet) — distincte de
+ * `Owner` : seul un projet range des sessions. */
+export interface NodeRef {
+  kind: "workspace" | "project";
+  id: string;
+}
+
+/** Clé stable pour indexer un `Owner` dans une `Map`/`Set` : `"project:<id>"`. */
 export function ownerKey(owner: Owner): string {
-  return owner.kind === "root" ? "root" : `${owner.kind}:${owner.id}`;
+  return `project:${owner.id}`;
 }
 
-/** `cwd` à utiliser pour une nouvelle session de cet `owner`, ou `null`
- * quand il ne peut être résolu (l'appelant doit alors renoncer au spawn, pas
- * retomber sur un dossier implicite) :
- * - `project` -> le `path` du projet (`null` si le projet a disparu entre le
- *   clic et l'exécution) ;
- * - `workspace` -> `rootPath` du workspace (`null` tant qu'aucune racine
- *   n'a été choisie — c'est à l'appelant d'ouvrir le picker AVANT
- *   `resolveCwd`, jamais de branche implicite ici) ;
- * - `root` -> `pickedPath` tel quel (toujours issu d'un picker, jamais de
- *   repli sur `$HOME`).
- *
- * AUCUNE branche « home » : le dossier est toujours choisi explicitement,
- * en amont de cet appel. */
-export function resolveCwd(
-  owner: Owner,
-  state: PersistedState,
-  pickedPath: string | null,
-): string | null {
-  if (owner.kind === "project") {
-    return state.projects.find((p) => p.id === owner.id)?.path ?? null;
-  }
-  if (owner.kind === "workspace") {
-    return state.workspaces.find((w) => w.id === owner.id)?.rootPath ?? null;
-  }
-  return pickedPath;
+/** Clé d'anti-réentrance d'un workspace (ownerKey ne couvre que les projets). */
+export function workspaceKey(workspaceId: string): string {
+  return `workspace:${workspaceId}`;
+}
+
+/** `path` du projet de l'`owner`, ou `null` s'il a disparu entre le clic et
+ * l'exécution (l'appelant renonce alors au spawn, jamais de repli sur
+ * `$HOME`). */
+export function resolveCwd(owner: Owner, state: PersistedState): string | null {
+  return state.projects.find((p) => p.id === owner.id)?.path ?? null;
 }
 
 /** Dernier segment non vide de `path` (ex. `/Users/vico/Dev/Den` ->

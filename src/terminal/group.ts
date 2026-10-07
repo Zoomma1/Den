@@ -3,23 +3,12 @@
  * par nœud propriétaire (DEN-04 A4-2). Même patron que `src/tabs/owner.ts` :
  * aucun import `@tauri-apps/*` ici, tout calcul testable isolément (cf.
  * `group.test.ts`) est délégué par `src/terminal/index.ts`.
- *
- * Un groupe de terminaux ne suit pas exactement l'`Owner` d'une session :
- * pour `workspace`/`project`, un `Owner` a un `cwd` unique (le nœud EST le
- * cwd — `ownerKey` suffit). Pour `root`, en revanche, plusieurs sessions
- * "Launch Claude in…" partagent `owner: { kind: "root", id: null }` avec des
- * `cwd` différents (chacune son propre dossier choisi au picker) — `"root"`
- * seul collapserait tous ces dossiers dans le même groupe de shells. D'où
- * `"root:" + cwd` : chaque dossier lancé à la racine obtient son propre
- * groupe, dans le bon dossier.
  */
 import { ownerKey, type Owner } from "../tabs/owner";
 
-/** Clé de groupe de terminaux pour une session au `cwd` donné : `ownerKey`
- * pour `workspace`/`project` (un owner = un cwd unique), `"root:" + cwd`
- * pour `root` (cf. docstring de tête). */
-export function groupKey(owner: Owner, cwd: string): string {
-  return owner.kind === "root" ? `root:${cwd}` : ownerKey(owner);
+/** Clé de groupe de terminaux : celle de l'owner (un projet = un cwd unique). */
+export function groupKey(owner: Owner): string {
+  return ownerKey(owner);
 }
 
 /** Libellé d'un onglet shell à partir de son index 0-based dans le groupe

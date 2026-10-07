@@ -10,27 +10,13 @@
  * seulement ici — le style fin de l'arbre reste DEN-02.
  */
 
-/* Barre racine : bouton launch (session orpheline) + « + Workspace » — wrap
+/* Barre racine : bouton launch + « + Workspace » — wrap
  * plutôt que déborder si la sidebar est étroite. */
 .den-root-bar {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: var(--den-space-1);
-}
-
-/* Sessions directement sous la racine ou sous un workspace — même retrait
- * que .den-project__sessions ; la racine, elle, n'a rien au-dessus d'elle
- * à indenter. */
-.den-root__sessions,
-.den-workspace__sessions {
-  display: flex;
-  flex-direction: column;
-  gap: var(--den-space-1);
-}
-
-.den-workspace__sessions {
-  padding-left: var(--den-space-3);
 }
 
 .den-workspace-list {
@@ -103,7 +89,6 @@
 .den-project__new,
 .den-project__remove,
 .den-workspace__add-project,
-.den-workspace__new,
 .den-workspace__root,
 .den-workspace__remove {
   padding: 0 var(--den-space-1);
@@ -120,7 +105,6 @@
 
 .den-project__new:hover,
 .den-workspace__add-project:hover,
-.den-workspace__new:hover,
 .den-workspace__root:hover {
   background: var(--den-glass-2, var(--den-bg-elevated));
   border-color: var(--den-edge, transparent);
@@ -145,6 +129,11 @@
   flex-direction: column;
   gap: var(--den-space-2);
   padding-left: var(--den-space-3);
+}
+
+/* Workspace implicite sans en-tête : pas d'indentation sous une row absente. */
+.den-workspace--loose > .den-workspace__projects {
+  padding-left: 0;
 }
 
 /* Input de renommage inline d'un workspace (cf. beginRename, sidebar.ts) —
@@ -268,7 +257,7 @@
   font-family: var(--den-font-sans);
   font-size: 0.85em;
   /* Même hauteur visuelle que le bouton `+ Workspace` de la barre racine
-   * (ligne 1.6, comme .den-workspace__new et consorts). */
+   * (ligne 1.6, comme .den-workspace__root et consorts). */
   line-height: 1.6;
   cursor: pointer;
   transition: background-color 0.1s ease-out;

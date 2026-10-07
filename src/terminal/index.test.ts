@@ -93,7 +93,7 @@ function initIsolated(root: HTMLElement): void {
 function dispatchActiveTabChanged(
   tabId: string | null,
   cwd: string | null,
-  owner: { kind: "root" | "workspace" | "project"; id: string | null } | null,
+  owner: { kind: "project"; id: string } | null,
 ): void {
   window.dispatchEvent(
     new CustomEvent("den:active-tab-changed", { detail: { tabId, cwd, owner } }),
@@ -102,16 +102,6 @@ function dispatchActiveTabChanged(
 
 function dispatchOwnerRemoved(kind: "workspace" | "project", id: string): void {
   window.dispatchEvent(new CustomEvent("den:owner-removed", { detail: { kind, id } }));
-}
-
-function dispatchSessionClosed(
-  tabId: string,
-  owner: { kind: "root" | "workspace" | "project"; id: string | null },
-  cwd: string,
-): void {
-  window.dispatchEvent(
-    new CustomEvent("den:session-closed", { detail: { tabId, owner, cwd } }),
-  );
 }
 
 /** Nombre d'appels `invoke(command, {...cwd})` avec CE cwd précis — chaque
@@ -157,7 +147,7 @@ describe("terminal/index — groupes par owner", () => {
 
   it("premier den:active-tab-changed crée un groupe et spawn un premier shell dans le cwd de la session", () => {
     initIsolated(root);
-    dispatchActiveTabChanged("tab-1", "/test/root-a", { kind: "root", id: null });
+    dispatchActiveTabChanged("tab-1", "/test/root-a", { kind: "project", id: "p-1" });
 
     expect(spawnCallsFor("/test/root-a")).toHaveLength(1);
     const group = root.querySelector(".den-terminal__group");
@@ -170,8 +160,8 @@ describe("terminal/index — groupes par owner", () => {
 
   it("bascule vers un autre owner : masque le premier groupe, en montre/crée un second", () => {
     initIsolated(root);
-    dispatchActiveTabChanged("tab-1", "/test/switch-a", { kind: "root", id: null });
-    dispatchActiveTabChanged("tab-2", "/test/switch-b", { kind: "workspace", id: "ws-switch" });
+    dispatchActiveTabChanged("tab-1", "/test/switch-a", { kind: "project", id: "p-2" });
+    dispatchActiveTabChanged("tab-2", "/test/switch-b", { kind: "project", id: "p-switch" });
 
     const groups = root.querySelectorAll(".den-terminal__group");
     expect(groups).toHaveLength(2);
@@ -181,9 +171,9 @@ describe("terminal/index — groupes par owner", () => {
 
   it("revenir sur un groupe déjà créé le remontre sans re-spawner", () => {
     initIsolated(root);
-    dispatchActiveTabChanged("tab-1", "/test/return-a", { kind: "root", id: null });
-    dispatchActiveTabChanged("tab-2", "/test/return-b", { kind: "workspace", id: "ws-return" });
-    dispatchActiveTabChanged("tab-1", "/test/return-a", { kind: "root", id: null });
+    dispatchActiveTabChanged("tab-1", "/test/return-a", { kind: "project", id: "p-3" });
+    dispatchActiveTabChanged("tab-2", "/test/return-b", { kind: "project", id: "p-return" });
+    dispatchActiveTabChanged("tab-1", "/test/return-a", { kind: "project", id: "p-3" });
 
     expect(spawnCallsFor("/test/return-a")).toHaveLength(1);
     const groups = root.querySelectorAll(".den-terminal__group");
@@ -193,7 +183,7 @@ describe("terminal/index — groupes par owner", () => {
 
   it("le bouton + crée un nouvel onglet shell dans le groupe visible, spawné dans le cwd du groupe", () => {
     initIsolated(root);
-    dispatchActiveTabChanged("tab-1", "/test/plus-a", { kind: "root", id: null });
+    dispatchActiveTabChanged("tab-1", "/test/plus-a", { kind: "project", id: "p-5" });
 
     const addButton = root.querySelector<HTMLButtonElement>(".den-terminal__add");
     expect(addButton).not.toBeNull();
@@ -206,7 +196,7 @@ describe("terminal/index — groupes par owner", () => {
 
   it("la croix d'un onglet le ferme (pty_kill) et active un onglet voisin", async () => {
     initIsolated(root);
-    dispatchActiveTabChanged("tab-1", "/test/close-a", { kind: "root", id: null });
+    dispatchActiveTabChanged("tab-1", "/test/close-a", { kind: "project", id: "p-6" });
     root.querySelector<HTMLButtonElement>(".den-terminal__add")!.click();
     expect(root.querySelectorAll(".den-terminal__tab")).toHaveLength(2);
     await flushMicrotasks();
@@ -220,46 +210,50 @@ describe("terminal/index — groupes par owner", () => {
     expect(invokeMock).toHaveBeenCalledWith("pty_kill", { id: expect.any(Number) });
   });
 
-  it("den:owner-removed tue tous les onglets du groupe workspace/project correspondant et le retire", async () => {
+  it("den:owner-removed d'un projet tue tous les onglets du groupe correspondant et le retire", async () => {
     initIsolated(root);
-    dispatchActiveTabChanged("tab-1", "/test/owner-removed-ws", { kind: "workspace", id: "ws-remove" });
+    dispatchActiveTabChanged("tab-1", "/test/owner-removed-p", { kind: "project", id: "p-remove" });
     expect(root.querySelectorAll(".den-terminal__group")).toHaveLength(1);
     await flushMicrotasks();
 
     invokeMock.mockClear();
-    dispatchOwnerRemoved("workspace", "ws-remove");
+    dispatchOwnerRemoved("project", "p-remove");
 
     expect(root.querySelectorAll(".den-terminal__group")).toHaveLength(0);
     expect(root.querySelectorAll(".den-terminal__tabs")).toHaveLength(0);
     expect(invokeMock).toHaveBeenCalledWith("pty_kill", { id: expect.any(Number) });
   });
 
-  it("den:session-closed sur un groupe root sans session restante tue le groupe", () => {
+  it("den:owner-removed de kind workspace est ignoré sans effet", async () => {
     initIsolated(root);
-    const owner = { kind: "root" as const, id: null };
-    dispatchActiveTabChanged("tab-1", "/test/session-closed-root", owner);
+    dispatchActiveTabChanged("tab-1", "/test/owner-removed-ignored", { kind: "project", id: "p-ignored" });
+    await flushMicrotasks();
+
+    invokeMock.mockClear();
+    dispatchOwnerRemoved("workspace", "p-ignored");
+
     expect(root.querySelectorAll(".den-terminal__group")).toHaveLength(1);
-
-    dispatchSessionClosed("tab-1", owner, "/test/session-closed-root");
-
-    expect(root.querySelectorAll(".den-terminal__group")).toHaveLength(0);
+    expect(invokeMock).not.toHaveBeenCalledWith("pty_kill", expect.anything());
   });
 
-  it("den:session-closed sur un groupe workspace/project ne tue pas le groupe (il survit)", () => {
+  it("den:session-closed n'est plus écouté : le groupe du projet survit", () => {
     initIsolated(root);
-    const owner = { kind: "workspace" as const, id: "ws-survive" };
-    dispatchActiveTabChanged("tab-1", "/test/session-closed-ws", owner);
-    expect(root.querySelectorAll(".den-terminal__group")).toHaveLength(1);
+    const owner = { kind: "project" as const, id: "p-survive" };
+    dispatchActiveTabChanged("tab-1", "/test/session-closed-p", owner);
 
-    dispatchSessionClosed("tab-1", owner, "/test/session-closed-ws");
+    window.dispatchEvent(
+      new CustomEvent("den:session-closed", {
+        detail: { tabId: "tab-1", owner, cwd: "/test/session-closed-p" },
+      }),
+    );
 
     expect(root.querySelectorAll(".den-terminal__group")).toHaveLength(1);
   });
 
   it("beforeunload tue les PTY de tous les onglets de tous les groupes", async () => {
     initIsolated(root);
-    dispatchActiveTabChanged("tab-1", "/test/unload-a", { kind: "root", id: null });
-    dispatchActiveTabChanged("tab-2", "/test/unload-b", { kind: "workspace", id: "ws-unload" });
+    dispatchActiveTabChanged("tab-1", "/test/unload-a", { kind: "project", id: "p-7" });
+    dispatchActiveTabChanged("tab-2", "/test/unload-b", { kind: "project", id: "p-unload" });
     await flushMicrotasks();
 
     invokeMock.mockClear();
@@ -297,24 +291,24 @@ describe("terminal/index — fond opaque et attente des polices", () => {
     docEl.style.setProperty("--den-terminal-bg", "#0a0916");
     docEl.style.setProperty("--den-bg-surface", "#111111");
     initIsolated(root);
-    dispatchActiveTabChanged("tab-1", "/test/bg-a", { kind: "root", id: null });
+    dispatchActiveTabChanged("tab-1", "/test/bg-a", { kind: "project", id: "p-8" });
     expect(lastBackground()).toBe("#0a0916");
   });
 
   it("fond : repli sur --den-bg-surface puis #000000", () => {
     docEl.style.setProperty("--den-bg-surface", "#111111");
     initIsolated(root);
-    dispatchActiveTabChanged("tab-1", "/test/bg-b", { kind: "root", id: null });
+    dispatchActiveTabChanged("tab-1", "/test/bg-b", { kind: "project", id: "p-9" });
     expect(lastBackground()).toBe("#111111");
 
     docEl.style.removeProperty("--den-bg-surface");
-    dispatchActiveTabChanged("tab-2", "/test/bg-c", { kind: "workspace", id: "ws-bg" });
+    dispatchActiveTabChanged("tab-2", "/test/bg-c", { kind: "project", id: "p-bg" });
     expect(lastBackground()).toBe("#000000");
   });
 
   it("sans document.fonts : spawn synchrone, comportement inchangé", () => {
     initIsolated(root);
-    dispatchActiveTabChanged("tab-1", "/test/nofonts", { kind: "root", id: null });
+    dispatchActiveTabChanged("tab-1", "/test/nofonts", { kind: "project", id: "p-10" });
     expect(spawnCallsFor("/test/nofonts")).toHaveLength(1);
   });
 
@@ -324,8 +318,8 @@ describe("terminal/index — fond opaque et attente des polices", () => {
     (document as unknown as { fonts: unknown }).fonts = { load };
     initIsolated(root);
 
-    dispatchActiveTabChanged("tab-1", "/test/fonts-a", { kind: "root", id: null });
-    dispatchActiveTabChanged("tab-2", "/test/fonts-b", { kind: "workspace", id: "ws-fonts" });
+    dispatchActiveTabChanged("tab-1", "/test/fonts-a", { kind: "project", id: "p-11" });
+    dispatchActiveTabChanged("tab-2", "/test/fonts-b", { kind: "project", id: "p-fonts" });
     expect(load).toHaveBeenCalledTimes(1);
     expect(load.mock.calls[0]).toEqual([expect.stringMatching(/^\d+px /)]);
     expect(spawnCallsFor("/test/fonts-a")).toHaveLength(0);
@@ -340,7 +334,7 @@ describe("terminal/index — fond opaque et attente des polices", () => {
     expect(order).toEqual(["/test/fonts-a", "/test/fonts-b"]);
 
     // Une fois la gate ouverte, les événements suivants sont synchrones.
-    dispatchActiveTabChanged("tab-3", "/test/fonts-c", { kind: "root", id: null });
+    dispatchActiveTabChanged("tab-3", "/test/fonts-c", { kind: "project", id: "p-12" });
     expect(spawnCallsFor("/test/fonts-c")).toHaveLength(1);
   });
 
@@ -349,7 +343,7 @@ describe("terminal/index — fond opaque et attente des polices", () => {
       load: vi.fn(() => Promise.reject(new Error("boom"))),
     };
     initIsolated(root);
-    dispatchActiveTabChanged("tab-1", "/test/fonts-err", { kind: "root", id: null });
+    dispatchActiveTabChanged("tab-1", "/test/fonts-err", { kind: "project", id: "p-13" });
     await flushMicrotasks();
     await flushMicrotasks();
     expect(spawnCallsFor("/test/fonts-err")).toHaveLength(1);
@@ -360,7 +354,7 @@ describe("terminal/index — fond opaque et attente des polices", () => {
     try {
       (document as unknown as { fonts: unknown }).fonts = { load: vi.fn(() => new Promise<void>(() => {})) };
       initIsolated(root);
-      dispatchActiveTabChanged("tab-1", "/test/fonts-hang", { kind: "root", id: null });
+      dispatchActiveTabChanged("tab-1", "/test/fonts-hang", { kind: "project", id: "p-14" });
       expect(spawnCallsFor("/test/fonts-hang")).toHaveLength(0);
 
       await vi.advanceTimersByTimeAsync(2000);
