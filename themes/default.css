@@ -7,31 +7,61 @@
  * `--den-*`, pas de second bloc) — cf. `src/theme/theme.ts` (parseThemeCSS)
  * pour le parseur qui applique ce contrat côté TS.
  *
- * Direction : sombre, dense, confortable pour de longues sessions — quasi
- * noir avec 3 niveaux de surface distincts (--den-bg / --den-bg-elevated /
- * --den-bg-surface), hiérarchie de texte à 3 paliers, accent bleu réservé
- * au sélectionné/interactif (jamais décoratif).
+ * Direction "Glass Tabs dégradés" : fenêtre sombre violet/cyan, panneaux
+ * à bordure et fond dégradés (sans blur), accent dégradé violet -> cyan
+ * réservé au sélectionné/interactif. Aucun ';' dans les valeurs (le
+ * parseur découpe sur ';').
  */
 :root {
-  --den-bg: #0e0e10;
-  --den-bg-elevated: #1a1a1e;
-  --den-bg-surface: #050506;
-  --den-fg: #e6e6e9;
-  --den-fg-secondary: #a8a8b0;
-  --den-fg-muted: #85858e;
-  --den-accent: #5b9bf6;
-  --den-accent-fg: #071018;
-  --den-accent-muted: rgba(91, 155, 246, 0.14);
-  --den-border: #26262b;
-  --den-status-success: #3fb950;
-  --den-status-warning: #d29922;
-  --den-status-error: #f85149;
-  --den-font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  --den-font-mono: "SF Mono", Menlo, Consolas, monospace;
+  --den-bg: #0b0a14;
+  --den-bg-elevated: #1a1736;
+  --den-bg-surface: #0a0916;
+  --den-fg: #ece9f7;
+  --den-fg-secondary: #a9a5c4;
+  --den-fg-muted: #6f6b8e;
+  --den-accent: #8b7cff;
+  --den-accent-fg: #0b0a14;
+  --den-accent-muted: rgba(139, 124, 255, 0.18);
+  --den-border: rgba(255, 255, 255, 0.10);
+  --den-status-success: #5ee6a8;
+  --den-status-warning: #ffc15e;
+  --den-status-error: #ff6b8a;
+  --den-font-sans: "Manrope", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --den-font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
   --den-font-size-base: 13px;
-  --den-radius: 5px;
+  --den-radius: 8px;
+  --den-radius-lg: 12px;
+  --den-code-bg: rgba(6, 5, 14, 0.55);
+  --den-code-fg: #cfc8ff;
   --den-space-1: 4px;
   --den-space-2: 8px;
   --den-space-3: 12px;
   --den-space-4: 16px;
+  --den-glass-1: rgba(255, 255, 255, 0.045);
+  --den-glass-2: rgba(255, 255, 255, 0.07);
+  --den-glass-3: rgba(255, 255, 255, 0.12);
+  --den-edge: rgba(255, 255, 255, 0.10);
+  --den-edge-hi: rgba(255, 255, 255, 0.22);
+  --den-edge-fill: #15122b;
+  --den-accent-b: #35d0ff;
+  --den-accent-gradient: linear-gradient(135deg, #8b7cff, #35d0ff);
+  --den-accent-soft: linear-gradient(90deg, rgba(139, 124, 255, 0.34), rgba(53, 208, 255, 0.12));
+  --den-mesh: radial-gradient(600px 420px at 12% 8%, rgba(139, 124, 255, 0.45), transparent 70%),
+    radial-gradient(700px 500px at 88% 20%, rgba(53, 208, 255, 0.28), transparent 70%),
+    radial-gradient(620px 460px at 55% 105%, rgba(255, 107, 200, 0.22), transparent 70%),
+    #0b0a14;
+  --den-surface-gradient: radial-gradient(90% 70% at 0% 0%, #26214d 0%, transparent 70%),
+    linear-gradient(165deg, #1c1938 0%, #161330 55%, #13192e 100%);
+  --den-surface-gradient-raised: radial-gradient(90% 70% at 100% 0%, #1f2a4d 0%, transparent 65%),
+    linear-gradient(165deg, #221e42 0%, #1a1736 60%, #161b34 100%);
+  --den-edge-gradient: linear-gradient(135deg, rgba(139, 124, 255, 0.70) 0%, rgba(255, 255, 255, 0.07) 42%, rgba(255, 255, 255, 0.05) 60%, rgba(53, 208, 255, 0.45) 100%);
+  --den-bubble-gradient: linear-gradient(135deg, #3a3278 0%, #2b3a73 100%);
+  --den-statusline-gradient: linear-gradient(90deg, #1f1a40 0%, #171533 55%, #15213a 100%);
+  --den-terminal-bg: #0a0916;
+  --den-blur: 0px;
+  --den-scanlines: none;
+  --den-status-running: #35d0ff;
+  --den-status-needs-input: #ffc15e;
+  --den-status-done: #5ee6a8;
+  --den-status-error-state: #ff6b8a;
 }

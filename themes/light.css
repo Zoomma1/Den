@@ -7,31 +7,59 @@
  * `--den-*`, pas de second bloc) — cf. `src/theme/theme.ts` (parseThemeCSS)
  * pour le parseur qui applique ce contrat côté TS.
  *
- * Direction : miroir clair du thème default — 3 niveaux de surface
- * (--den-bg fond / --den-bg-elevated chrome et cartes / --den-bg-surface
- * puits et terminal), 3 paliers de texte, accent bleu réservé au
- * sélectionné/interactif. Contrastes vérifiés ≥ 4.5:1 (WCAG-AA).
+ * Direction : miroir clair de Glass Tabs — mêmes tokens que default,
+ * dégradés clairs, texte sombre, accent violet/cyan lisible sur fond clair.
  */
 :root {
-  --den-bg: #f5f5f7;
+  --den-bg: #f1f0fa;
   --den-bg-elevated: #ffffff;
-  --den-bg-surface: #e9e9ee;
-  --den-fg: #1d1d20;
-  --den-fg-secondary: #4a4a52;
-  --den-fg-muted: #6e6e78;
-  --den-accent: #2f6fdb;
+  --den-bg-surface: #e9e8f4;
+  --den-fg: #1d1b2e;
+  --den-fg-secondary: #4a4763;
+  --den-fg-muted: #6b6884;
+  --den-accent: #5a48e0;
   --den-accent-fg: #ffffff;
-  --den-accent-muted: rgba(47, 111, 219, 0.12);
-  --den-border: #d8d8de;
-  --den-status-success: #1a7f37;
+  --den-accent-muted: rgba(90, 72, 224, 0.12);
+  --den-border: rgba(29, 27, 46, 0.14);
+  --den-status-success: #1a7f4f;
   --den-status-warning: #9a6700;
-  --den-status-error: #cf222e;
-  --den-font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  --den-font-mono: "SF Mono", Menlo, Consolas, monospace;
+  --den-status-error: #cf2250;
+  --den-font-sans: "Manrope", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --den-font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
   --den-font-size-base: 13px;
-  --den-radius: 5px;
+  --den-radius: 8px;
+  --den-radius-lg: 12px;
+  --den-code-bg: rgba(90, 72, 224, 0.07);
+  --den-code-fg: #4a3bb8;
   --den-space-1: 4px;
   --den-space-2: 8px;
   --den-space-3: 12px;
   --den-space-4: 16px;
+  --den-glass-1: rgba(29, 27, 46, 0.035);
+  --den-glass-2: rgba(29, 27, 46, 0.06);
+  --den-glass-3: rgba(29, 27, 46, 0.10);
+  --den-edge: rgba(29, 27, 46, 0.12);
+  --den-edge-hi: rgba(29, 27, 46, 0.24);
+  --den-edge-fill: #ffffff;
+  --den-accent-b: #0a8fc2;
+  --den-accent-gradient: linear-gradient(135deg, #5a48e0, #0a8fc2);
+  --den-accent-soft: linear-gradient(90deg, rgba(90, 72, 224, 0.18), rgba(10, 143, 194, 0.08));
+  --den-mesh: radial-gradient(600px 420px at 12% 8%, rgba(139, 124, 255, 0.28), transparent 70%),
+    radial-gradient(700px 500px at 88% 20%, rgba(53, 208, 255, 0.20), transparent 70%),
+    radial-gradient(620px 460px at 55% 105%, rgba(255, 107, 200, 0.14), transparent 70%),
+    #f1f0fa;
+  --den-surface-gradient: radial-gradient(90% 70% at 0% 0%, #ece9ff 0%, transparent 70%),
+    linear-gradient(165deg, #ffffff 0%, #f6f5fd 55%, #f0f6fc 100%);
+  --den-surface-gradient-raised: radial-gradient(90% 70% at 100% 0%, #e6f3ff 0%, transparent 65%),
+    linear-gradient(165deg, #ffffff 0%, #faf9ff 60%, #f3f7fd 100%);
+  --den-edge-gradient: linear-gradient(135deg, rgba(90, 72, 224, 0.55) 0%, rgba(29, 27, 46, 0.08) 42%, rgba(29, 27, 46, 0.06) 60%, rgba(10, 143, 194, 0.40) 100%);
+  --den-bubble-gradient: linear-gradient(135deg, #e2defd 0%, #d6ebfa 100%);
+  --den-statusline-gradient: linear-gradient(90deg, #ece9ff 0%, #f4f3fc 55%, #e8f3fb 100%);
+  --den-terminal-bg: #f7f6fd;
+  --den-blur: 0px;
+  --den-scanlines: none;
+  --den-status-running: #0a8fc2;
+  --den-status-needs-input: #9a6700;
+  --den-status-done: #1a7f4f;
+  --den-status-error-state: #cf2250;
 }
