@@ -15,6 +15,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+const termInstances = vi.hoisted(() => [] as Array<{ options: Record<string, unknown> }>);
 const invokeMock = vi.fn().mockResolvedValue(1);
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: (...args: unknown[]) => invokeMock(...args),
@@ -31,6 +32,7 @@ vi.mock("@xterm/xterm", () => ({
     disposed = false;
     constructor(opts: Record<string, unknown>) {
       this.options = { ...opts };
+      termInstances.push(this);
     }
     loadAddon(): void {}
     open(): void {}
@@ -265,5 +267,106 @@ describe("terminal/index — groupes par owner", () => {
 
     const killCalls = invokeMock.mock.calls.filter(([cmd]) => cmd === "pty_kill");
     expect(killCalls.length).toBeGreaterThanOrEqual(2);
+  });
+});
+
+describe("terminal/index — fond opaque et attente des polices", () => {
+  let root: HTMLElement;
+  const docEl = document.documentElement;
+
+  beforeEach(() => {
+    invokeMock.mockClear();
+    root = document.createElement("section");
+  });
+
+  afterEach(() => {
+    for (const [target, type, listener] of trackedListeners) {
+      target.removeEventListener(type, listener);
+    }
+    trackedListeners.length = 0;
+    docEl.style.removeProperty("--den-terminal-bg");
+    docEl.style.removeProperty("--den-bg-surface");
+    delete (document as unknown as { fonts?: unknown }).fonts;
+  });
+
+  function lastBackground(): unknown {
+    return (termInstances[termInstances.length - 1].options.theme as { background: string }).background;
+  }
+
+  it("fond : --den-terminal-bg prime sur --den-bg-surface", () => {
+    docEl.style.setProperty("--den-terminal-bg", "#0a0916");
+    docEl.style.setProperty("--den-bg-surface", "#111111");
+    initIsolated(root);
+    dispatchActiveTabChanged("tab-1", "/test/bg-a", { kind: "root", id: null });
+    expect(lastBackground()).toBe("#0a0916");
+  });
+
+  it("fond : repli sur --den-bg-surface puis #000000", () => {
+    docEl.style.setProperty("--den-bg-surface", "#111111");
+    initIsolated(root);
+    dispatchActiveTabChanged("tab-1", "/test/bg-b", { kind: "root", id: null });
+    expect(lastBackground()).toBe("#111111");
+
+    docEl.style.removeProperty("--den-bg-surface");
+    dispatchActiveTabChanged("tab-2", "/test/bg-c", { kind: "workspace", id: "ws-bg" });
+    expect(lastBackground()).toBe("#000000");
+  });
+
+  it("sans document.fonts : spawn synchrone, comportement inchangé", () => {
+    initIsolated(root);
+    dispatchActiveTabChanged("tab-1", "/test/nofonts", { kind: "root", id: null });
+    expect(spawnCallsFor("/test/nofonts")).toHaveLength(1);
+  });
+
+  it("avec document.fonts : aucun spawn avant la résolution de load(), puis ordre conservé", async () => {
+    let resolveLoad!: () => void;
+    const load = vi.fn(() => new Promise<void>((r) => (resolveLoad = r)));
+    (document as unknown as { fonts: unknown }).fonts = { load };
+    initIsolated(root);
+
+    dispatchActiveTabChanged("tab-1", "/test/fonts-a", { kind: "root", id: null });
+    dispatchActiveTabChanged("tab-2", "/test/fonts-b", { kind: "workspace", id: "ws-fonts" });
+    expect(load).toHaveBeenCalledTimes(1);
+    expect(load.mock.calls[0]).toEqual([expect.stringMatching(/^\d+px /)]);
+    expect(spawnCallsFor("/test/fonts-a")).toHaveLength(0);
+
+    resolveLoad();
+    await flushMicrotasks();
+    await flushMicrotasks();
+
+    const order = invokeMock.mock.calls
+      .filter(([cmd]) => cmd === "pty_spawn")
+      .map(([, args]) => (args as { cwd: string }).cwd);
+    expect(order).toEqual(["/test/fonts-a", "/test/fonts-b"]);
+
+    // Une fois la gate ouverte, les événements suivants sont synchrones.
+    dispatchActiveTabChanged("tab-3", "/test/fonts-c", { kind: "root", id: null });
+    expect(spawnCallsFor("/test/fonts-c")).toHaveLength(1);
+  });
+
+  it("load() qui rejette : la gate s'ouvre quand même (catch silencieux)", async () => {
+    (document as unknown as { fonts: unknown }).fonts = {
+      load: vi.fn(() => Promise.reject(new Error("boom"))),
+    };
+    initIsolated(root);
+    dispatchActiveTabChanged("tab-1", "/test/fonts-err", { kind: "root", id: null });
+    await flushMicrotasks();
+    await flushMicrotasks();
+    expect(spawnCallsFor("/test/fonts-err")).toHaveLength(1);
+  });
+
+  it("load() qui ne se résout jamais : la gate s'ouvre au bout du délai", async () => {
+    vi.useFakeTimers();
+    try {
+      (document as unknown as { fonts: unknown }).fonts = { load: vi.fn(() => new Promise<void>(() => {})) };
+      initIsolated(root);
+      dispatchActiveTabChanged("tab-1", "/test/fonts-hang", { kind: "root", id: null });
+      expect(spawnCallsFor("/test/fonts-hang")).toHaveLength(0);
+
+      await vi.advanceTimersByTimeAsync(2000);
+      expect(spawnCallsFor("/test/fonts-hang")).toHaveLength(1);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

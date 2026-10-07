@@ -52,6 +52,8 @@ const RESIZE_DEBOUNCE_MS = 80;
 
 const FALLBACK_FONT_FAMILY = '"SF Mono", Menlo, Consolas, monospace';
 const FALLBACK_FONT_SIZE = 13;
+// Si la police ne se résout jamais, on ouvre la gate quand même : un terminal à la mauvaise police vaut mieux qu'un terminal mort.
+const FONT_GATE_TIMEOUT_MS = 2000;
 const FALLBACK_BACKGROUND = "#000000";
 const SELECTION_ALPHA_HEX = "55";
 
@@ -149,7 +151,9 @@ function withAlpha(color: string, alphaHex: string): string {
  * bord. Pas de palette ANSI custom — les 16 couleurs xterm par défaut
  * restent en place (décision validée). */
 function buildTerminalStyle(): TerminalStyle {
-  const background = readToken("--den-bg-surface") || readToken("--den-bg") || FALLBACK_BACKGROUND;
+  // Fond opaque : --den-terminal-bg, puis --den-bg-surface, sans allowTransparency.
+  const background =
+    readToken("--den-terminal-bg") || readToken("--den-bg-surface") || FALLBACK_BACKGROUND;
   const foreground = readToken("--den-fg");
   const accent = readToken("--den-accent");
 
@@ -160,6 +164,15 @@ function buildTerminalStyle(): TerminalStyle {
   if (accent) {
     theme.cursor = accent;
     theme.selectionBackground = withAlpha(accent, SELECTION_ALPHA_HEX);
+  }
+
+  theme.overviewRulerBorder = readToken("--den-edge") || "transparent";
+  const sliderBg = readToken("--den-glass-3");
+  const sliderHover = readToken("--den-edge-hi");
+  if (sliderBg) theme.scrollbarSliderBackground = sliderBg;
+  if (sliderHover) {
+    theme.scrollbarSliderHoverBackground = sliderHover;
+    theme.scrollbarSliderActiveBackground = accent || sliderHover;
   }
 
   const fontFamily = readToken("--den-font-mono") || FALLBACK_FONT_FAMILY;
@@ -289,6 +302,8 @@ export function init(ctx: DenContext): void {
       fontSize: initialStyle.fontSize,
       cursorBlink: true,
       theme: initialStyle.theme,
+      // Largeur de la scrollbar (14px par défaut) ; FitAddon la relit pour la grille.
+      overviewRuler: { width: 6 },
     });
 
     const fitAddon = new FitAddon();
@@ -562,9 +577,37 @@ export function init(ctx: DenContext): void {
     }
   }
 
-  window.addEventListener("den:active-tab-changed", handleActiveTabChanged);
-  window.addEventListener("den:owner-removed", handleOwnerRemoved);
-  window.addEventListener("den:session-closed", handleSessionClosed);
+  // Gate police : les événements sont mis en file (ordre conservé) jusqu'à ce que la police mono soit chargée, pour que xterm mesure la bonne grille ; synchrone si document.fonts est absent.
+  let fontsReady = false;
+  const pendingEvents: Array<() => void> = [];
+  function gated(handler: (event: Event) => void): (event: Event) => void {
+    return (event) => {
+      if (fontsReady) handler(event);
+      else pendingEvents.push(() => handler(event));
+    };
+  }
+  function openGate(): void {
+    fontsReady = true;
+    for (const run of pendingEvents.splice(0)) run();
+  }
+  const fontSet = (document as Document & { fonts?: FontFaceSet }).fonts;
+  if (fontSet && typeof fontSet.load === "function") {
+    const { fontSize, fontFamily } = buildTerminalStyle();
+    let loading: Promise<unknown>;
+    try {
+      loading = fontSet.load(`${fontSize}px ${fontFamily}`);
+    } catch {
+      loading = Promise.resolve();
+    }
+    const timeout = new Promise<void>((resolve) => setTimeout(resolve, FONT_GATE_TIMEOUT_MS));
+    void Promise.race([loading.catch(() => undefined), timeout]).then(openGate);
+  } else {
+    fontsReady = true;
+  }
+
+  window.addEventListener("den:active-tab-changed", gated(handleActiveTabChanged));
+  window.addEventListener("den:owner-removed", gated(handleOwnerRemoved));
+  window.addEventListener("den:session-closed", gated(handleSessionClosed));
   document.addEventListener("den:theme-changed", handleThemeChanged);
 
   window.addEventListener("beforeunload", () => {
