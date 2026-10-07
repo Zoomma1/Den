@@ -29,12 +29,12 @@
 .den-msg-user {
   position: relative;
   align-self: flex-end;
-  max-width: 85%;
+  max-width: 62%;
   margin: var(--den-space-2) 0 var(--den-space-2) auto;
   padding: var(--den-space-2) var(--den-space-3);
-  border-radius: var(--den-radius);
-  background: var(--den-bg-elevated);
-  border: 1px solid var(--den-border);
+  border-radius: 12px 12px 3px 12px;
+  background: var(--den-bubble-gradient, var(--den-bg-elevated));
+  border: 1px solid var(--den-edge-hi, var(--den-border));
   color: var(--den-fg);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
@@ -55,6 +55,14 @@
   color: var(--den-fg);
 }
 
+/* Réponse Claude : pleine largeur, sans bulle ni fond. */
+.den-msg-assistant {
+  align-self: stretch;
+  max-width: 100%;
+  background: none;
+  border: none;
+}
+
 .den-msg-assistant :first-child {
   margin-top: 0;
 }
@@ -73,17 +81,23 @@
 
 .den-msg-assistant code {
   font-family: var(--den-font-mono);
-  background: var(--den-bg-elevated);
-  border-radius: var(--den-radius);
-  padding: 0 4px;
+  background: var(--den-glass-3, var(--den-bg-elevated));
+  color: var(--den-code-fg, var(--den-accent));
+  border-radius: 5px;
+  padding: 1px 5px;
+}
+
+.den-msg-assistant ul li::marker,
+.den-msg-assistant ol li::marker {
+  color: var(--den-accent);
 }
 
 /* `position: relative` : ancre le bouton copier (D8, cf. .den-copy). */
 .den-code {
   position: relative;
-  background: var(--den-bg-elevated);
-  border: 1px solid var(--den-border);
-  border-radius: var(--den-radius);
+  background: var(--den-code-bg, var(--den-bg-surface));
+  border: 1px solid var(--den-edge, var(--den-border));
+  border-radius: 10px;
   padding: var(--den-space-2) var(--den-space-3);
   overflow-x: auto;
   margin: var(--den-space-2) 0;
@@ -95,12 +109,13 @@
   padding: 0;
   white-space: pre;
   color: var(--den-fg);
+  border-radius: 0;
 }
 
 .den-tool-block {
-  border: 1px solid var(--den-border);
-  border-radius: var(--den-radius);
-  background: var(--den-bg-elevated);
+  border: 1px solid var(--den-edge, var(--den-border));
+  border-radius: 9px;
+  background: var(--den-glass-1, var(--den-bg-elevated));
   padding: var(--den-space-2) var(--den-space-3);
 }
 
@@ -153,14 +168,14 @@
 
 .den-error-block {
   color: var(--den-status-error);
-  background: color-mix(in srgb, var(--den-status-error) 8%, var(--den-bg));
-  border: 1px solid var(--den-status-error);
-  border-radius: var(--den-radius);
+  background: color-mix(in srgb, var(--den-status-error) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--den-status-error) 55%, transparent);
+  border-radius: 9px;
   padding: var(--den-space-2) var(--den-space-3);
 }
 
 .den-custom-block {
-  border: 1px dashed var(--den-border);
+  border: 1px dashed var(--den-edge, var(--den-border));
   border-radius: var(--den-radius);
   padding: var(--den-space-2);
 }
@@ -174,9 +189,9 @@
   top: var(--den-space-1);
   right: var(--den-space-1);
   padding: 2px var(--den-space-1);
-  border: 1px solid var(--den-border);
+  border: 1px solid var(--den-edge, var(--den-border));
   border-radius: var(--den-radius);
-  background: var(--den-bg-elevated);
+  background: var(--den-glass-2, var(--den-bg-elevated));
   color: var(--den-fg-muted);
   font-size: 0.9em;
   line-height: 1;
@@ -203,9 +218,9 @@
   top: var(--den-space-1);
   right: var(--den-space-1);
   padding: 2px var(--den-space-1);
-  border: 1px solid var(--den-border);
+  border: 1px solid var(--den-edge, var(--den-border));
   border-radius: var(--den-radius);
-  background: var(--den-bg-elevated);
+  background: var(--den-glass-2, var(--den-bg-elevated));
   color: var(--den-fg-muted);
   font-size: 0.9em;
   line-height: 1;
@@ -229,7 +244,7 @@
  * distraire de la lecture du fil au-dessus. */
 .den-thinking {
   padding: var(--den-space-1) var(--den-space-3);
-  color: var(--den-fg-muted);
+  color: var(--den-accent-b, var(--den-fg-muted));
   font-size: 0.9em;
   animation: den-thinking-pulse 1.2s ease-in-out infinite;
 }

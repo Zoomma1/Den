@@ -132,7 +132,7 @@
 .den-splitter:hover,
 #den-app[data-dragging="sidebar"] .den-splitter[data-splitter="sidebar"],
 #den-app[data-dragging="panes"] .den-splitter[data-splitter="panes"] {
-  background: var(--den-accent);
+  background: var(--den-accent-gradient, var(--den-accent));
 }
 
 .den-splitter[data-splitter="sidebar"] {
