@@ -28,14 +28,10 @@
  *   `src/tabs/index.ts`) : `owner`/`cwd`/`tabId` non nuls -> montre le
  *   groupe de cet owner/cwd (créé paresseusement si absent, avec un premier
  *   shell spawné immédiatement) ; `null` -> tout masqué, rien créé.
- * - `den:owner-removed` (`detail: { kind: "workspace" | "project", id }`) :
- *   tue tous les onglets du groupe correspondant et le retire.
- * - `den:session-closed` (`detail: { tabId, owner, cwd }`, cf.
- *   `src/tabs/index.ts`) : retire `tabId` du suivi du groupe ; un groupe
- *   `root` qui n'a plus AUCUNE session vivante est tué (pas d'ancrage dans
- *   l'arbre sidebar pour `root` — sans session il devient inatteignable).
- *   Un groupe `workspace`/`project` survit (son nœud reste dans l'arbre, on
- *   peut y rouvrir une session) et ne meurt que sur `den:owner-removed`.
+ * - `den:owner-removed` (`detail: { kind, id }`) : si `kind === "project"`,
+ *   tue tous les onglets du groupe correspondant et le retire ; tout autre
+ *   `kind` est ignoré. Un groupe ne meurt que sur cet événement (son projet
+ *   reste dans l'arbre, on peut y rouvrir une session).
  */
 import { Channel, invoke } from "@tauri-apps/api/core";
 import { Terminal, type ITheme } from "@xterm/xterm";
@@ -64,13 +60,13 @@ interface TerminalStyle {
 }
 
 /** Owner minimal tel que porté par `den:active-tab-changed` /
- * `den:owner-removed` / `den:session-closed` — structurellement compatible
+ * `den:owner-removed` — structurellement compatible
  * avec `Owner` (`src/tabs/owner.ts`) sans avoir besoin de l'importer (le
  * `cwd` d'une session arrive déjà résolu dans ces détails, cf. docstring de
  * tête : aucun besoin de `resolveCwd` ici non plus). */
 interface OwnerLike {
-  kind: "root" | "workspace" | "project";
-  id: string | null;
+  kind: "project";
+  id: string;
 }
 
 interface ActiveTabChangedDetail {
@@ -80,14 +76,8 @@ interface ActiveTabChangedDetail {
 }
 
 interface OwnerRemovedDetail {
-  kind: "workspace" | "project";
+  kind: string;
   id: string;
-}
-
-interface SessionClosedDetail {
-  tabId: string;
-  owner: OwnerLike;
-  cwd: string;
 }
 
 /** Un onglet shell d'un groupe : son xterm.js, son addon WebGL (chargé
@@ -125,11 +115,6 @@ interface TerminalGroup {
   /** Index de l'onglet actif dans `shells`, `-1` si le groupe est vide
    * (dernier onglet fermé — le "+" le repeuple). */
   activeIndex: number;
-  /** Sessions (tabId) actuellement rangées sous cet owner — sert à savoir,
-   * sur `den:session-closed`, si un groupe `root` n'a plus aucune session
-   * vivante (cf. docstring de tête). Non consulté pour `workspace`/`project`
-   * (ces groupes survivent à la fermeture de leurs sessions). */
-  sessionTabIds: Set<string>;
 }
 
 /** Lit une custom property `--den-*` sur `document.documentElement`, déjà
@@ -433,8 +418,7 @@ export function init(ctx: DenContext): void {
   }
 
   /** Tue TOUS les onglets d'un groupe et retire le groupe (PTY, xterm, DOM)
-   * — `den:owner-removed` (workspace/project), ou un groupe `root` dont la
-   * dernière session vient de se fermer (`den:session-closed`). */
+   * — `den:owner-removed` d'un projet. */
   function killGroup(key: string): void {
     const group = groups.get(key);
     if (!group) return;
@@ -480,7 +464,6 @@ export function init(ctx: DenContext): void {
       addButtonEl,
       shells: [],
       activeIndex: -1,
-      sessionTabIds: new Set(),
     };
     groups.set(key, group);
 
@@ -519,44 +502,21 @@ export function init(ctx: DenContext): void {
       showGroup(null);
       return;
     }
-    const key = groupKey(detail.owner, detail.cwd);
+    const key = groupKey(detail.owner);
     let group = groups.get(key);
     if (!group) {
       group = createGroup(key, detail.cwd);
     } else if (group.cwd !== detail.cwd) {
-      // La racine d'un workspace peut être réassignée après coup
-      // (`onSetWorkspaceRoot`, aucune garde côté tabs/index.ts) alors qu'un
-      // groupe existe déjà pour lui — sans resync, les FUTURS `+` de ce
-      // groupe spawneraient encore dans l'ancien dossier (review gate
-      // `/commit` DEN-04 A4-2, 25/09). Les onglets déjà ouverts gardent leur
-      // cwd figé (comme une session), seuls les onglets créés après ce point
-      // suivent la nouvelle racine.
+      // Le path d'un projet peut changer après coup : sans resync, les FUTURS `+` du groupe spawneraient dans l'ancien dossier (les onglets ouverts gardent leur cwd figé).
       group.cwd = detail.cwd;
     }
-    group.sessionTabIds.add(detail.tabId);
     showGroup(key);
   }
 
   function handleOwnerRemoved(event: Event): void {
     const detail = (event as CustomEvent<OwnerRemovedDetail>).detail;
-    if (!detail) return;
-    killGroup(groupKey({ kind: detail.kind, id: detail.id }, ""));
-  }
-
-  function handleSessionClosed(event: Event): void {
-    const detail = (event as CustomEvent<SessionClosedDetail>).detail;
-    if (!detail) return;
-    const key = groupKey(detail.owner, detail.cwd);
-    const group = groups.get(key);
-    if (!group) return;
-    group.sessionTabIds.delete(detail.tabId);
-    // Un groupe `workspace`/`project` survit à la fermeture de ses sessions
-    // (son nœud reste dans l'arbre sidebar, on peut y rouvrir une session) —
-    // seul un groupe `root` sans AUCUNE session restante est tué (pas
-    // d'ancrage dans l'arbre : sans session il devient inatteignable).
-    if (detail.owner.kind === "root" && group.sessionTabIds.size === 0) {
-      killGroup(key);
-    }
+    if (!detail || detail.kind !== "project") return;
+    killGroup(groupKey({ kind: "project", id: detail.id }));
   }
 
   /** Un changement de thème peut changer police/taille, donc la grille
@@ -607,7 +567,6 @@ export function init(ctx: DenContext): void {
 
   window.addEventListener("den:active-tab-changed", gated(handleActiveTabChanged));
   window.addEventListener("den:owner-removed", gated(handleOwnerRemoved));
-  window.addEventListener("den:session-closed", gated(handleSessionClosed));
   document.addEventListener("den:theme-changed", handleThemeChanged);
 
   window.addEventListener("beforeunload", () => {
