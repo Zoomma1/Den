@@ -86,14 +86,27 @@ export function parseThemeCSS(raw: string): Record<string, string> | null {
  */
 export interface CssPropertyTarget {
   setProperty(name: string, value: string): void;
+  removeProperty(name: string): void;
 }
 
-/** Applique chaque variable CSS sur la cible (ex. `document.documentElement.style`). */
+// Tokens posés par cible : permet de retirer ceux qu'un nouveau thème n'a plus.
+const appliedByTarget = new WeakMap<object, Set<string>>();
+
+/** Applique les variables sur la cible et retire les tokens de l'appel précédent absents du nouveau jeu. */
 export function applyThemeVars(
   target: CssPropertyTarget,
   vars: Record<string, string>,
 ): void {
+  const previous = appliedByTarget.get(target);
+  if (previous) {
+    for (const name of previous) {
+      if (!(name in vars)) {
+        target.removeProperty(name);
+      }
+    }
+  }
   for (const [name, value] of Object.entries(vars)) {
     target.setProperty(name, value);
   }
+  appliedByTarget.set(target, new Set(Object.keys(vars)));
 }

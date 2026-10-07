@@ -17,9 +17,13 @@
   flex-direction: column;
   gap: var(--den-space-2);
   padding: var(--den-space-3);
-  border: 1px solid var(--den-border);
-  border-radius: var(--den-radius);
-  background: var(--den-bg-elevated);
+  border: 1px solid transparent;
+  border-radius: var(--den-radius-lg, var(--den-radius));
+  background-color: var(--den-edge-fill, var(--den-bg-elevated));
+  background-image: var(--den-surface-gradient, linear-gradient(var(--den-bg-elevated), var(--den-bg-elevated))),
+    var(--den-edge-gradient, linear-gradient(var(--den-border), var(--den-border)));
+  background-clip: padding-box, border-box;
+  background-origin: border-box;
 }
 
 .den-decision-block__title {
@@ -40,8 +44,9 @@
   font-family: var(--den-font-mono);
   font-size: 0.9em;
   color: var(--den-fg-secondary);
-  background: var(--den-bg-surface);
-  border-radius: var(--den-radius);
+  background: var(--den-code-bg, var(--den-bg-surface));
+  border: 1px solid var(--den-edge, var(--den-border));
+  border-radius: 10px;
   overflow-x: auto;
   white-space: pre-wrap;
   word-break: break-word;
@@ -62,9 +67,9 @@
 .den-decision-block__input {
   flex: 1;
   padding: var(--den-space-1) var(--den-space-2);
-  border: 1px solid var(--den-border);
-  border-radius: var(--den-radius);
-  background: var(--den-bg-surface);
+  border: 1px solid var(--den-edge-hi, var(--den-border));
+  border-radius: var(--den-radius-lg, var(--den-radius));
+  background: var(--den-glass-1, var(--den-bg-surface));
   color: var(--den-fg);
   font-family: var(--den-font-sans);
   font-size: var(--den-font-size-base);
@@ -83,9 +88,9 @@
 
 .den-btn {
   padding: var(--den-space-1) var(--den-space-3);
-  border: 1px solid var(--den-border);
+  border: 1px solid var(--den-edge, var(--den-border));
   border-radius: var(--den-radius);
-  background: var(--den-bg-surface);
+  background: var(--den-glass-2, var(--den-bg-surface));
   color: var(--den-fg);
   font-family: var(--den-font-sans);
   font-size: var(--den-font-size-base);
@@ -109,7 +114,7 @@
 
 .den-btn--allow,
 .den-btn--submit {
-  background: var(--den-accent);
+  background: var(--den-accent-gradient, var(--den-accent));
   border-color: var(--den-accent);
   color: var(--den-accent-fg);
 }
@@ -130,7 +135,9 @@
   flex-direction: row;
   align-items: center;
   padding: var(--den-space-2) var(--den-space-3);
-  background: var(--den-bg-surface);
+  background-color: transparent;
+  background-image: none;
+  border-color: var(--den-edge, var(--den-border));
 }
 
 .den-decision-block--collapsed .den-decision-block__title {
@@ -158,9 +165,9 @@
   flex-direction: column;
   min-width: 190px;
   padding: var(--den-space-1);
-  border: 1px solid var(--den-border);
-  border-radius: var(--den-radius);
-  background: var(--den-bg-elevated);
+  border: 1px solid var(--den-edge-hi, var(--den-border));
+  border-radius: var(--den-radius-lg, var(--den-radius));
+  background: var(--den-edge-fill, var(--den-bg-elevated));
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
 }
 
@@ -177,5 +184,5 @@
 }
 
 .den-decision-block__menu-item:hover {
-  background: var(--den-bg-surface);
+  background: var(--den-accent-soft, var(--den-bg-surface));
 }
