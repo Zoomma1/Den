@@ -238,7 +238,7 @@
   opacity: 1;
 }
 
-/* Spinner de lifecycle (DEN-10) — "réfléchit…"/"attend ta réponse", en bas
+/* Spinner de lifecycle (DEN-10) — "thinking…"/"waiting for your reply", en bas
  * du fil (enfant de la vue APRÈS le flow, cf. conversationView.ts).
  * Pulsation discrète : juste assez pour signaler une activité, sans
  * distraire de la lecture du fil au-dessus. */

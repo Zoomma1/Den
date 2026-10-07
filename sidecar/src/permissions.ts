@@ -41,7 +41,7 @@ import type {
 } from "../../src/types/protocol";
 
 const ASK_USER_QUESTION_TOOL = "AskUserQuestion";
-const SESSION_INTERRUPTED_MESSAGE = "Requête annulée : session interrompue.";
+const SESSION_INTERRUPTED_MESSAGE = "Request cancelled: session interrupted.";
 
 type PendingEntry =
   | {
@@ -145,7 +145,7 @@ export class PermissionBroker {
     if (!response.approved) {
       pending.resolve({
         behavior: "deny",
-        message: response.reason ?? "Refusé par l'utilisateur.",
+        message: response.reason ?? "Denied by the user.",
       });
       return;
     }

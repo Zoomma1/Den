@@ -229,13 +229,13 @@ describe("ConversationView", () => {
       new CustomEvent("den:tab-state-changed", { detail: { tabId: "tab-1", state: "running" } }),
     );
     expect(thinking.hidden).toBe(false);
-    expect(thinking.textContent).toBe("réfléchit…");
+    expect(thinking.textContent).toBe("thinking…");
 
     window.dispatchEvent(
       new CustomEvent("den:tab-state-changed", { detail: { tabId: "tab-1", state: "waiting" } }),
     );
     expect(thinking.hidden).toBe(false);
-    expect(thinking.textContent).toBe("attend ta réponse");
+    expect(thinking.textContent).toBe("waiting for your reply");
 
     window.dispatchEvent(
       new CustomEvent("den:tab-state-changed", { detail: { tabId: "tab-1", state: "idle" } }),
