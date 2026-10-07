@@ -67,6 +67,7 @@ describe("applyLayout", () => {
     applyLayout(
       app,
       makeLayout({
+        preset: "side-by-side",
         sizes: {
           "side-by-side": { sidebarPx: 0, conversationRatio: 0 },
           stacked: { sidebarPx: 240, conversationRatio: 0.6 },
@@ -84,6 +85,7 @@ describe("applyLayout", () => {
     applyLayout(
       app,
       makeLayout({
+        preset: "side-by-side",
         sizes: {
           "side-by-side": { sidebarPx: 9999, conversationRatio: 1 },
           stacked: { sidebarPx: 240, conversationRatio: 0.6 },

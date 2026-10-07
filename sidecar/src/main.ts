@@ -303,7 +303,7 @@ async function pump(): Promise<void> {
               : sdkMessage.errors.join("; ");
           send({
             type: "error",
-            message: errorText || "Le tour s'est terminé en erreur.",
+            message: errorText || "The turn ended with an error.",
             recoverable: true,
           });
         }

@@ -292,12 +292,12 @@ export function renderQuestionBlock(
   const input = document.createElement("input");
   input.type = "text";
   input.className = "den-decision-block__input";
-  input.placeholder = "Autre réponse…";
+  input.placeholder = "Other answer…";
 
   const submitBtn = document.createElement("button");
   submitBtn.type = "submit";
   submitBtn.className = "den-btn den-btn--submit";
-  submitBtn.textContent = "Envoyer";
+  submitBtn.textContent = "Send";
 
   lockers.push(() => {
     input.disabled = true;

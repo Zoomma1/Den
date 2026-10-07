@@ -88,7 +88,7 @@ describe("PermissionBroker", () => {
     });
 
     const result = await pending;
-    expect(result).toEqual({ behavior: "deny", message: "Refusé par l'utilisateur." });
+    expect(result).toEqual({ behavior: "deny", message: "Denied by the user." });
   });
 
   it("route AskUserQuestion vers un question_request dérivé de la première question", async () => {
@@ -210,7 +210,7 @@ describe("PermissionBroker", () => {
 
     expect(result).toEqual({
       behavior: "deny",
-      message: "Requête annulée : session interrompue.",
+      message: "Request cancelled: session interrupted.",
       interrupt: true,
     });
     expect(broker.pendingCount).toBe(0);
@@ -232,7 +232,7 @@ describe("PermissionBroker", () => {
     const result = await pending;
     expect(result).toEqual({
       behavior: "deny",
-      message: "Requête annulée : session interrompue.",
+      message: "Request cancelled: session interrupted.",
       interrupt: true,
     });
     expect(broker.pendingCount).toBe(0);

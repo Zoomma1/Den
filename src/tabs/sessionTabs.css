@@ -1,0 +1,113 @@
+.den-session-tabs {
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  gap: 4px;
+  padding: 6px 8px 0;
+  border-bottom: 1px solid var(--den-edge, var(--den-border));
+}
+
+.den-session-tabs__scroller {
+  display: flex;
+  gap: 4px;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.den-session-tabs__scroller::-webkit-scrollbar { display: none; }
+
+.den-session-tab,
+.den-session-tabs__add {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+  padding: 5px 10px 5px 12px;
+  border: 0;
+  border-radius: 8px 8px 0 0;
+  background: transparent;
+  color: var(--den-fg-muted);
+  font: 600 12px var(--den-font-sans, inherit);
+  white-space: nowrap;
+  cursor: pointer;
+}
+/* Un display auteur bat le hidden UA : règle explicite. */
+.den-session-tab[hidden] { display: none; }
+
+.den-session-tab--active {
+  background:
+    var(--den-accent-gradient, var(--den-accent)) top / 100% 2px no-repeat,
+    var(--den-accent-soft, var(--den-bg-surface));
+  color: var(--den-fg);
+}
+
+.den-session-tab__title {
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.den-session-tab__close {
+  margin-left: 2px;
+  font-size: 14px;
+  line-height: 1;
+  opacity: 0.55;
+}
+.den-session-tab__close:hover { opacity: 1; }
+
+.den-session-tabs__add {
+  padding: 5px 11px;
+  font-size: 15px;
+  line-height: 1.2;
+}
+.den-session-tabs__add:disabled { opacity: 0.4; cursor: default; }
+
+.den-session-tabs__path {
+  flex: 1;
+  min-width: 0;
+  margin-left: auto;
+  padding-bottom: 6px;
+  overflow: hidden;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--den-font-mono, monospace);
+  font-size: 11px;
+  color: var(--den-fg-muted);
+}
+
+/* Puce de statut des onglets, pilotée par [data-status]. */
+.den-session-tab__status {
+  display: block;
+  flex: none;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: transparent;
+}
+[data-status="running"] > .den-session-tab__status {
+  background: var(--den-status-running, #35d0ff);
+  animation: den-session-pulse 1.6s infinite;
+}
+[data-status="needs_input"] > .den-session-tab__status {
+  background: var(--den-status-needs-input, #ffc15e);
+  box-shadow: 0 0 8px rgba(255, 193, 94, 0.6);
+}
+[data-status="done"] > .den-session-tab__status {
+  background: transparent;
+  border: 1.5px solid var(--den-status-done, #5ee6a8);
+}
+[data-status="error"] > .den-session-tab__status,
+.den-session-tab--error > .den-session-tab__status {
+  background: var(--den-status-error-state, #ff6b8a);
+  border-radius: 2px;
+  transform: rotate(45deg) scale(0.85);
+}
+
+@keyframes den-session-pulse {
+  0% { box-shadow: 0 0 0 0 rgba(53, 208, 255, 0.55); }
+  70% { box-shadow: 0 0 0 7px rgba(53, 208, 255, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(53, 208, 255, 0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  [data-status="running"] > .den-session-tab__status { animation: none; }
+}

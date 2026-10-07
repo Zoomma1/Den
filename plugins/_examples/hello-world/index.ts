@@ -3,9 +3,10 @@
  *
  * Ajoute un badge visible dans la barre de statut (`#den-status`) via
  * `PluginContext.statusBar`. Sert de référence pour qui écrit un nouveau
- * plugin sous `plugins/<nom>/index.ts`.
+ * plugin sous `plugins/<nom>/index.ts` ; rangé dans `_examples/`, donc non
+ * chargé par l'app (le glob ne descend pas d'un niveau de plus).
  */
-import type { DenPlugin } from "../../src/plugins/api";
+import type { DenPlugin } from "../../../src/plugins/api";
 
 const helloWorldPlugin: DenPlugin = {
   name: "hello-world",

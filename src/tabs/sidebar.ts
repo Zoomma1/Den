@@ -1,23 +1,14 @@
 /**
- * Module `tabs/sidebar` — rendu DOM pur de l'arbre workspace → projet →
- * sessions (DEN-04 A2bis-2). Seul le projet porte des sessions : une barre
- * racine (`.den-root-bar`, bouton launch + « + Workspace ») suivie de la
- * liste des workspaces — chacun avec son nom (renommable inline), sa racine
- * et ses projets (structure `.den-project` inchangée depuis A2). Le workspace
- * implicite (`LOOSE_WORKSPACE_ID`) est rendu sans en-tête : ses projets
- * apparaissent en liste plate.
+ * Module `tabs/sidebar` — rendu DOM pur de l'arbre workspace → projet (les
+ * sessions vivent dans les onglets, hors sidebar). Une liste de workspaces
+ * (nom renommable inline, racine, projets) suivie, en bas, de la barre
+ * `.den-root-bar` (bouton launch + « + Workspace »). Le workspace implicite
+ * (`LOOSE_WORKSPACE_ID`) est rendu sans en-tête : ses projets en liste plate.
  *
- * Ancrages DEN-05 (classes conservées à la lettre pour le lot notifications
- * à venir) : `.den-workspace__badge`, `.den-project__badge` (slots vides —
- * indicateur d'état par nœud), `.den-tab__status` (déjà porté par les rows
- * session elles-mêmes, fournies par `tabs/index.ts`), `data-workspace-id`,
- * `data-project-id`.
+ * Ancrages DEN-05 : `.den-workspace__badge`, `.den-project__badge` (slots
+ * vides, stylés via `data-status`), `data-workspace-id`, `data-project-id`.
  *
- * Pur : aucun import `@tauri-apps/*` ici, testable en happy-dom sans mock
- * Tauri (cf. `sidebar.test.ts`, même patron que `../interactive/blocks.ts`).
- * `tabs/index.ts` garde toute la logique sidecar/router (spawn, chips de
- * lifecycle...) et fournit les handlers + les rows session elles-mêmes (les
- * `.den-tab` existants, ajoutés via `appendSessionRow`).
+ * Pur : aucun import `@tauri-apps/*`, testable en happy-dom sans mock Tauri.
  */
 import {
   displayName,
@@ -25,7 +16,7 @@ import {
   projectsOfWorkspace,
   type PersistedState,
 } from "../workspace/store";
-import type { NodeRef, Owner } from "./owner";
+import type { NodeRef } from "./owner";
 
 export interface SidebarHandlers {
   onAddWorkspace(): void;
@@ -34,26 +25,25 @@ export interface SidebarHandlers {
   onRenameWorkspace(workspaceId: string, name: string): void;
   onSetWorkspaceRoot(workspaceId: string): void;
   onAddProject(workspaceId: string): void;
-  onNewSession(owner: Owner): void;
+  onSelectProject(projectId: string): void;
   onRemove(target: NodeRef): void;
 }
 
 export interface Sidebar {
   /**
    * Re-rend l'arbre à partir de `state` : conserve les nœuds `.den-workspace`
-   * et `.den-project` existants (et donc leurs rows session déjà présentes)
+   * et `.den-project` existants
    * pour chaque id toujours présent dans `state` — recalcule seulement
    * nom/title —, crée les nœuds manquants, retire ceux qui ont disparu, et
    * respecte l'ordre de `state.workspaces` / `projectsOfWorkspace` dans le
    * DOM. Un projet dont le `workspaceId` a changé est déplacé sous son
-   * nouveau parent (ses rows session le suivent, `appendChild` déplace sans
-   * recréer). Si un renommage inline est en cours sur un workspace (cf.
+   * nouveau parent (`appendChild` déplace sans recréer). Si un renommage inline est en cours sur un workspace (cf.
    * `beginRename`), son `nameEl` n'est PAS écrasé — l'input reste en place.
    */
   setState(state: PersistedState): void;
-  /** Ajoute `el` sous `.den-project__sessions` du projet `owner`. Projet
-   * disparu -> `console.warn` + no-op. */
-  appendSessionRow(owner: Owner, el: HTMLElement): void;
+  /** Marque la ligne du projet `projectId` comme sélectionnée ; `null` retire
+   * la marque. La sélection survit aux `setState`. */
+  setSelectedProject(projectId: string | null): void;
   /** Bascule le nom du workspace `workspaceId` en édition inline (input
    * pré-rempli, sélectionné, focus). `Enter`/`blur` valident, `Escape`
    * annule — cf. docstring de `createSidebar`. `workspaceId` inconnu ->
@@ -76,15 +66,15 @@ interface WorkspaceRow {
 interface ProjectRow {
   root: HTMLElement;
   nameEl: HTMLSpanElement;
-  sessionsEl: HTMLElement;
+  pathEl: HTMLSpanElement;
 }
 
 /** Rend la sidebar dans `root` (vidé au préalable) :
- * - `.den-root-bar` : bouton launch (`launchButtonFactory` — porte déjà son
- *   propre listener, ce module ne câble rien dessus), « + Workspace » ;
  * - `.den-workspace-list` : un `.den-workspace[data-workspace-id]` par
  *   workspace, chacun avec sa row (nom renommable par double-clic, racine,
- *   retrait) et ses projets — sauf le workspace implicite, sans row.
+ *   retrait) et ses projets — sauf le workspace implicite, sans row ;
+ * - `.den-root-bar` (en bas) : bouton launch (`launchButtonFactory` — porte
+ *   déjà son propre listener, ce module ne câble rien dessus), « + Workspace ».
  *
  * Renommage inline (`beginRename`) : double-clic sur `.den-workspace__name`
  * (ou appel direct depuis `tabs/index.ts` après `onAddWorkspace`) vide le
@@ -101,11 +91,15 @@ export function createSidebar(
   root: HTMLElement,
   handlers: SidebarHandlers,
   launchButtonFactory: () => HTMLButtonElement,
+  formatPath: (path: string) => string = (path) => path,
 ): Sidebar {
   const workspaceRows = new Map<string, WorkspaceRow>();
   const projectRows = new Map<string, ProjectRow>();
 
   root.textContent = "";
+
+  const workspaceListEl = document.createElement("div");
+  workspaceListEl.className = "den-workspace-list";
 
   const rootBarEl = document.createElement("div");
   rootBarEl.className = "den-root-bar";
@@ -115,15 +109,13 @@ export function createSidebar(
   addWorkspaceEl.type = "button";
   addWorkspaceEl.className = "den-root-bar__add-workspace";
   addWorkspaceEl.textContent = "+ Workspace";
-  addWorkspaceEl.setAttribute("aria-label", "Nouveau workspace");
+  addWorkspaceEl.setAttribute("aria-label", "New workspace");
   addWorkspaceEl.addEventListener("click", () => handlers.onAddWorkspace());
 
   rootBarEl.append(addWorkspaceEl);
-  root.append(rootBarEl);
+  root.append(workspaceListEl, rootBarEl);
 
-  const workspaceListEl = document.createElement("div");
-  workspaceListEl.className = "den-workspace-list";
-  root.append(workspaceListEl);
+  let selectedProjectId: string | null = null;
 
   function beginRename(workspaceId: string): void {
     const row = workspaceRows.get(workspaceId);
@@ -209,22 +201,22 @@ export function createSidebar(
     const addProjectEl = document.createElement("button");
     addProjectEl.type = "button";
     addProjectEl.className = "den-workspace__add-project";
-    addProjectEl.textContent = "+ projet";
-    addProjectEl.setAttribute("aria-label", "Nouveau projet");
+    addProjectEl.textContent = "+ project";
+    addProjectEl.setAttribute("aria-label", "New project");
     addProjectEl.addEventListener("click", () => handlers.onAddProject(workspaceId));
 
     const rootBtnEl = document.createElement("button");
     rootBtnEl.type = "button";
     rootBtnEl.className = "den-workspace__root";
-    rootBtnEl.textContent = "racine…";
-    rootBtnEl.setAttribute("aria-label", "Choisir la racine");
+    rootBtnEl.textContent = "root…";
+    rootBtnEl.setAttribute("aria-label", "Choose root");
     rootBtnEl.addEventListener("click", () => handlers.onSetWorkspaceRoot(workspaceId));
 
     const removeEl = document.createElement("button");
     removeEl.type = "button";
     removeEl.className = "den-workspace__remove";
     removeEl.textContent = "×";
-    removeEl.setAttribute("aria-label", "Retirer le workspace");
+    removeEl.setAttribute("aria-label", "Remove workspace");
     removeEl.addEventListener("click", () =>
       handlers.onRemove({ kind: "workspace", id: workspaceId }),
     );
@@ -253,32 +245,37 @@ export function createSidebar(
     const badgeEl = document.createElement("span");
     badgeEl.className = "den-project__badge";
 
-    const newEl = document.createElement("button");
-    newEl.type = "button";
-    newEl.className = "den-project__new";
-    newEl.textContent = "+";
-    newEl.setAttribute("aria-label", "Nouvelle session");
-    newEl.addEventListener("click", () =>
-      handlers.onNewSession({ kind: "project", id: projectId }),
-    );
-
     const removeEl = document.createElement("button");
     removeEl.type = "button";
     removeEl.className = "den-project__remove";
     removeEl.textContent = "×";
-    removeEl.setAttribute("aria-label", "Retirer le projet");
+    removeEl.setAttribute("aria-label", "Remove project");
     removeEl.addEventListener("click", () =>
       handlers.onRemove({ kind: "project", id: projectId }),
     );
 
-    rowEl.append(nameEl, badgeEl, newEl, removeEl);
+    rowEl.append(nameEl, badgeEl, removeEl);
+    projectEl.append(rowEl);
 
-    const sessionsEl = document.createElement("div");
-    sessionsEl.className = "den-project__sessions";
-    sessionsEl.setAttribute("role", "tablist");
+    // Les boutons de la ligne gardent leur propre action.
+    projectEl.addEventListener("click", (event) => {
+      if ((event.target as Element).closest("button")) return;
+      handlers.onSelectProject(projectId);
+    });
+    // Sans ça la sélection d'un projet n'est possible qu'à la souris (les sessions étaient des boutons avant L3).
+    projectEl.tabIndex = 0;
+    projectEl.setAttribute("role", "button");
+    projectEl.addEventListener("keydown", (event) => {
+      if (event.target !== projectEl || (event.key !== "Enter" && event.key !== " ")) return;
+      event.preventDefault();
+      handlers.onSelectProject(projectId);
+    });
 
-    projectEl.append(rowEl, sessionsEl);
-    return { root: projectEl, nameEl, sessionsEl };
+    const pathEl = document.createElement("span");
+    pathEl.className = "den-project__path";
+    // Toujours présent : une hauteur de ligne identique, sélectionnée ou non, évite que la liste saute.
+    projectEl.append(pathEl);
+    return { root: projectEl, nameEl, pathEl };
   }
 
   function setState(state: PersistedState): void {
@@ -295,9 +292,10 @@ export function createSidebar(
       row.name = workspace.name;
       // Renommage en cours : ne pas écraser l'input (cf. docstring de tête).
       if (!row.renameInput) row.nameEl.textContent = workspace.name;
-      row.nameEl.title = workspace.rootPath ?? "aucune racine";
+      // Le nom complet en tooltip : le texte est clampé à 3 lignes.
+      row.nameEl.title = `${workspace.name} — ${workspace.rootPath ?? "no root"}`;
       // `appendChild` sur un nœud déjà enfant le déplace en fin sans le
-      // recréer (ses rows session/projets survivent) — itérer dans l'ordre
+      // recréer (ses projets survivent) — itérer dans l'ordre
       // suffit donc à faire respecter cet ordre au DOM.
       workspaceListEl.appendChild(row.root);
 
@@ -311,8 +309,9 @@ export function createSidebar(
         }
         prow.nameEl.textContent = displayName(project, siblings);
         prow.nameEl.title = project.path;
-        // Un projet déplacé vers un autre workspace est réappendu ici, sous
-        // son nouveau parent — ses rows session le suivent (même nœud DOM).
+        prow.pathEl.textContent = formatPath(project.path);
+        prow.pathEl.title = project.path;
+        // Un projet déplacé vers un autre workspace est réappendu ici, sous son nouveau parent.
         row.projectsEl.appendChild(prow.root);
       }
     }
@@ -329,16 +328,22 @@ export function createSidebar(
         projectRows.delete(id);
       }
     }
+    applySelection();
   }
 
-  function appendSessionRow(owner: Owner, el: HTMLElement): void {
-    const row = projectRows.get(owner.id);
-    if (!row) {
-      console.warn(`den: appendSessionRow — projet inconnu (${owner.id})`);
-      return;
+  function applySelection(): void {
+    for (const [id, row] of projectRows) {
+      const selected = id === selectedProjectId;
+      row.root.classList.toggle("den-project--selected", selected);
+      if (selected) row.root.setAttribute("aria-current", "true");
+      else row.root.removeAttribute("aria-current");
     }
-    row.sessionsEl.appendChild(el);
   }
 
-  return { setState, appendSessionRow, beginRename };
+  function setSelectedProject(projectId: string | null): void {
+    selectedProjectId = projectId;
+    applySelection();
+  }
+
+  return { setState, setSelectedProject, beginRename };
 }

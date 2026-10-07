@@ -111,14 +111,23 @@ describe("mountPlugins", () => {
   });
 });
 
-describe("intégration : plugin hello-world réel", () => {
-  it("ajoute son badge visible dans #den-status via init()", async () => {
+describe("plugin d'exemple hello-world", () => {
+  it("ajoute son badge dans #den-status via l'API (référence pour les auteurs de plugins)", async () => {
+    const { default: helloWorld } = await import("../../plugins/_examples/hello-world");
+    const { ctx, mounts } = makeCtx();
+
+    await helloWorld.onMount?.(buildPluginContext(ctx));
+
+    expect(mounts.status.textContent).toContain("hello from plugin");
+    expect(mounts.status.querySelector(".den-plugin-badge")).not.toBeNull();
+  });
+
+  it("n'est pas chargé par l'app : init() ne monte aucun item", async () => {
     const { init } = await import("./index");
     const { ctx, mounts } = makeCtx();
 
     init(ctx);
 
-    expect(mounts.status.textContent).toContain("hello from plugin");
-    expect(mounts.status.querySelector(".den-plugin-badge")).not.toBeNull();
+    expect(mounts.status.textContent).toBe("");
   });
 });

@@ -27,27 +27,24 @@
  * `src/terminal/debounce.ts`, même usage que le `pty_resize` du module
  * terminal) — un `pointermove` ne doit pas déclencher une écriture à chaque
  * pixel. Si le debounce ne mettait à jour la mémoire qu'à son tir, un second
- * geste (autre splitter, preset, ⌘B) dans la fenêtre de 300 ms relirait un
+ * geste (autre splitter, ⌘B) dans la fenêtre de 300 ms relirait un
  * layout périmé et annulerait le premier. Le relâchement du splitter
  * (`pointerup`/`pointercancel`) annule le debounce et écrit tout de suite
- * (`flushPersist`). Le changement de preset (`<select>`) et le raccourci de
- * sidebar écrivent immédiatement : ce sont des gestes discrets, pas un flux
- * continu.
+ * (`flushPersist`). Les raccourcis ⌘B/⌘J écrivent immédiatement : ce sont des
+ * gestes discrets, pas un flux continu.
  *
  * Pas de re-montage : ce module ne touche à aucun DOM des autres modules
  * (`terminal`, `tabs`, `markdown`). Le `ResizeObserver` déjà posé par
  * `src/terminal/index.ts` suit les changements de taille de `#den-terminal`
  * qu'une nouvelle grille CSS provoque — rien à faire ici pour xterm.
  */
-import type { DenContext } from "../core/registry";
 import { getState, saveState, setLayout } from "../workspace";
-import type { LayoutPreset, LayoutState } from "../workspace/store";
+import type { LayoutState } from "../workspace/store";
 import { debounce, type Debounced } from "../terminal/debounce";
 import {
   applyLayout,
   ratioFromDrag,
   sidebarPxFromDrag,
-  withPreset,
   withSidebarHidden,
   withTerminalHidden,
   withSizes,
@@ -58,7 +55,7 @@ const PERSIST_DEBOUNCE_MS = 300;
 
 type SplitterKind = "sidebar" | "panes";
 
-export function init(ctx: DenContext): void {
+export function init(): void {
   const app = document.getElementById("den-app");
   if (!app) {
     throw new Error("Den: point de montage #den-app introuvable dans index.html");
@@ -79,7 +76,6 @@ export function init(ctx: DenContext): void {
 
   wireSidebarDrag(app, sidebarSplitter, persist);
   wirePanesDrag(app, panesSplitter, persist);
-  wireLayoutSelect(ctx, app, panesSplitter);
   wirePaneShortcut(app, "b", (layout) => withSidebarHidden(layout, !layout.sidebarHidden));
   wirePaneShortcut(app, "j", (layout) => withTerminalHidden(layout, !layout.terminalHidden));
 }
@@ -202,27 +198,6 @@ function wirePanesDrag(app: HTMLElement, el: HTMLElement, persist: Debounced<[]>
       persist();
     }, () => flushPersist(persist));
   });
-}
-
-/** `<select>` de preset dans la barre de statut (comme un item plugin,
- * appendé à `ctx.mounts.status`). Changement immédiat, pas de débounce :
- * les tailles de l'autre preset ne sont pas touchées (`withPreset`). */
-function wireLayoutSelect(ctx: DenContext, app: HTMLElement, panesSplitter: HTMLElement): void {
-  const select = document.createElement("select");
-  select.className = "den-layout-select";
-  select.append(new Option("Side by side", "side-by-side"), new Option("Stacked", "stacked"));
-  select.value = getState().layout.preset;
-
-  select.addEventListener("change", () => {
-    const preset = select.value as LayoutPreset;
-    const next = withPreset(getState().layout, preset);
-    setLayout(next);
-    applyLayout(app, next);
-    syncPanesOrientation(app, panesSplitter);
-    void saveState();
-  });
-
-  ctx.mounts.status.appendChild(select);
 }
 
 /** ⌘<key> sur macOS, Ctrl+<key> ailleurs — un seul modificateur par

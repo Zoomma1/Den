@@ -277,7 +277,7 @@ export function init(ctx: DenContext): void {
     closeSpan.className = "den-terminal__tab-close";
     closeSpan.textContent = "×";
     closeSpan.setAttribute("role", "button");
-    closeSpan.setAttribute("aria-label", "Fermer le shell");
+    closeSpan.setAttribute("aria-label", "Close shell");
     tabButtonEl.append(labelSpan, closeSpan);
     group.tabsBarEl.insertBefore(tabButtonEl, group.addButtonEl);
 
@@ -358,7 +358,7 @@ export function init(ctx: DenContext): void {
       .catch((err: unknown) => {
         shell.spawnFailed = true;
         console.error("Den/terminal: pty_spawn en échec", err);
-        term.writeln(`\r\n\x1b[31mDen: impossible de démarrer le shell (${String(err)})\x1b[0m`);
+        term.writeln(`\r\n\x1b[31mDen: unable to start the shell (${String(err)})\x1b[0m`);
       });
 
     term.onData((data) => {
@@ -452,7 +452,7 @@ export function init(ctx: DenContext): void {
     addButtonEl.type = "button";
     addButtonEl.className = "den-terminal__add";
     addButtonEl.textContent = "+";
-    addButtonEl.setAttribute("aria-label", "Nouveau shell");
+    addButtonEl.setAttribute("aria-label", "New shell");
     tabsBarEl.appendChild(addButtonEl);
     toolbar.appendChild(tabsBarEl);
 

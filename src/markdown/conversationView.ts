@@ -95,8 +95,8 @@ function createCopyButton(): HTMLButtonElement {
   const button = document.createElement("button");
   button.type = "button";
   button.className = "den-copy";
-  button.setAttribute("aria-label", "Copier");
-  button.title = "Copier";
+  button.setAttribute("aria-label", "Copy");
+  button.title = "Copy";
   button.textContent = "⧉";
   return button;
 }
@@ -112,8 +112,8 @@ function createEditButton(): HTMLButtonElement {
   const button = document.createElement("button");
   button.type = "button";
   button.className = "den-edit";
-  button.setAttribute("aria-label", "Reprendre ce message");
-  button.title = "Reprendre ce message";
+  button.setAttribute("aria-label", "Edit message");
+  button.title = "Edit message";
   button.textContent = "✎";
   return button;
 }
@@ -254,11 +254,11 @@ export class ConversationView {
     if (!detail || detail.tabId !== this.tabId) return;
 
     if (detail.state === "running") {
-      this.thinkingEl.textContent = "réfléchit…";
+      this.thinkingEl.textContent = "thinking…";
       this.thinkingEl.hidden = false;
       this.scrollToBottomIfStuck();
     } else if (detail.state === "waiting") {
-      this.thinkingEl.textContent = "attend ta réponse";
+      this.thinkingEl.textContent = "waiting for your reply";
       this.thinkingEl.hidden = false;
       this.scrollToBottomIfStuck();
     } else {
@@ -471,7 +471,7 @@ export class ConversationView {
       ? "den-tool-result den-tool-result-error"
       : "den-tool-result";
     const label = document.createElement("strong");
-    label.textContent = isError ? "Erreur" : "Résultat";
+    label.textContent = isError ? "Error" : "Result";
     const pre = document.createElement("pre");
     const code = document.createElement("code");
     code.textContent = formatToolOutput(output);

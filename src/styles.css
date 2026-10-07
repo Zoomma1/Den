@@ -125,10 +125,16 @@ body {
   display: flex;
   align-items: center;
   gap: var(--den-space-3);
-  padding: var(--den-space-1) var(--den-space-3);
-  background: var(--den-statusline-gradient, var(--den-bg-elevated));
-  border-top: 1px solid var(--den-edge-hi, var(--den-border));
+  padding: var(--den-space-1) var(--den-space-4);
+  /* Barre discrète : elle ne porte que des items de plugins et le texte de boot, pas de chrome dédié. */
+  background: transparent;
   color: var(--den-fg-muted);
   font-family: var(--den-font-mono);
-  font-size: 0.85em;
+  font-size: 0.75em;
+  opacity: 0.8;
+}
+
+/* Vide (aucun plugin, pas d'erreur de boot) : la ligne de grille se replie et les panneaux descendent. */
+#den-status:empty {
+  display: none;
 }
