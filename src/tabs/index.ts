@@ -3,12 +3,13 @@
  * arbre à 3 niveaux, remplace la liste plate de projets d'A2 — cf.
  * `./sidebar.ts` pour le rendu DOM pur des rows, `./owner.ts` pour les
  * fonctions pures autour du nœud de rangement d'une session). Un sidecar
- * par session/tab, ancré à un `owner` (racine, workspace ou projet) — le
+ * par session/tab, ancré à un `owner` (toujours un projet, DEN-17) — le
  * `cwd` de la session est figé au spawn, indépendant de l'`owner` (déplacer
  * un projet, ou changer la racine d'un workspace, ne bouge aucune session
  * déjà ouverte). Plus jamais de `$HOME` implicite : chaque `cwd` vient soit
- * d'un projet/racine de workspace déjà choisi, soit d'un picker natif ouvert
- * au moment du geste.
+ * d'un projet déjà choisi, soit d'un picker natif ouvert au moment du geste ;
+ * « Launch Claude in… » range le dossier choisi dans le workspace implicite
+ * (`ensureLooseWorkspace`) — plus de session sans projet.
  *
  * Contrat inter-lots (événements DOM sur `window` ; `tabs` consomme en plus
  * l'API du module `workspace` — workspaces/projets, picker, cf.
@@ -21,25 +22,19 @@
  *   (`detail: { tabId: string | null, cwd: string | null, owner: Owner | null }`)
  *   à chaque changement de tab actif, tout à `null` quand le dernier tab se
  *   ferme (aucune session restante).
- * - `den:owner-removed` (`detail: { kind: "workspace" | "project", id: string }`),
- *   émis par `onRemove` APRÈS que tous les tabs du nœud (et, pour un
- *   workspace, de ses projets) ont fini de fermer (chaque `sidecar_kill`
- *   attendu, séquentiellement) et que le nœud a été retiré de l'état
- *   persisté. Remplace `den:project-removed` (A2) — même contrat, étendu aux
- *   workspaces. Ancrage DEN-04 A4 : le module terminal y fait le `pty_kill`
- *   du groupe de terminaux du nœud (A4-2). Retrait d'un workspace : UN
- *   événement par nœud retiré — le workspace lui-même PUIS un par projet
- *   enfant cascadé (`kind: "project"`) — sans ça les groupes de terminaux
- *   `project:<id>` de ses projets restent orphelins (review DEN-04 A4-2,
- *   25/09 : seul l'événement du workspace était émis, PTY jamais tués).
+ * - `den:owner-removed` (`detail: { kind: "project", id: string }`),
+ *   émis par `onRemove` pour CHAQUE projet retiré, APRÈS que tous ses tabs
+ *   ont fini de fermer (chaque `sidecar_kill` attendu, séquentiellement) et
+ *   que le nœud a été retiré de l'état persisté. Retrait d'un workspace :
+ *   un événement par projet enfant cascadé, aucun pour le workspace lui-même
+ *   (seuls les projets portent des groupes de terminaux). Ancrage DEN-04 A4 :
+ *   le module terminal y fait le `pty_kill` du groupe `project:<id>`.
  * - `den:session-closed` (`detail: { tabId, owner, cwd }`), émis par
  *   `closeTab` juste après `tabs.delete(tabId)`, avec l'`owner`/`cwd` de la
- *   session fermée (capturés AVANT le retrait de la `Map`). Ancrage DEN-04
- *   A4-2 : le module terminal s'en sert pour savoir quand un groupe de
- *   terminaux `root` n'a plus aucune session vivante (pas d'ancrage dans
- *   l'arbre sidebar pour `root` — un groupe sans session devient
- *   inatteignable, donc tué ; un groupe `workspace`/`project` survit, lui,
- *   à la fermeture de ses sessions).
+ *   session fermée (capturés AVANT le retrait de la `Map`). Le module
+ *   terminal ne l'écoute plus : un groupe de terminaux survit à la fermeture
+ *   de ses sessions, il ne meurt qu'avec son projet. Contrat gardé pour
+ *   DEN-05 (notifications), sans écouteur aujourd'hui.
  * - `den:tab-state-changed` (`detail: { tabId: string, state: TabLifecycleState }`) :
  *   émis quand l'état de lifecycle d'un tab (cf. `./lifecycle.ts`, seule
  *   source de vérité — DEN-10) change réellement, après chaque
@@ -77,7 +72,7 @@
  * `null`, jamais de crash, juste pas de substitution `~`.
  *
  * Un seul verrou (`withBusy`) garde tous les gestes de création — launch,
- * + Workspace, racine…, + projet, + session sur un workspace — anti-
+ * + Workspace, racine…, + projet — anti-
  * réentrance comme l'ancien `launching` ; les retraits ont le leur
  * (`removing`, par nœud). Picker annulé : rien, pas d'erreur console.
  *
@@ -99,21 +94,23 @@ import {
 import {
   addProject,
   addWorkspace,
+  ensureLooseWorkspace,
   getState,
   pickProjectDirectory,
-  probePath,
   removeProject,
   removeWorkspace,
   renameWorkspace,
   setWorkspaceRoot,
 } from "../workspace";
-import { projectsOfWorkspace } from "../workspace/store";
+import { isLooseWorkspace, LOOSE_WORKSPACE_ID, projectsOfWorkspace } from "../workspace/store";
 import {
   basename,
   ownerKey,
   resolveCwd,
   shortPath,
+  type NodeRef,
   type Owner,
+  workspaceKey,
 } from "./owner";
 import type { TabLifecycleState } from "./lifecycle";
 import { TabRouter } from "./router";
@@ -609,7 +606,7 @@ export async function init(ctx: DenContext): Promise<void> {
   }
 
   // Verrou PARTAGÉ par tous les gestes de création (launch, + Workspace,
-  // racine…, + projet, + session sur un workspace) — un second clic pendant
+  // racine…, + projet) — un second clic pendant
   // que l'un d'eux tourne (picker natif ouvert, IPC en vol) est un no-op,
   // sans ça un double-clic dupliquerait la création (deux workspaces, deux
   // sessions) ou ouvrirait deux pickers. Le picker natif est modal : un
@@ -627,19 +624,19 @@ export async function init(ctx: DenContext): Promise<void> {
     }
   }
 
-  /** « Launch Claude in… » (bouton de la barre racine et de l'état vide) :
-   * picker natif, puis session **au niveau racine** de l'arbre (owner
-   * `root`) dans le dossier choisi — aucun projet ni workspace créé ou
-   * modifié (décision grill A2bis-2 du 11/09 : on lance au plus haut niveau,
-   * le rangement viendra du drag & drop, hors de ce lot ; ranger une session
-   * sous un projet passe pour l'instant par « + projet » puis le `+` du
-   * projet). `null` (picker annulé) : rien ne se passe, pas d'erreur
-   * console. */
-  async function launchRootSession(): Promise<void> {
+  /** « Launch Claude in… » : le dossier devient (ou réutilise, dédup par chemin) un projet du workspace implicite, et une session s'y ouvre. */
+  async function launchProjectSession(): Promise<void> {
     await withBusy(async () => {
       const path = await pickProjectDirectory("Choisis le dossier de la session");
       if (path === null) return;
-      const tab = createTab({ kind: "root", id: null }, path);
+      await ensureLooseWorkspace();
+      const project = await addProject(LOOSE_WORKSPACE_ID, path);
+      if (project === null) return;
+      // addProject peut rendre un projet en cours de retrait ou déjà retiré (dédup par chemin) : un tab créé maintenant fuirait.
+      if (removing.has(ownerKey({ kind: "project", id: project.id }))) return;
+      if (!getState().projects.some((p) => p.id === project.id)) return;
+      sidebar.setState(getState());
+      const tab = createTab({ kind: "project", id: project.id }, project.path);
       setActiveTab(tab.id);
     });
   }
@@ -671,13 +668,15 @@ export async function init(ctx: DenContext): Promise<void> {
 
   /** Ajoute un projet (dossier choisi) sous le workspace `wsId` (bouton
    * « + projet » d'une row workspace), sans ouvrir de session — c'est au `+`
-   * de la row projet résultante d'en ouvrir une. Workspace en cours de
-   * retrait : no-op avant même le picker ; retiré pendant le picker :
-   * `addProject` rend `null`, rien n'est écrit. */
+   * de la row projet résultante d'en ouvrir une. Le picker démarre sur la
+   * racine du workspace si elle existe. Workspace en cours de retrait : no-op
+   * avant même le picker ; retiré pendant le picker : `addProject` rend
+   * `null`, rien n'est écrit. */
   async function onAddProject(wsId: string): Promise<void> {
-    if (removing.has(ownerKey({ kind: "workspace", id: wsId }))) return;
+    if (removing.has(workspaceKey(wsId))) return;
     await withBusy(async () => {
-      const path = await pickProjectDirectory();
+      const rootPath = getState().workspaces.find((w) => w.id === wsId)?.rootPath;
+      const path = await pickProjectDirectory("Choisis le dossier du projet", rootPath ?? undefined);
       if (path === null) return;
       const project = await addProject(wsId, path);
       if (project === null) return;
@@ -685,106 +684,50 @@ export async function init(ctx: DenContext): Promise<void> {
     });
   }
 
-  /** Ouvre une session sur le workspace `owner` : racine déjà valide (existe
-   * encore sur disque) -> spawn direct ; racine absente ou disparue -> picker
-   * (titre qui distingue "jamais posée" de "introuvable") puis
-   * `setWorkspaceRoot` AVANT le spawn — la racine posée par ce geste devient
-   * la racine persistée du workspace, relue canonicalisée depuis l'état.
-   * Tout le geste est sous verrou (`withBusy`), y compris le chemin rapide :
-   * un double-clic sur `+` ne doit pas spawner deux sessions. */
-  async function onNewWorkspaceSession(owner: Owner): Promise<void> {
-    const workspaceId = owner.id;
-    if (workspaceId === null) return;
-    await withBusy(async () => {
-      const workspace = getState().workspaces.find((w) => w.id === workspaceId);
-      if (!workspace) return;
-
-      let rootPath = workspace.rootPath;
-      let pickerTitle = "Choisis la racine du workspace";
-      if (rootPath !== null && !(await probePath(rootPath))) {
-        rootPath = null;
-        pickerTitle = "Racine introuvable — choisis la racine du workspace";
-      }
-
-      if (rootPath === null) {
-        const path = await pickProjectDirectory(pickerTitle);
-        if (path === null) return;
-        await setWorkspaceRoot(workspaceId, path);
-        sidebar.setState(getState());
-        // Valeur canonicalisée persistée par `setWorkspaceRoot`, pas le path
-        // brut du picker (`null` si le workspace a disparu entre-temps :
-        // `setWorkspaceRoot` est alors un no-op).
-        rootPath = getState().workspaces.find((w) => w.id === workspaceId)?.rootPath ?? null;
-        if (rootPath === null) return;
-      }
-      // Après les `await` (probePath, picker) : le workspace a pu être retiré
-      // entre-temps — un `createTab` ici spawnerait un sidecar sans row pour
-      // le fermer (review A2bis-2). Revérification synchrone, juste avant le
-      // spawn, sur les deux chemins.
-      if (removing.has(ownerKey(owner))) return;
-      if (!getState().workspaces.some((w) => w.id === workspaceId)) return;
-
-      const tab = createTab(owner, rootPath);
-      setActiveTab(tab.id);
-    });
-  }
-
-  /** Ouvre une nouvelle session sur `owner` (bouton `+` d'une row workspace
-   * ou projet de la sidebar). Nœud retiré entre le clic et l'exécution (en
+  /** Ouvre une nouvelle session sur le projet `owner` (bouton `+` d'une row
+   * projet de la sidebar). Projet retiré entre le clic et l'exécution (en
    * cours de retrait, ou déjà disparu) : no-op silencieux. */
   function onNewSession(owner: Owner): void {
     if (removing.has(ownerKey(owner))) return;
-    if (owner.kind === "project") {
-      const cwd = resolveCwd(owner, getState(), null);
-      if (cwd === null) return;
-      const tab = createTab(owner, cwd);
-      setActiveTab(tab.id);
-      return;
-    }
-    if (owner.kind === "workspace") {
-      void onNewWorkspaceSession(owner).catch((err: unknown) => {
-        console.error(`Den: échec de la nouvelle session pour le workspace ${owner.id}`, err);
-      });
-    }
+    const cwd = resolveCwd(owner, getState());
+    if (cwd === null) return;
+    const tab = createTab(owner, cwd);
+    setActiveTab(tab.id);
   }
 
   /** Retire un workspace ou un projet (bouton `×` d'une row) : ferme
-   * d'abord toutes ses sessions — et, pour un workspace, celles de ses
-   * projets aussi — (`closeTab` -> `sidecar_kill`, séquentiel), puis retire
-   * le nœud de l'état persisté (cascade côté store pour un workspace), re-
-   * rend la sidebar, puis émet UN SEUL `den:owner-removed` (cf. docstring de
-   * tête). Anti-réentrance par `ownerKey` sur le nœud ET, pour un workspace,
-   * sur chacun de ses projets : un second `×` (le même nœud, son parent, ou
-   * un de ses projets) pendant le retrait est un no-op, de même qu'un `+`
-   * sur ces nœuds (cf. `onNewSession`, `onAddProject`) — sans ça deux
-   * retraits imbriqués fermeraient les mêmes tabs deux fois et émettraient
-   * deux événements, ou un tab créé pendant le retrait échapperait au
-   * balayage (sidecar fuité). */
+   * d'abord toutes les sessions du nœud — et, pour un workspace, de ses
+   * projets (`closeTab` -> `sidecar_kill`, séquentiel), puis retire le nœud
+   * de l'état persisté (cascade côté store pour un workspace), re-rend la
+   * sidebar, puis émet `den:owner-removed` pour chaque projet retiré (cf.
+   * docstring de tête). Le workspace implicite n'est jamais retirable.
+   * Anti-réentrance par clé sur le nœud ET, pour un workspace, sur chacun de
+   * ses projets : un second `×` (le même nœud, son parent, ou un de ses
+   * projets) pendant le retrait est un no-op, de même qu'un `+` sur ces
+   * nœuds (cf. `onNewSession`, `onAddProject`, `launchProjectSession`) — sans ça deux retraits
+   * imbriqués fermeraient les mêmes tabs deux fois et émettraient deux
+   * événements, ou un tab créé pendant le retrait échapperait au balayage
+   * (sidecar fuité). */
   const removing = new Set<string>();
-  async function onRemove(owner: Owner): Promise<void> {
-    const id = owner.id;
-    if (owner.kind === "root" || id === null) return;
+  async function onRemove(target: NodeRef): Promise<void> {
+    const { kind, id } = target;
+    if (kind === "workspace" && isLooseWorkspace(id)) return;
     const projectIds =
-      owner.kind === "workspace" ? projectsOfWorkspace(getState(), id).map((p) => p.id) : [];
-    const keys = [ownerKey(owner), ...projectIds.map((pid) => ownerKey({ kind: "project", id: pid }))];
+      kind === "workspace"
+        ? projectsOfWorkspace(getState(), id).map((p) => p.id)
+        : [id];
+    const projectKeys = projectIds.map((pid) => ownerKey({ kind: "project", id: pid }));
+    const keys = kind === "workspace" ? [workspaceKey(id), ...projectKeys] : projectKeys;
     if (keys.some((k) => removing.has(k))) return;
     for (const k of keys) removing.add(k);
     try {
-      const owned = new Set(keys);
-      const tabsOfOwner = [...tabs.values()].filter((tab) => owned.has(ownerKey(tab.owner)));
+      const tabsOfOwner = [...tabs.values()].filter((tab) => projectKeys.includes(ownerKey(tab.owner)));
       for (const tab of tabsOfOwner) {
         await closeTab(tab.id);
       }
-      if (owner.kind === "workspace") await removeWorkspace(id);
+      if (kind === "workspace") await removeWorkspace(id);
       else await removeProject(id);
       sidebar.setState(getState());
-      window.dispatchEvent(
-        new CustomEvent("den:owner-removed", { detail: { kind: owner.kind, id } }),
-      );
-      // Cascade : un workspace retiré emporte ses projets, mais chacun a son
-      // propre groupe de terminaux (`project:<id>`, cf. A4-2) — sans un
-      // événement PAR projet, ceux-ci restent orphelins dans la Map du
-      // module terminal (review 25/09).
       for (const pid of projectIds) {
         window.dispatchEvent(
           new CustomEvent("den:owner-removed", { detail: { kind: "project", id: pid } }),
@@ -804,7 +747,7 @@ export async function init(ctx: DenContext): Promise<void> {
     button.textContent = "Launch Claude in…";
     button.setAttribute("aria-label", "Launch Claude in…");
     button.addEventListener("click", () => {
-      void launchRootSession().catch((err: unknown) => {
+      void launchProjectSession().catch((err: unknown) => {
         console.error("Den: échec du picker/lancement de session", err);
       });
     });
@@ -835,9 +778,9 @@ export async function init(ctx: DenContext): Promise<void> {
         });
       },
       onNewSession,
-      onRemove: (owner) => {
-        void onRemove(owner).catch((err: unknown) => {
-          console.error(`Den: échec du retrait de ${ownerKey(owner)}`, err);
+      onRemove: (target) => {
+        void onRemove(target).catch((err: unknown) => {
+          console.error(`Den: échec du retrait de ${target.kind}:${target.id}`, err);
         });
       },
     },
