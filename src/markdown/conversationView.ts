@@ -20,6 +20,21 @@ import type {
   CustomBlock,
 } from "../types/protocol";
 import { IncrementalMarkdownRenderer } from "./renderer";
+import type { ModRenderClient, RenderOptions, RenderTreeFn } from "../mods/contracts";
+import { isRenderNode } from "../mods/tree";
+
+interface ModBridge {
+  client: ModRenderClient;
+  renderTree: RenderTreeFn;
+  options?: (tabId: string) => RenderOptions;
+}
+
+let modBridge: ModBridge | null = null;
+
+/** Branché par le module mods ; `null` = comportement Den pur, sans aucun aller-retour moteur. */
+export function setModBridge(bridge: ModBridge | null): void {
+  modBridge = bridge;
+}
 
 /**
  * Seuil de RACCROCHAGE (pas de décrochage) au fil qui descend — cf. bug
@@ -40,6 +55,9 @@ const COPY_FEEDBACK_MS = 1200;
 interface ActiveAssistant {
   id: string;
   renderer: IncrementalMarkdownRenderer;
+  block: HTMLElement;
+  text: string;
+  isFirstOfReply: boolean;
   finalizedEl: HTMLElement;
   currentEl: HTMLElement;
   rafHandle: number | null;
@@ -129,6 +147,8 @@ export class ConversationView {
   private readonly copyFeedbackTimers = new Map<HTMLButtonElement, ReturnType<typeof setTimeout>>();
   private lastScrollTop = 0;
   private readonly toolBlocksByToolUseId = new Map<string, HTMLElement>();
+  private readonly toolNamesByToolUseId = new Map<string, string>();
+  private assistantSinceUser = false;
   private readonly onTabStateChangedBound: (event: Event) => void;
 
   constructor(tabId: string) {
@@ -203,6 +223,8 @@ export class ConversationView {
         this.flowEl.replaceChildren();
         this.active = null;
         this.toolBlocksByToolUseId.clear();
+        this.toolNamesByToolUseId.clear();
+        this.assistantSinceUser = false;
         this.stickToBottom = true;
         this.lastScrollTop = 0;
         return;
@@ -367,6 +389,7 @@ export class ConversationView {
       this.active = this.createActiveAssistant(id);
     }
     const active = this.active;
+    active.text += text;
     const { finalizedHtml, currentHtml } = active.renderer.feed(text);
 
     for (const html of finalizedHtml) {
@@ -394,8 +417,13 @@ export class ConversationView {
     block.appendChild(currentEl);
     this.flowEl.appendChild(block);
 
+    const isFirstOfReply = !this.assistantSinceUser;
+    this.assistantSinceUser = true;
     return {
       id,
+      block,
+      text: "",
+      isFirstOfReply,
       renderer: new IncrementalMarkdownRenderer(),
       finalizedEl,
       currentEl,
@@ -431,6 +459,30 @@ export class ConversationView {
     }
     active.currentEl.innerHTML = "";
     this.active = null;
+    this.rewriteWithMods(
+      active.block,
+      { component: "AssistantMessage", instanceId: active.id, props: { text: active.text, isFirstOfReply: active.isFirstOfReply } },
+      active.text !== "",
+    );
+  }
+
+  /** Remplace le contenu de `target` si un mod le réécrit ; sinon (ou si `target` a quitté le DOM) ne touche à rien. */
+  private rewriteWithMods(
+    target: HTMLElement,
+    req: Parameters<ModRenderClient["requestRender"]>[1],
+    enabled: boolean,
+  ): void {
+    const bridge = modBridge;
+    if (!bridge || !enabled) return;
+    bridge.client.requestRender(this.tabId, req).then(
+      ({ tree, hooked }) => {
+        if (!hooked || !this.flowEl.contains(target)) return;
+        if (!isRenderNode(tree) || (typeof tree === "object" && tree.type === "engine")) return;
+        target.replaceChildren(bridge.renderTree(tree, bridge.options?.(this.tabId)));
+        this.scrollToBottomIfStuck();
+      },
+      () => {},
+    );
   }
 
   private onToolUse(
@@ -462,6 +514,7 @@ export class ConversationView {
     details.appendChild(pre);
     this.flowEl.appendChild(details);
     this.toolBlocksByToolUseId.set(toolUseId, details);
+    this.toolNamesByToolUseId.set(toolUseId, name);
     this.scrollToBottomIfStuck();
   }
 
@@ -495,6 +548,20 @@ export class ConversationView {
       orphan.appendChild(resultEl);
       this.flowEl.appendChild(orphan);
     }
+    this.rewriteWithMods(
+      resultEl,
+      {
+        component: "ToolResult",
+        instanceId: toolUseId,
+        props: {
+          tool_use_id: toolUseId,
+          tool: this.toolNamesByToolUseId.get(toolUseId) ?? "",
+          output,
+          isErrored: isError,
+        },
+      },
+      true,
+    );
     this.scrollToBottomIfStuck();
   }
 
@@ -507,6 +574,7 @@ export class ConversationView {
   }
 
   private onUserEcho(text: string): void {
+    this.assistantSinceUser = false;
     const el = document.createElement("div");
     el.className = "den-msg den-msg-user";
     el.appendChild(createCopyButton());

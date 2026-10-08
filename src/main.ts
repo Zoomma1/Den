@@ -5,6 +5,8 @@ import "@fontsource/manrope/700.css";
 import "@fontsource/jetbrains-mono/400.css";
 import "@fontsource/jetbrains-mono/500.css";
 import "./styles.css";
+import "./mods/mods.css";
+import "./mods/chrome.css";
 import { Registry, type DenContext } from "./core/registry";
 import * as theme from "./theme";
 import * as workspace from "./workspace";
@@ -14,6 +16,8 @@ import * as markdown from "./markdown";
 import * as terminal from "./terminal";
 import * as interactive from "./interactive";
 import * as plugins from "./plugins";
+import { createModsModule } from "./mods";
+import { renderTree } from "./mods/render";
 
 function mount(id: string): HTMLElement {
   const el = document.getElementById(id);
@@ -54,6 +58,8 @@ registry.register({ name: "markdown", init: markdown.init });
 registry.register({ name: "tabs", init: tabs.init });
 registry.register({ name: "terminal", init: terminal.init });
 registry.register({ name: "interactive", init: interactive.init });
+// mods après markdown et tabs : il branche le pont de la vue conversation et écoute les événements de tab.
+registry.register(createModsModule({ renderTree }));
 registry.register({ name: "plugins", init: plugins.init });
 
 registry.initAll(ctx).catch((err: unknown) => {
