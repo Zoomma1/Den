@@ -21,7 +21,7 @@
  * sdk.d.ts) — aucun besoin de le repasser explicitement ici.
  */
 import { createInterface } from "node:readline";
-import { query, type SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
+import { query, type SDKUserMessage, type SlashCommand } from "@anthropic-ai/claude-agent-sdk";
 import {
   isInterruptMessage,
   isPermissionResponse,
@@ -167,6 +167,35 @@ const queryHandle = query({
   options: { canUseTool: permissionBroker.canUseTool, includePartialMessages: true },
 });
 
+let commandsSent = false;
+let commandsVersion = 0;
+
+// La liste REMPLACE la précédente côté UI : l'émettre plusieurs fois est sans risque.
+function sendCommands(list: SlashCommand[]): void {
+  commandsSent = true;
+  commandsVersion++;
+  send({
+    type: "commands",
+    commands: list.map(({ name, description }) => ({ name, description })),
+  });
+}
+
+function fetchCommands(): void {
+  // Un push plus frais (commands_changed) pendant le fetch rend ce résultat périmé.
+  const version = commandsVersion;
+  queryHandle
+    .supportedCommands()
+    .then((list) => {
+      if (commandsVersion === version) sendCommands(list);
+    })
+    .catch(() => {
+      // Best-effort : l'autocomplete est un confort, jamais une raison de planter le sidecar.
+    });
+}
+
+// Non bloquant : la liste part dès l'ouverture du tab, avant tout prompt.
+fetchCommands();
+
 async function pump(): Promise<void> {
   try {
     for await (const sdkMessage of queryHandle) {
@@ -178,6 +207,10 @@ async function pump(): Promise<void> {
           apiKeySource: sdkMessage.apiKeySource,
         });
         send({ type: "mode_changed", mode: sdkMessage.permissionMode });
+        // Repli si la requête émise à la création n'a rien donné.
+        if (!commandsSent) fetchCommands();
+      } else if (sdkMessage.type === "system" && sdkMessage.subtype === "commands_changed") {
+        sendCommands(sdkMessage.commands);
       } else if (sdkMessage.type === "system" && sdkMessage.subtype === "status") {
         // Le CLI pousse un status avec permissionMode après une sortie de
         // plan mode gérée par lui-même (cf. sonde runtime : ExitPlanMode
