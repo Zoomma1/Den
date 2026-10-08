@@ -24,6 +24,10 @@ import { createInterface } from "node:readline";
 import { query, type SDKUserMessage, type SlashCommand } from "@anthropic-ai/claude-agent-sdk";
 import {
   isInterruptMessage,
+  isModInput,
+  isModPress,
+  isModRender,
+  isModSelect,
   isPermissionResponse,
   isQuestionResponse,
   isSetModeMessage,
@@ -33,6 +37,8 @@ import {
   type SidecarToUIMessage,
   type UserMessage,
 } from "../../src/types/protocol";
+import { resolveClaudeBinary } from "./claudeBinary";
+import { ModSurface } from "./modSurface";
 import { PermissionBroker } from "./permissions";
 
 function send(message: SidecarToUIMessage): void {
@@ -157,6 +163,16 @@ async function handleSetMode(mode: PermissionModeId): Promise<void> {
   }
 }
 
+/**
+ * Mods (DEN-32) : le binaire embarqué du SDK n'a pas de moteur de mods, on
+ * lance donc le `claude` système et on s'y attache comme surface "desktop".
+ * Repli sur le binaire du SDK si indisponible — la surface reste alors non
+ * attachée et les `mod_*` reçoivent une réponse en erreur.
+ */
+const modSurface = new ModSurface({ send });
+const claude = await resolveClaudeBinary(process.env);
+if (!claude.ok) send({ type: "mods_unavailable", reason: claude.reason });
+
 const queryHandle = query({
   prompt: inputQueue,
   // `includePartialMessages` (DEN-10 lot 1b) : sans ce flag, les messages
@@ -164,7 +180,14 @@ const queryHandle = query({
   // le tour, cf. sonde 05/09) — avec lui, le SDK émet en plus des
   // `stream_event` (`SDKPartialAssistantMessage`, sdk.d.ts l.4748) au fil de
   // la génération, relayés en `assistant_delta` ci-dessous.
-  options: { canUseTool: permissionBroker.canUseTool, includePartialMessages: true },
+  options: {
+    canUseTool: permissionBroker.canUseTool,
+    includePartialMessages: true,
+    ...(claude.ok && {
+      pathToClaudeCodeExecutable: claude.path,
+      spawnClaudeCodeProcess: (o) => modSurface.spawn(o),
+    }),
+  },
 });
 
 let commandsSent = false;
@@ -369,6 +392,8 @@ rl.on("line", (line) => {
     permissionBroker.handleQuestionResponse(msg);
   } else if (isSetModeMessage(msg)) {
     void handleSetMode(msg.mode);
+  } else if (isModRender(msg) || isModPress(msg) || isModInput(msg) || isModSelect(msg)) {
+    modSurface.handleUiMessage(msg);
   }
 });
 
