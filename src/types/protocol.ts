@@ -1,3 +1,5 @@
+import type { RenderNode } from "../mods/tree";
+
 /**
  * Contrat inter-lots — protocole NDJSON sidecar <-> UI.
  *
@@ -71,12 +73,67 @@ export interface SetModeMessage {
   mode: PermissionModeId;
 }
 
+/** Composants moteur que les mods peuvent réécrire. */
+export type ModComponent =
+  | "AssistantMessage"
+  | "ToolResult"
+  | "AbovePrompt"
+  | "Pane";
+
+/** L'UI demande l'arbre de rendu d'un composant ; réponse `mod_tree`. */
+export interface ModRender {
+  type: "mod_render";
+  requestId: string;
+  component: ModComponent;
+  instanceId: string;
+  props: Record<string, unknown>;
+}
+
+/** Clic sur un noeud interactif ; réponse `mod_result`. */
+export interface ModPress {
+  type: "mod_press";
+  requestId: string;
+  plugin: string;
+  handle: number;
+  key?: string;
+  href?: string;
+}
+
+/** Saisie dans un Input de mod ; réponse `mod_result`. */
+export interface ModInput {
+  type: "mod_input";
+  requestId: string;
+  plugin: string;
+  handle: number;
+  kind: "change" | "submit";
+  value: string;
+  key?: string;
+  component?: ModComponent;
+  instanceId?: string;
+}
+
+/** Choix dans un Select de mod ; réponse `mod_result`. */
+export interface ModSelect {
+  type: "mod_select";
+  requestId: string;
+  plugin: string;
+  handle: number;
+  value: string;
+  key?: string;
+  component?: ModComponent;
+  instanceId?: string;
+}
+
 export type UIToSidecarMessage =
   | UserMessage
   | PermissionResponse
   | QuestionResponse
   | InterruptMessage
-  | SetModeMessage;
+  | SetModeMessage
+  | ModRender
+  | ModPress
+  | ModInput
+  | ModSelect;
 
 // ---------------------------------------------------------------------------
 // sidecar -> UI
@@ -212,6 +269,61 @@ export interface Commands {
   commands: CommandInfo[];
 }
 
+/** Ligne de statut poussée par un mod. */
+export interface ModStatus {
+  type: "mod_status";
+  plugin: string;
+  text: string;
+}
+
+/** Toast poussé par un mod. */
+export interface ModToast {
+  type: "mod_toast";
+  plugin: string;
+  text: string;
+  timeoutMs: number;
+}
+
+/** Liste COMPLÈTE des panes ouverts — REMPLACE la précédente (vide = tout fermé). */
+export interface ModPanes {
+  type: "mod_panes";
+  panes: { id: string; title: string; plugin: string; rows?: number }[];
+  shownId: string | null;
+  focusedId: string | null;
+}
+
+/** Instances à re-demander via `mod_render`. */
+export interface ModInvalidate {
+  type: "mod_invalidate";
+  instances: { component: ModComponent; instanceId: string }[];
+}
+
+/** Réponse à `mod_render`. */
+export interface ModTree {
+  type: "mod_tree";
+  requestId: string;
+  tree: RenderNode | null;
+  hooked: boolean;
+  rewritten: boolean;
+  error?: string;
+}
+
+/** Réponse à `mod_press` / `mod_input` / `mod_select`. */
+export interface ModResult {
+  type: "mod_result";
+  requestId: string;
+  handled: boolean;
+  element?: string;
+  value?: string;
+  error?: string;
+}
+
+/** Le moteur claude système n'est pas utilisable : les mods sont désactivés. */
+export interface ModsUnavailable {
+  type: "mods_unavailable";
+  reason: string;
+}
+
 export type SidecarToUIMessage =
   | AssistantDelta
   | ToolUse
@@ -223,7 +335,14 @@ export type SidecarToUIMessage =
   | ErrorMessage
   | ModeChanged
   | ConversationReset
-  | Commands;
+  | Commands
+  | ModStatus
+  | ModToast
+  | ModPanes
+  | ModInvalidate
+  | ModTree
+  | ModResult
+  | ModsUnavailable;
 
 /**
  * Messages affichables dans le fil de conversation : le wire sidecar -> UI
@@ -321,6 +440,54 @@ export function isCommands(msg: DenProtocolMessage): msg is Commands {
   return msg.type === "commands";
 }
 
+export function isModStatus(msg: DenProtocolMessage): msg is ModStatus {
+  return msg.type === "mod_status";
+}
+
+export function isModToast(msg: DenProtocolMessage): msg is ModToast {
+  return msg.type === "mod_toast";
+}
+
+export function isModPanes(msg: DenProtocolMessage): msg is ModPanes {
+  return msg.type === "mod_panes";
+}
+
+export function isModInvalidate(
+  msg: DenProtocolMessage,
+): msg is ModInvalidate {
+  return msg.type === "mod_invalidate";
+}
+
+export function isModTree(msg: DenProtocolMessage): msg is ModTree {
+  return msg.type === "mod_tree";
+}
+
+export function isModResult(msg: DenProtocolMessage): msg is ModResult {
+  return msg.type === "mod_result";
+}
+
+export function isModsUnavailable(
+  msg: DenProtocolMessage,
+): msg is ModsUnavailable {
+  return msg.type === "mods_unavailable";
+}
+
+export function isModRender(msg: DenProtocolMessage): msg is ModRender {
+  return msg.type === "mod_render";
+}
+
+export function isModPress(msg: DenProtocolMessage): msg is ModPress {
+  return msg.type === "mod_press";
+}
+
+export function isModInput(msg: DenProtocolMessage): msg is ModInput {
+  return msg.type === "mod_input";
+}
+
+export function isModSelect(msg: DenProtocolMessage): msg is ModSelect {
+  return msg.type === "mod_select";
+}
+
 export function isUserEcho(msg: ConversationMessage): msg is UserEcho {
   return msg.type === "user_echo";
 }
@@ -334,7 +501,11 @@ export function isUIToSidecarMessage(
     isPermissionResponse(msg) ||
     isQuestionResponse(msg) ||
     isInterruptMessage(msg) ||
-    isSetModeMessage(msg)
+    isSetModeMessage(msg) ||
+    isModRender(msg) ||
+    isModPress(msg) ||
+    isModInput(msg) ||
+    isModSelect(msg)
   );
 }
 

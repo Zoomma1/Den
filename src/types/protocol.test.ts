@@ -9,6 +9,17 @@ import {
   isErrorMessage,
   isInterruptMessage,
   isModeChanged,
+  isModInput,
+  isModInvalidate,
+  isModPanes,
+  isModPress,
+  isModRender,
+  isModResult,
+  isModSelect,
+  isModStatus,
+  isModToast,
+  isModTree,
+  isModsUnavailable,
   isPermissionRequest,
   isPermissionResponse,
   isQuestionRequest,
@@ -40,6 +51,22 @@ const samples: DenProtocolMessage[] = [
   { type: "mode_changed", mode: "plan" },
   { type: "conversation_reset", sessionId: "s1", newConversationId: "c2" },
   { type: "commands", commands: [{ name: "plugin:skill", description: "Un skill" }] },
+  { type: "mod_status", plugin: "p", text: "ok" },
+  { type: "mod_toast", plugin: "p", text: "hi", timeoutMs: 3000 },
+  {
+    type: "mod_panes",
+    panes: [{ id: "a", title: "Files", plugin: "p", rows: 8 }],
+    shownId: "a",
+    focusedId: null,
+  },
+  { type: "mod_invalidate", instances: [{ component: "Pane", instanceId: "a" }] },
+  { type: "mod_tree", requestId: "q1", tree: { type: "engine", ref: 0 }, hooked: true, rewritten: false },
+  { type: "mod_result", requestId: "q2", handled: true, element: "Button" },
+  { type: "mods_unavailable", reason: "claude introuvable" },
+  { type: "mod_render", requestId: "q1", component: "Pane", instanceId: "a", props: {} },
+  { type: "mod_press", requestId: "q2", plugin: "p", handle: 42 },
+  { type: "mod_input", requestId: "q3", plugin: "p", handle: 42, kind: "change", value: "x" },
+  { type: "mod_select", requestId: "q4", plugin: "p", handle: 42, value: "y" },
 ];
 
 const guards: Record<
@@ -62,6 +89,17 @@ const guards: Record<
   mode_changed: isModeChanged,
   conversation_reset: isConversationReset,
   commands: isCommands,
+  mod_status: isModStatus,
+  mod_toast: isModToast,
+  mod_panes: isModPanes,
+  mod_invalidate: isModInvalidate,
+  mod_tree: isModTree,
+  mod_result: isModResult,
+  mods_unavailable: isModsUnavailable,
+  mod_render: isModRender,
+  mod_press: isModPress,
+  mod_input: isModInput,
+  mod_select: isModSelect,
 };
 
 describe("protocol type guards", () => {
@@ -94,6 +132,10 @@ describe("protocol type guards", () => {
       "question_response",
       "interrupt",
       "set_mode",
+      "mod_render",
+      "mod_press",
+      "mod_input",
+      "mod_select",
     ]);
 
     for (const msg of samples) {

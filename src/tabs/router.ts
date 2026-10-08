@@ -5,6 +5,13 @@ import {
   isDone,
   isErrorMessage,
   isModeChanged,
+  isModInvalidate,
+  isModPanes,
+  isModResult,
+  isModStatus,
+  isModToast,
+  isModTree,
+  isModsUnavailable,
   isPermissionRequest,
   isQuestionRequest,
   isSessionInfo,
@@ -129,7 +136,14 @@ function parseSidecarMessage(line: string): SidecarToUIMessage | null {
     isErrorMessage(candidate) ||
     isModeChanged(candidate) ||
     isConversationReset(candidate) ||
-    isCommands(candidate);
+    isCommands(candidate) ||
+    isModStatus(candidate) ||
+    isModToast(candidate) ||
+    isModPanes(candidate) ||
+    isModInvalidate(candidate) ||
+    isModTree(candidate) ||
+    isModResult(candidate) ||
+    isModsUnavailable(candidate);
 
   return isKnownSidecarMessage ? (candidate as SidecarToUIMessage) : null;
 }
