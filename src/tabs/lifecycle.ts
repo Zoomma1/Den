@@ -1,4 +1,5 @@
 import {
+  isCommands,
   isConversationReset,
   isDone,
   isErrorMessage,
@@ -137,11 +138,13 @@ function reduceSidecarMessage(
   // tour, et un changement de mode fait par l'utilisateur pendant l'attente
   // (sélecteur, cf. index.ts) répond `mode_changed` sans que le tool call
   // bloqué ait avancé — review 07/09.
+  // `commands` est exclu aussi : poussé hors tour, il ne prouve pas que le tool call a avancé.
   if (
     lifecycle.state === "waiting" &&
     lifecycle.pendingRequests === 0 &&
     !isSessionInfo(message) &&
-    !isModeChanged(message)
+    !isModeChanged(message) &&
+    !isCommands(message)
   ) {
     return { ...lifecycle, state: "running" };
   }

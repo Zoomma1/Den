@@ -200,6 +200,18 @@ export interface ConversationReset {
   newConversationId: string;
 }
 
+/** Un skill / slash command disponible dans la session (autocomplete "/"). */
+export interface CommandInfo {
+  name: string;
+  description: string;
+}
+
+/** Liste complète des commandes de la session — REMPLACE la précédente côté UI. */
+export interface Commands {
+  type: "commands";
+  commands: CommandInfo[];
+}
+
 export type SidecarToUIMessage =
   | AssistantDelta
   | ToolUse
@@ -210,7 +222,8 @@ export type SidecarToUIMessage =
   | Done
   | ErrorMessage
   | ModeChanged
-  | ConversationReset;
+  | ConversationReset
+  | Commands;
 
 /**
  * Messages affichables dans le fil de conversation : le wire sidecar -> UI
@@ -302,6 +315,10 @@ export function isConversationReset(
   msg: DenProtocolMessage,
 ): msg is ConversationReset {
   return msg.type === "conversation_reset";
+}
+
+export function isCommands(msg: DenProtocolMessage): msg is Commands {
+  return msg.type === "commands";
 }
 
 export function isUserEcho(msg: ConversationMessage): msg is UserEcho {

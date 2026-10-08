@@ -79,6 +79,21 @@ describe("TabRouter", () => {
     ]);
   });
 
+  it("route une ligne commands valide (guard isCommands, cf. DEN-12)", () => {
+    const router = new TabRouter();
+    router.registerTab("tab-a");
+    const routed = router.handleChunk(
+      "tab-a",
+      '{"type":"commands","commands":[{"name":"commit","description":"Commit guidé"}]}\n',
+    );
+    expect(routed).toEqual([
+      {
+        tabId: "tab-a",
+        message: { type: "commands", commands: [{ name: "commit", description: "Commit guidé" }] },
+      },
+    ]);
+  });
+
   it("route une ligne conversation_reset valide (guard isConversationReset, cf. DEN-10)", () => {
     const router = new TabRouter();
     router.registerTab("tab-a");

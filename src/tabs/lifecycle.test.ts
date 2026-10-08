@@ -151,6 +151,14 @@ describe("reduceTabLifecycle", () => {
     expect(afterInfo.state).toBe("waiting");
   });
 
+  it("waiting + commands -> reste waiting (liste poussée hors tour, pas une reprise)", () => {
+    const lc = reduceTabLifecycle(lifecycle("waiting", 1), {
+      kind: "sidecar_message",
+      message: { type: "commands", commands: [{ name: "commit", description: "d" }] },
+    });
+    expect(lc.state).toBe("waiting");
+  });
+
   it("waiting + assistant_delta -> running", () => {
     const lc = reduceTabLifecycle(lifecycle("waiting", 1), {
       kind: "sidecar_message",
