@@ -262,6 +262,7 @@
 
 /* Sans session active (état vide), saisie et sélecteur sont désactivés. */
 .den-prompt-bar__input:disabled,
+.den-prompt-bar__field:has(> .den-prompt-bar__input:disabled),
 .den-prompt-bar__submit:disabled,
 .den-mode-select:disabled {
   opacity: 0.5;

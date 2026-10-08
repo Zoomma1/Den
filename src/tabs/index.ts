@@ -92,11 +92,14 @@ import { homeDir } from "@tauri-apps/api/path";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import "./tabs.css";
 import type { DenContext } from "../core/registry";
+import { attachSlashAutocomplete } from "../autocomplete/controller";
 import {
+  isCommands,
   isConversationReset,
   isErrorMessage,
   isModeChanged,
   isSessionInfo,
+  type CommandInfo,
   type ConversationMessage,
   type PermissionModeId,
 } from "../types/protocol";
@@ -141,6 +144,8 @@ import { rollupStatus, sessionStatus } from "./status";
 
 interface Tab {
   id: string;
+  /** Skills de CETTE session, propres à chaque tab. */
+  commands: CommandInfo[];
   /** `cwd` figé au spawn — jamais recalculé après coup (cf. docstring de
    * tête : indépendant de `owner`). */
   cwd: string;
@@ -252,6 +257,7 @@ export async function init(ctx: DenContext): Promise<void> {
   // active (cf. updateEmptyState).
   let promptInputEl: HTMLTextAreaElement | null = null;
   let promptSubmitEl: HTMLButtonElement | null = null;
+  let slashAutocomplete: ReturnType<typeof attachSlashAutocomplete> | null = null;
 
   const modeSelect = document.createElement("select");
   modeSelect.className = "den-mode-select";
@@ -495,6 +501,8 @@ export async function init(ctx: DenContext): Promise<void> {
     setModeSelectValue(modeSelect, active ? active.mode : "default");
     updateEmptyState();
     syncSubmitButton();
+    // La liste de skills dépend du tab actif.
+    slashAutocomplete?.refresh();
     if (active) {
       active.unseenDone = false;
       refreshStatus(active);
@@ -564,6 +572,7 @@ export async function init(ctx: DenContext): Promise<void> {
 
     const tab: Tab = {
       id,
+      commands: [],
       cwd,
       owner,
       mode: "default",
@@ -596,6 +605,14 @@ export async function init(ctx: DenContext): Promise<void> {
           markTabError(tab, message.message);
         } else if (isConversationReset(message)) {
           tab.userEnded = true;
+        } else if (isCommands(message)) {
+          // Le routeur ne valide que le type : la charge utile peut être malformée.
+          tab.commands = Array.isArray(message.commands)
+            ? message.commands.filter(
+                (c) => typeof c?.name === "string" && typeof c?.description === "string",
+              )
+            : [];
+          if (activeTabId === id) slashAutocomplete?.refresh();
         } else if (isModeChanged(message)) {
           // Idempotent : un doublon de mode_changed réécrit la même valeur
           // sans effet observable.
@@ -674,6 +691,11 @@ export async function init(ctx: DenContext): Promise<void> {
     textarea.className = "den-prompt-bar__input";
     textarea.rows = 2;
     textarea.placeholder = "Message Claude… (⌘⏎ to send)";
+    const slash = attachSlashAutocomplete(
+      textarea,
+      () => (activeTabId ? tabs.get(activeTabId)?.commands : undefined) ?? [],
+    );
+    slashAutocomplete = slash;
 
     const submitEl = document.createElement("button");
     submitEl.type = "submit";
@@ -697,17 +719,19 @@ export async function init(ctx: DenContext): Promise<void> {
 
     promptInputEl = textarea;
     promptSubmitEl = submitEl;
-    form.append(textarea, side);
+    form.append(slash.rootEl, side);
     form.addEventListener("submit", (event) => {
       event.preventDefault();
       if (!activeTabId) return;
       const text = textarea.value;
       textarea.value = "";
+      slash.refresh();
       void sendPrompt(activeTabId, text).then((sent) => {
         // Envoi en échec : restituer le texte tapé (sauf si l'utilisateur a
         // déjà commencé autre chose) plutôt que de le perdre.
         if (!sent && textarea.value.length === 0) {
           textarea.value = text;
+          slash.refresh();
         }
       });
     });
@@ -717,7 +741,9 @@ export async function init(ctx: DenContext): Promise<void> {
     // partaient par accident sur un simple Entrée). `requestSubmit()` marche
     // même quand le bouton est en `type="button"` (mode Stop) : le submit du
     // form ne dépend pas du bouton qui le déclenche.
+    // Enregistré après le keydown du contrôleur : il passe avant et avale (stopImmediatePropagation) les touches du menu.
     textarea.addEventListener("keydown", (event) => {
+      if (event.key === "Escape" && slash.isOpen()) return;
       if (event.key === "Enter") {
         if (event.ctrlKey || event.metaKey || event.shiftKey) {
           event.preventDefault();
@@ -962,6 +988,7 @@ export async function init(ctx: DenContext): Promise<void> {
     promptInputEl.focus();
     const len = promptInputEl.value.length;
     promptInputEl.setSelectionRange(len, len);
+    slashAutocomplete?.refresh();
   });
 
   window.addEventListener("den:request-answered", (event) => {
