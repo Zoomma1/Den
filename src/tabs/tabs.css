@@ -87,6 +87,9 @@
   width: 9px;
   height: 9px;
   border-radius: 50%;
+  /* 1,2 s x 100 = 120 s de clignotement fini (done/error) ; même valeur dans sessionTabs.css. */
+  --den-blink-cycle: 1.2s;
+  --den-blink-count: 100;
 }
 
 .den-workspace__badge[data-status],
@@ -97,19 +100,21 @@
 .den-workspace__badge[data-status="running"],
 .den-project__badge[data-status="running"] {
   background: var(--den-status-running, #35d0ff);
-  animation: den-badge-pulse 1.6s infinite;
 }
 
 .den-workspace__badge[data-status="needs_input"],
 .den-project__badge[data-status="needs_input"] {
   background: var(--den-status-needs-input, #ffc15e);
   box-shadow: 0 0 8px color-mix(in srgb, var(--den-status-needs-input, #ffc15e) 60%, transparent);
+  animation: den-badge-blink-needs-input var(--den-blink-cycle) ease-in-out infinite;
 }
 
 .den-workspace__badge[data-status="done"],
 .den-project__badge[data-status="done"] {
   background: transparent;
   border: 1.5px solid var(--den-status-done, #5ee6a8);
+  /* forwards : le badge reste à l'opacité pleine après la dernière itération, sans timer JS. */
+  animation: den-badge-blink-done var(--den-blink-cycle) ease-in-out var(--den-blink-count) forwards;
 }
 
 .den-workspace__badge[data-status="error"],
@@ -119,10 +124,29 @@
   transform: rotate(45deg) scale(0.85);
 }
 
-@keyframes den-badge-pulse {
-  0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--den-status-running, #35d0ff) 55%, transparent); }
-  70% { box-shadow: 0 0 0 7px color-mix(in srgb, var(--den-status-running, #35d0ff) 0%, transparent); }
-  100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--den-status-running, #35d0ff) 0%, transparent); }
+.den-workspace__badge[data-status="error"],
+.den-project__badge[data-status="error"] {
+  animation: den-badge-blink-error var(--den-blink-cycle) ease-in-out var(--den-blink-count) forwards;
+}
+
+/* Noms distincts par état : relance l'animation à chaque changement d'état. */
+@keyframes den-badge-blink-needs-input {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.2; }
+}
+@keyframes den-badge-blink-done {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.2; }
+}
+@keyframes den-badge-blink-error {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.2; }
+}
+
+/* Mouvement réduit : aucune animation, quel que soit l'état. */
+@media (prefers-reduced-motion: reduce) {
+  .den-workspace__badge,
+  .den-project__badge { animation: none !important; }
 }
 
 .den-project__row {
