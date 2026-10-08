@@ -58,6 +58,12 @@ export class TabRouter {
     entry.lifecycle = reduceTabLifecycle(entry.lifecycle, { kind: "prompt_submitted" });
   }
 
+  markRequestResolved(tabId: string): void {
+    const entry = this.tabs.get(tabId);
+    if (!entry) return;
+    entry.lifecycle = reduceTabLifecycle(entry.lifecycle, { kind: "request_resolved" });
+  }
+
   closeTab(tabId: string): void {
     this.tabs.delete(tabId);
   }

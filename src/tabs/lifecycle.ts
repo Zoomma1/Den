@@ -31,13 +31,19 @@ export type TabLifecycleState =
 export interface TabLifecycle {
   state: TabLifecycleState;
   pendingTurns: number;
+  pendingRequests: number;
 }
 
-export const INITIAL_TAB_LIFECYCLE: TabLifecycle = { state: "idle", pendingTurns: 0 };
+export const INITIAL_TAB_LIFECYCLE: TabLifecycle = {
+  state: "idle",
+  pendingTurns: 0,
+  pendingRequests: 0,
+};
 
 export type TabLifecycleEvent =
   | { kind: "created" }
   | { kind: "prompt_submitted" }
+  | { kind: "request_resolved" }
   | { kind: "sidecar_message"; message: SidecarToUIMessage }
   | { kind: "closed" };
 
@@ -56,11 +62,10 @@ export type TabLifecycleEvent =
  *   dont on sait déjà qu'elle n'interrompt pas la conversation.
  * - `waiting` : un `permission_request`/`question_request` reçu pendant un
  *   tour en cours (`running` ou déjà `waiting`) fait basculer le tab en
- *   attente de réponse utilisateur. N'importe quel autre message sidecar
- *   reçu en `waiting` repasse le tab en `running` — le router voit déjà ces
- *   messages passer (permission_response/question_response ne sont jamais
- *   émis par le sidecar), donc zéro couplage avec le module interactive
- *   pour détecter que l'utilisateur a répondu et que le sidecar a repris.
+ *   attente de réponse utilisateur et incrémente `pendingRequests`. Un
+ *   message de progression ne repasse le tab en `running` que si ce compteur
+ *   est à 0 (outils parallèles déjà autorisés) ; `request_resolved` le
+ *   décrémente, `done`/`error`/`conversation_reset` le remettent à 0.
  */
 export function reduceTabLifecycle(
   lifecycle: TabLifecycle,
@@ -73,11 +78,18 @@ export function reduceTabLifecycle(
       return { ...INITIAL_TAB_LIFECYCLE };
     case "prompt_submitted":
       if (lifecycle.state === "error") return lifecycle;
-      return { state: "running", pendingTurns: lifecycle.pendingTurns + 1 };
+      return { ...lifecycle, state: "running", pendingTurns: lifecycle.pendingTurns + 1 };
+    case "request_resolved": {
+      // Décrémente même hors "waiting" : un prompt de suivi peut avoir repassé le tab en running avec des demandes encore en file.
+      const pendingRequests = Math.max(0, lifecycle.pendingRequests - 1);
+      const state =
+        lifecycle.state === "waiting" && pendingRequests === 0 ? "running" : lifecycle.state;
+      return { ...lifecycle, state, pendingRequests };
+    }
     case "sidecar_message":
       return reduceSidecarMessage(lifecycle, event.message);
     case "closed":
-      return { state: "closed", pendingTurns: lifecycle.pendingTurns };
+      return { ...lifecycle, state: "closed" };
   }
 }
 
@@ -90,6 +102,7 @@ function reduceSidecarMessage(
     return {
       state: "error",
       pendingTurns: recoverable ? lifecycle.pendingTurns : 0,
+      pendingRequests: 0,
     };
   }
 
@@ -98,17 +111,21 @@ function reduceSidecarMessage(
     const pendingTurns = Math.max(0, lifecycle.pendingTurns - 1);
     const state: TabLifecycleState =
       lifecycle.state === "error" ? "error" : pendingTurns > 0 ? "running" : "idle";
-    return { state, pendingTurns };
+    return { state, pendingTurns, pendingRequests: 0 };
   }
 
   if (isConversationReset(message)) {
     const state: TabLifecycleState = lifecycle.state === "error" ? "error" : "idle";
-    return { state, pendingTurns: 0 };
+    return { state, pendingTurns: 0, pendingRequests: 0 };
   }
 
   if (isPermissionRequest(message) || isQuestionRequest(message)) {
     if (lifecycle.state === "running" || lifecycle.state === "waiting") {
-      return { ...lifecycle, state: "waiting" };
+      return {
+        ...lifecycle,
+        state: "waiting",
+        pendingRequests: lifecycle.pendingRequests + 1,
+      };
     }
     return lifecycle;
   }
@@ -122,6 +139,7 @@ function reduceSidecarMessage(
   // bloqué ait avancé — review 07/09.
   if (
     lifecycle.state === "waiting" &&
+    lifecycle.pendingRequests === 0 &&
     !isSessionInfo(message) &&
     !isModeChanged(message)
   ) {

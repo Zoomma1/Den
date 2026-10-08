@@ -14,14 +14,24 @@ const permissionMsg = {
   toolName: "Bash",
   input: {},
 };
+const toolResultMsg = {
+  type: "tool_result" as const,
+  id: "m2",
+  toolUseId: "t1",
+  output: "ok",
+};
 const conversationResetMsg = {
   type: "conversation_reset" as const,
   sessionId: "s1",
   newConversationId: "c2",
 };
 
-function lifecycle(state: TabLifecycle["state"], pendingTurns = 0): TabLifecycle {
-  return { state, pendingTurns };
+function lifecycle(
+  state: TabLifecycle["state"],
+  pendingTurns = 0,
+  pendingRequests = 0,
+): TabLifecycle {
+  return { state, pendingTurns, pendingRequests };
 }
 
 describe("reduceTabLifecycle", () => {
@@ -109,7 +119,7 @@ describe("reduceTabLifecycle", () => {
     let lc = reduceTabLifecycle(INITIAL_TAB_LIFECYCLE, { kind: "prompt_submitted" });
     lc = reduceTabLifecycle(lc, { kind: "prompt_submitted" });
     lc = reduceTabLifecycle(lc, { kind: "sidecar_message", message: doneMsg });
-    expect(lc).toEqual({ state: "running", pendingTurns: 1 });
+    expect(lc).toEqual({ state: "running", pendingTurns: 1, pendingRequests: 0 });
   });
 
   it("puis un second done -> idle", () => {
@@ -117,7 +127,7 @@ describe("reduceTabLifecycle", () => {
     lc = reduceTabLifecycle(lc, { kind: "prompt_submitted" });
     lc = reduceTabLifecycle(lc, { kind: "sidecar_message", message: doneMsg });
     lc = reduceTabLifecycle(lc, { kind: "sidecar_message", message: doneMsg });
-    expect(lc).toEqual({ state: "idle", pendingTurns: 0 });
+    expect(lc).toEqual({ state: "idle", pendingTurns: 0, pendingRequests: 0 });
   });
 
   it("running + permission_request -> waiting", () => {
@@ -154,7 +164,7 @@ describe("reduceTabLifecycle", () => {
       kind: "sidecar_message",
       message: conversationResetMsg,
     });
-    expect(lc).toEqual({ state: "idle", pendingTurns: 0 });
+    expect(lc).toEqual({ state: "idle", pendingTurns: 0, pendingRequests: 0 });
   });
 
   it("idle (0) + done -> reste idle, 0 (clamp)", () => {
@@ -162,7 +172,7 @@ describe("reduceTabLifecycle", () => {
       kind: "sidecar_message",
       message: doneMsg,
     });
-    expect(lc).toEqual({ state: "idle", pendingTurns: 0 });
+    expect(lc).toEqual({ state: "idle", pendingTurns: 0, pendingRequests: 0 });
   });
 
   it("error non-recoverable -> pendingTurns 0", () => {
@@ -170,7 +180,7 @@ describe("reduceTabLifecycle", () => {
       kind: "sidecar_message",
       message: errorMsg,
     });
-    expect(lc).toEqual({ state: "error", pendingTurns: 0 });
+    expect(lc).toEqual({ state: "error", pendingTurns: 0, pendingRequests: 0 });
   });
 
   it("closed terminal sur tous les événements y compris conversation_reset/permission_request", () => {
@@ -181,5 +191,86 @@ describe("reduceTabLifecycle", () => {
     for (const event of events) {
       expect(reduceTabLifecycle(lifecycle("closed"), event).state).toBe("closed");
     }
+  });
+
+  describe("pendingRequests (DEN-05)", () => {
+    const sidecar = (message: (typeof assistantMsg) | (typeof toolResultMsg) | (typeof permissionMsg) | (typeof doneMsg)) =>
+      ({ kind: "sidecar_message" as const, message });
+
+    function threePending(): TabLifecycle {
+      let lc = lifecycle("running", 1);
+      for (let i = 0; i < 3; i++) {
+        lc = reduceTabLifecycle(lc, sidecar(permissionMsg));
+        lc = reduceTabLifecycle(lc, sidecar(i % 2 ? assistantMsg : toolResultMsg));
+      }
+      return lc;
+    }
+
+    it("3 permission_request avec progression intercalée -> reste waiting (3)", () => {
+      expect(threePending()).toEqual(lifecycle("waiting", 1, 3));
+    });
+
+    it("request_resolved un par un -> running seulement après le dernier", () => {
+      let lc = threePending();
+      lc = reduceTabLifecycle(lc, { kind: "request_resolved" });
+      expect(lc).toEqual(lifecycle("waiting", 1, 2));
+      lc = reduceTabLifecycle(lc, { kind: "request_resolved" });
+      expect(lc).toEqual(lifecycle("waiting", 1, 1));
+      lc = reduceTabLifecycle(lc, { kind: "request_resolved" });
+      expect(lc).toEqual(lifecycle("running", 1, 0));
+    });
+
+    it("done remet pendingRequests à 0", () => {
+      const lc = reduceTabLifecycle(threePending(), sidecar(doneMsg));
+      expect(lc).toEqual(lifecycle("idle", 0, 0));
+    });
+
+    it("request_resolved en running est ignoré", () => {
+      const lc = lifecycle("running", 1, 0);
+      expect(reduceTabLifecycle(lc, { kind: "request_resolved" })).toEqual(lc);
+    });
+
+    it("3 demandes, une réponse partielle puis de la progression -> reste waiting (2), running après la dernière", () => {
+      let lc = threePending();
+      lc = reduceTabLifecycle(lc, { kind: "request_resolved" });
+      lc = reduceTabLifecycle(lc, sidecar(toolResultMsg));
+      lc = reduceTabLifecycle(lc, sidecar(assistantMsg));
+      expect(lc).toEqual(lifecycle("waiting", 1, 2));
+      lc = reduceTabLifecycle(lc, { kind: "request_resolved" });
+      lc = reduceTabLifecycle(lc, sidecar(assistantMsg));
+      expect(lc).toEqual(lifecycle("waiting", 1, 1));
+      lc = reduceTabLifecycle(lc, { kind: "request_resolved" });
+      expect(lc).toEqual(lifecycle("running", 1, 0));
+    });
+
+    it("prompt de suivi pendant waiting : request_resolved décrémente en running, pas de blocage ensuite", () => {
+      let lc = reduceTabLifecycle(lifecycle("running", 1), sidecar(permissionMsg));
+      expect(lc).toEqual(lifecycle("waiting", 1, 1));
+      lc = reduceTabLifecycle(lc, { kind: "prompt_submitted" });
+      expect(lc).toEqual(lifecycle("running", 2, 1));
+      lc = reduceTabLifecycle(lc, { kind: "request_resolved" });
+      expect(lc).toEqual(lifecycle("running", 2, 0));
+      lc = reduceTabLifecycle(lc, sidecar(permissionMsg));
+      expect(lc).toEqual(lifecycle("waiting", 2, 1));
+      lc = reduceTabLifecycle(lc, { kind: "request_resolved" });
+      expect(lc).toEqual(lifecycle("running", 2, 0));
+    });
+
+    it("error et conversation_reset avec compteur > 0 remettent pendingRequests à 0", () => {
+      const withPending = lifecycle("waiting", 1, 2);
+      expect(
+        reduceTabLifecycle(withPending, { kind: "sidecar_message", message: errorMsg })
+          .pendingRequests,
+      ).toBe(0);
+      expect(
+        reduceTabLifecycle(withPending, { kind: "sidecar_message", message: conversationResetMsg })
+          .pendingRequests,
+      ).toBe(0);
+    });
+
+    it("request_resolved reste inerte en closed", () => {
+      const lc = lifecycle("closed", 0, 2);
+      expect(reduceTabLifecycle(lc, { kind: "request_resolved" })).toEqual(lc);
+    });
   });
 });

@@ -558,6 +558,83 @@ describe("createSidebar", () => {
     });
   });
 
+  describe("statuts (DEN-05)", () => {
+    function twoProjectsState(p2Workspace = "ws-1"): PersistedState {
+      return makeState({
+        workspaces: [
+          { id: "ws-1", name: "A", rootPath: null },
+          { id: "ws-2", name: "B", rootPath: null },
+        ],
+        projects: [
+          { id: "p-1", workspaceId: "ws-1", path: "/tmp/p1" },
+          { id: "p-2", workspaceId: p2Workspace, path: "/tmp/p2" },
+        ],
+      });
+    }
+    const projectBadge = (id: string) =>
+      root.querySelector(`[data-project-id="${id}"] .den-project__badge`)!;
+    const workspaceBadge = (id: string) =>
+      root.querySelector(`[data-workspace-id="${id}"] .den-workspace__badge`)!;
+
+    it("pose data-status sur le badge projet et le retire sur null", () => {
+      const sidebar = createSidebar(root, makeHandlers(), launchButtonFactory);
+      sidebar.setState(twoProjectsState());
+
+      sidebar.setProjectStatus("p-1", "running");
+      expect(projectBadge("p-1").getAttribute("data-status")).toBe("running");
+      expect(projectBadge("p-2").hasAttribute("data-status")).toBe(false);
+
+      sidebar.setProjectStatus("p-1", null);
+      expect(projectBadge("p-1").hasAttribute("data-status")).toBe(false);
+    });
+
+    it("le badge workspace est le roll-up de ses projets", () => {
+      const sidebar = createSidebar(root, makeHandlers(), launchButtonFactory);
+      sidebar.setState(twoProjectsState());
+
+      sidebar.setProjectStatus("p-1", "running");
+      sidebar.setProjectStatus("p-2", "done");
+      expect(workspaceBadge("ws-1").getAttribute("data-status")).toBe("done");
+      expect(workspaceBadge("ws-2").hasAttribute("data-status")).toBe(false);
+
+      sidebar.setProjectStatus("p-1", "needs_input");
+      expect(workspaceBadge("ws-1").getAttribute("data-status")).toBe("needs_input");
+
+      sidebar.setProjectStatus("p-1", null);
+      sidebar.setProjectStatus("p-2", null);
+      expect(workspaceBadge("ws-1").hasAttribute("data-status")).toBe(false);
+    });
+
+    it("survit à setState, y compris à un projet déplacé de workspace", () => {
+      const sidebar = createSidebar(root, makeHandlers(), launchButtonFactory);
+      sidebar.setState(twoProjectsState());
+      sidebar.setProjectStatus("p-2", "error");
+      expect(workspaceBadge("ws-1").getAttribute("data-status")).toBe("error");
+
+      sidebar.setState(twoProjectsState("ws-2"));
+
+      expect(projectBadge("p-2").getAttribute("data-status")).toBe("error");
+      expect(workspaceBadge("ws-1").hasAttribute("data-status")).toBe(false);
+      expect(workspaceBadge("ws-2").getAttribute("data-status")).toBe("error");
+    });
+
+    it("projet inconnu ou workspace implicite : pas de crash", () => {
+      const sidebar = createSidebar(root, makeHandlers(), launchButtonFactory);
+      sidebar.setState(
+        makeState({
+          workspaces: [{ id: LOOSE_WORKSPACE_ID, name: "", rootPath: null }],
+          projects: [{ id: "p-1", workspaceId: LOOSE_WORKSPACE_ID, path: "/tmp/p1" }],
+        }),
+      );
+
+      sidebar.setProjectStatus("p-1", "done");
+      sidebar.setProjectStatus("ghost", "running");
+
+      expect(projectBadge("p-1").getAttribute("data-status")).toBe("done");
+      expect(root.querySelector(".den-workspace__badge")).toBeNull();
+    });
+  });
+
   describe("libellés anglais", () => {
     it("boutons de ligne workspace et projet", () => {
       const sidebar = createSidebar(root, makeHandlers(), launchButtonFactory);

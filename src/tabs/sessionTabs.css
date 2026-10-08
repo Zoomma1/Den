@@ -83,18 +83,26 @@
   height: 9px;
   border-radius: 50%;
   background: transparent;
+  /* 1,2 s x 100 = 120 s de clignotement fini (done/error) ; même valeur dans tabs.css. */
+  --den-blink-cycle: 1.2s;
+  --den-blink-count: 100;
 }
 [data-status="running"] > .den-session-tab__status {
   background: var(--den-status-running, #35d0ff);
-  animation: den-session-pulse 1.6s infinite;
 }
 [data-status="needs_input"] > .den-session-tab__status {
   background: var(--den-status-needs-input, #ffc15e);
   box-shadow: 0 0 8px rgba(255, 193, 94, 0.6);
+  animation: den-session-blink-needs-input var(--den-blink-cycle) ease-in-out infinite;
 }
 [data-status="done"] > .den-session-tab__status {
   background: transparent;
   border: 1.5px solid var(--den-status-done, #5ee6a8);
+  /* forwards : la puce reste à l'opacité pleine après la dernière itération, sans timer JS. */
+  animation: den-session-blink-done var(--den-blink-cycle) ease-in-out var(--den-blink-count) forwards;
+}
+[data-status="error"] > .den-session-tab__status {
+  animation: den-session-blink-error var(--den-blink-cycle) ease-in-out var(--den-blink-count) forwards;
 }
 [data-status="error"] > .den-session-tab__status,
 .den-session-tab--error > .den-session-tab__status {
@@ -103,11 +111,20 @@
   transform: rotate(45deg) scale(0.85);
 }
 
-@keyframes den-session-pulse {
-  0% { box-shadow: 0 0 0 0 rgba(53, 208, 255, 0.55); }
-  70% { box-shadow: 0 0 0 7px rgba(53, 208, 255, 0); }
-  100% { box-shadow: 0 0 0 0 rgba(53, 208, 255, 0); }
+/* Noms distincts par état : relance l'animation à chaque changement d'état. */
+@keyframes den-session-blink-needs-input {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.2; }
 }
+@keyframes den-session-blink-done {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.2; }
+}
+@keyframes den-session-blink-error {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.2; }
+}
+/* Mouvement réduit : aucune animation, quel que soit l'état. */
 @media (prefers-reduced-motion: reduce) {
-  [data-status="running"] > .den-session-tab__status { animation: none; }
+  .den-session-tab__status { animation: none !important; }
 }

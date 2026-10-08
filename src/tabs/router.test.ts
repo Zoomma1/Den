@@ -113,4 +113,33 @@ describe("TabRouter", () => {
     );
     expect(router.getState("tab-a")).toBe("waiting");
   });
+
+  it("markRequestResolved : waiting (1 demande) -> running, ignoré hors waiting", () => {
+    const router = new TabRouter();
+    router.registerTab("tab-a");
+    router.markPromptSubmitted("tab-a");
+    router.markRequestResolved("tab-a");
+    expect(router.getState("tab-a")).toBe("running");
+    router.handleChunk(
+      "tab-a",
+      '{"type":"permission_request","requestId":"r1","toolName":"Bash","input":{}}\n',
+    );
+    router.markRequestResolved("tab-a");
+    expect(router.getState("tab-a")).toBe("running");
+    router.markRequestResolved("unknown");
+  });
+
+  it("markRequestResolved : 2 demandes en attente -> palier waiting entre les deux résolutions", () => {
+    const router = new TabRouter();
+    router.registerTab("tab-a");
+    router.markPromptSubmitted("tab-a");
+    const perm = (id: string) =>
+      `{"type":"permission_request","requestId":"${id}","toolName":"Bash","input":{}}\n`;
+    router.handleChunk("tab-a", perm("r1"));
+    router.handleChunk("tab-a", perm("r2"));
+    router.markRequestResolved("tab-a");
+    expect(router.getState("tab-a")).toBe("waiting");
+    router.markRequestResolved("tab-a");
+    expect(router.getState("tab-a")).toBe("running");
+  });
 });

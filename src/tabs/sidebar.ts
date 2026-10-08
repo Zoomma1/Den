@@ -5,8 +5,8 @@
  * `.den-root-bar` (bouton launch + « + Workspace »). Le workspace implicite
  * (`LOOSE_WORKSPACE_ID`) est rendu sans en-tête : ses projets en liste plate.
  *
- * Ancrages DEN-05 : `.den-workspace__badge`, `.den-project__badge` (slots
- * vides, stylés via `data-status`), `data-workspace-id`, `data-project-id`.
+ * Ancrages DEN-05 : `.den-workspace__badge`, `.den-project__badge` (posent
+ * `data-status` via `setProjectStatus`, le badge workspace en est le roll-up), `data-workspace-id`, `data-project-id`.
  *
  * Pur : aucun import `@tauri-apps/*`, testable en happy-dom sans mock Tauri.
  */
@@ -17,6 +17,7 @@ import {
   type PersistedState,
 } from "../workspace/store";
 import type { NodeRef } from "./owner";
+import { rollupStatus, type SessionStatus } from "./status";
 
 export interface SidebarHandlers {
   onAddWorkspace(): void;
@@ -49,12 +50,17 @@ export interface Sidebar {
    * annule — cf. docstring de `createSidebar`. `workspaceId` inconnu ->
    * no-op. */
   beginRename(workspaceId: string): void;
+  /** Pose `status` (`null` = aucun) sur le badge du projet et recalcule le
+   * badge de son workspace (roll-up). Survit aux `setState`. */
+  setProjectStatus(projectId: string, status: SessionStatus | null): void;
 }
 
 interface WorkspaceRow {
   root: HTMLElement;
   nameEl: HTMLSpanElement;
   projectsEl: HTMLElement;
+  /** Absent pour le workspace implicite (pas d'en-tête). */
+  badgeEl: HTMLElement | null;
   /** Dernier nom connu (posé par `setState`, ou optimiste après un commit de
    * renommage) — sert de valeur de départ et de repli à `beginRename`. */
   name: string;
@@ -67,6 +73,9 @@ interface ProjectRow {
   root: HTMLElement;
   nameEl: HTMLSpanElement;
   pathEl: HTMLSpanElement;
+  badgeEl: HTMLElement;
+  /** Posé par `setState` — sert au roll-up du badge workspace. */
+  workspaceId: string | null;
 }
 
 /** Rend la sidebar dans `root` (vidé au préalable) :
@@ -116,6 +125,7 @@ export function createSidebar(
   root.append(workspaceListEl, rootBarEl);
 
   let selectedProjectId: string | null = null;
+  const projectStatuses = new Map<string, SessionStatus>();
 
   function beginRename(workspaceId: string): void {
     const row = workspaceRows.get(workspaceId);
@@ -182,6 +192,7 @@ export function createSidebar(
         root: workspaceEl,
         nameEl: document.createElement("span"),
         projectsEl,
+        badgeEl: null,
         name: "",
         renameInput: null,
       };
@@ -194,7 +205,7 @@ export function createSidebar(
     nameEl.className = "den-workspace__name";
     nameEl.addEventListener("dblclick", () => beginRename(workspaceId));
 
-    // Slot vide — ancrage DEN-05, indicateur d'état au niveau workspace.
+    // Ancrage DEN-05, indicateur d'état au niveau workspace (roll-up).
     const badgeEl = document.createElement("span");
     badgeEl.className = "den-workspace__badge";
 
@@ -227,7 +238,7 @@ export function createSidebar(
     projectsEl.className = "den-workspace__projects";
 
     workspaceEl.append(rowEl, projectsEl);
-    return { root: workspaceEl, nameEl, projectsEl, name: "", renameInput: null };
+    return { root: workspaceEl, nameEl, projectsEl, badgeEl, name: "", renameInput: null };
   }
 
   function createProjectRow(projectId: string): ProjectRow {
@@ -241,7 +252,7 @@ export function createSidebar(
     const nameEl = document.createElement("span");
     nameEl.className = "den-project__name";
 
-    // Slot vide — ancrage DEN-05, indicateur d'état au niveau projet.
+    // Ancrage DEN-05, indicateur d'état au niveau projet.
     const badgeEl = document.createElement("span");
     badgeEl.className = "den-project__badge";
 
@@ -275,7 +286,7 @@ export function createSidebar(
     pathEl.className = "den-project__path";
     // Toujours présent : une hauteur de ligne identique, sélectionnée ou non, évite que la liste saute.
     projectEl.append(pathEl);
-    return { root: projectEl, nameEl, pathEl };
+    return { root: projectEl, nameEl, pathEl, badgeEl, workspaceId: null };
   }
 
   function setState(state: PersistedState): void {
@@ -307,6 +318,7 @@ export function createSidebar(
           prow = createProjectRow(project.id);
           projectRows.set(project.id, prow);
         }
+        prow.workspaceId = workspace.id;
         prow.nameEl.textContent = displayName(project, siblings);
         prow.nameEl.title = project.path;
         prow.pathEl.textContent = formatPath(project.path);
@@ -328,7 +340,39 @@ export function createSidebar(
         projectRows.delete(id);
       }
     }
+    for (const id of projectStatuses.keys()) {
+      if (!seenProjects.has(id)) projectStatuses.delete(id);
+    }
     applySelection();
+    applyStatuses();
+  }
+
+  function setBadge(badgeEl: HTMLElement, status: SessionStatus | null): void {
+    if (status === null) badgeEl.removeAttribute("data-status");
+    else badgeEl.setAttribute("data-status", status);
+  }
+
+  // Idempotent : rappelé après chaque setState (un projet déplacé change de parent, donc de roll-up).
+  function applyStatuses(): void {
+    const byWorkspace = new Map<string, SessionStatus[]>();
+    for (const [id, row] of projectRows) {
+      const status = projectStatuses.get(id) ?? null;
+      setBadge(row.badgeEl, status);
+      if (status !== null && row.workspaceId !== null) {
+        const list = byWorkspace.get(row.workspaceId) ?? [];
+        list.push(status);
+        byWorkspace.set(row.workspaceId, list);
+      }
+    }
+    for (const [id, row] of workspaceRows) {
+      if (row.badgeEl) setBadge(row.badgeEl, rollupStatus(byWorkspace.get(id) ?? []));
+    }
+  }
+
+  function setProjectStatus(projectId: string, status: SessionStatus | null): void {
+    if (status === null) projectStatuses.delete(projectId);
+    else projectStatuses.set(projectId, status);
+    applyStatuses();
   }
 
   function applySelection(): void {
@@ -345,5 +389,5 @@ export function createSidebar(
     applySelection();
   }
 
-  return { setState, setSelectedProject, beginRename };
+  return { setState, setSelectedProject, beginRename, setProjectStatus };
 }
