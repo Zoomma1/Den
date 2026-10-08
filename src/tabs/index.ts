@@ -34,8 +34,9 @@
  *   `closeTab` juste après `tabs.delete(tabId)`, avec l'`owner`/`cwd` de la
  *   session fermée (capturés AVANT le retrait de la `Map`). Le module
  *   terminal ne l'écoute plus : un groupe de terminaux survit à la fermeture
- *   de ses sessions, il ne meurt qu'avec son projet. Contrat gardé pour
- *   DEN-05 (notifications), sans écouteur aujourd'hui.
+ *   de ses sessions, il ne meurt qu'avec son projet. Aucun écouteur : DEN-05
+ *   n'en a pas besoin, `closeTab` recalcule directement le statut du projet
+ *   (`refreshProjectStatus`).
  * - `den:tab-state-changed` (`detail: { tabId: string, state: TabLifecycleState }`) :
  *   émis quand l'état de lifecycle d'un tab (cf. `./lifecycle.ts`, seule
  *   source de vérité — DEN-10) change réellement, après chaque
@@ -49,6 +50,11 @@
  *   user, D5) : reprend `text` dans la textarea du prompt SSI `tabId` est le
  *   tab actif — n'interrompt rien, l'utilisateur fait Stop lui-même d'abord
  *   si un tour tourne encore.
+ * - `den:request-answered` (`detail: { tabId }`), ÉCOUTÉ ici, émis par
+ *   `src/interactive/index.ts` après l'envoi d'une réponse de validation : décrémente
+ *   les demandes en attente du lifecycle.
+ *
+ * Statuts DEN-05 : `refreshStatus` pose `data-status` (onglet + roll-up projet) ; `unseenDone` = tour fini non consulté.
  *
  * Stop (D4) : pendant qu'un tour tourne sur le tab actif, le bouton
  * d'envoi devient "Stop" (`syncSubmitButton`, lu depuis `router.getState` —
@@ -83,9 +89,11 @@
  */
 import { Channel, invoke } from "@tauri-apps/api/core";
 import { homeDir } from "@tauri-apps/api/path";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import "./tabs.css";
 import type { DenContext } from "../core/registry";
 import {
+  isConversationReset,
   isErrorMessage,
   isModeChanged,
   isSessionInfo,
@@ -103,7 +111,12 @@ import {
   renameWorkspace,
   setWorkspaceRoot,
 } from "../workspace";
-import { isLooseWorkspace, LOOSE_WORKSPACE_ID, projectsOfWorkspace } from "../workspace/store";
+import {
+  displayName,
+  isLooseWorkspace,
+  LOOSE_WORKSPACE_ID,
+  projectsOfWorkspace,
+} from "../workspace/store";
 import {
   ownerKey,
   resolveCwd,
@@ -113,9 +126,16 @@ import {
   workspaceKey,
 } from "./owner";
 import type { TabLifecycleState } from "./lifecycle";
+import { notificationFor, sendSystemNotification } from "./notify";
 import { TabRouter } from "./router";
-import { createSessionTabButton, createSessionTabs, type SessionTabs } from "./sessionTabs";
+import {
+  createSessionTabButton,
+  createSessionTabs,
+  setSessionTabStatus,
+  type SessionTabs,
+} from "./sessionTabs";
 import { createSidebar, type Sidebar } from "./sidebar";
+import { rollupStatus, sessionStatus } from "./status";
 
 interface Tab {
   id: string;
@@ -131,6 +151,21 @@ interface Tab {
   mode: PermissionModeId;
   buttonEl: HTMLButtonElement;
   titleEl: HTMLSpanElement;
+  /** Échec hors lifecycle (invoke raté, cf. `markTabError`) — l'état du router ne le voit pas. */
+  failed: boolean;
+  /** Tour fini pas encore vu (cf. docstring de tête, statuts DEN-05). */
+  unseenDone: boolean;
+  /** Prochaine fin de tour provoquée par l'utilisateur (Stop ou /clear). */
+  userEnded: boolean;
+}
+
+/** Hors Tauri (ou échec IPC) : repli sur le focus DOM plutôt que de notifier à tort. */
+async function windowHasFocus(): Promise<boolean> {
+  try {
+    return await getCurrentWindow().isFocused();
+  } catch {
+    return document.hasFocus();
+  }
 }
 
 /** Options fixes du sélecteur de mode — libellés en anglais (arbitrage
@@ -305,6 +340,53 @@ export async function init(ctx: DenContext): Promise<void> {
     // l'état du tab actif : un appel pour un tab en arrière-plan est un
     // no-op observable.
     syncSubmitButton();
+    const tab = tabs.get(tabId);
+    if (tab) onLifecycleTransition(tab, previousState, state);
+  }
+
+  /** Statut de l'onglet -> `data-status`, puis roll-up du projet vers la sidebar. */
+  function refreshStatus(tab: Tab): void {
+    const state = router.getState(tab.id) ?? "idle";
+    setSessionTabStatus(tab.buttonEl, sessionStatus(state, tab));
+    refreshProjectStatus(tab.owner.id);
+  }
+
+  function refreshProjectStatus(projectId: string): void {
+    const statuses = [...tabs.values()]
+      .filter((t) => t.owner.id === projectId)
+      .map((t) => sessionStatus(router.getState(t.id) ?? "idle", t));
+    sidebar.setProjectStatus(projectId, rollupStatus(statuses));
+  }
+
+  function projectNameOf(tab: Tab): string {
+    const state = getState();
+    const project = state.projects.find((p) => p.id === tab.owner.id);
+    return project ? displayName(project, projectsOfWorkspace(state, project.workspaceId)) : "Den";
+  }
+
+  /** Pose `unseenDone` et envoie la notif macOS (fenêtre hors focus seulement) sur les transitions qui comptent. */
+  function onLifecycleTransition(
+    tab: Tab,
+    previousState: TabLifecycleState | undefined,
+    state: TabLifecycleState,
+  ): void {
+    const ended = state === "idle" && (previousState === "running" || previousState === "waiting");
+    // Stop ou /clear : le tour ne « finit » pas de lui-même, ni badge done ni notif.
+    const finished = ended && !tab.userEnded;
+    if (ended) tab.userEnded = false;
+    if (finished && activeTabId !== tab.id) tab.unseenDone = true;
+    refreshStatus(tab);
+
+    const note = ended && !finished ? null : notificationFor(previousState, state, projectNameOf(tab));
+    if (!finished && !note) return;
+    void windowHasFocus().then((focused) => {
+      if (focused) return;
+      if (finished && !tab.unseenDone && tabs.has(tab.id)) {
+        tab.unseenDone = true;
+        refreshStatus(tab);
+      }
+      if (note) void sendSystemNotification(note);
+    });
   }
 
   /** Envoie `{ type: "interrupt" }` au sidecar du tab (D4) — clic sur le
@@ -313,6 +395,8 @@ export async function init(ctx: DenContext): Promise<void> {
    * `done` (via `syncSubmitButton`) fait revenir le bouton à "Send". */
   async function sendInterrupt(tabId: string): Promise<void> {
     const tab = tabs.get(tabId);
+    const state = router.getState(tabId);
+    if (tab && (state === "running" || state === "waiting")) tab.userEnded = true;
     try {
       await invoke("sidecar_send", {
         tabId,
@@ -388,6 +472,10 @@ export async function init(ctx: DenContext): Promise<void> {
     setModeSelectValue(modeSelect, active ? active.mode : "default");
     updateEmptyState();
     syncSubmitButton();
+    if (active) {
+      active.unseenDone = false;
+      refreshStatus(active);
+    }
     dispatchActiveTabChanged(active ?? null);
   }
 
@@ -404,6 +492,8 @@ export async function init(ctx: DenContext): Promise<void> {
   function markTabError(tab: Tab, message: string): void {
     tab.buttonEl.title = message;
     tab.buttonEl.classList.add("den-session-tab--error");
+    tab.failed = true;
+    refreshStatus(tab);
   }
 
   async function closeTab(tabId: string): Promise<void> {
@@ -423,6 +513,7 @@ export async function init(ctx: DenContext): Promise<void> {
     window.dispatchEvent(
       new CustomEvent("den:session-closed", { detail: { tabId, owner, cwd } }),
     );
+    refreshProjectStatus(owner.id);
 
     if (activeTabId === tabId) {
       // Plus d'onglet dans le projet -> `null` (contrat inter-lots) : sans ça la
@@ -446,7 +537,17 @@ export async function init(ctx: DenContext): Promise<void> {
 
     sessionTabs.addTab(owner.id, buttonEl);
 
-    const tab: Tab = { id, cwd, owner, mode: "default", buttonEl, titleEl };
+    const tab: Tab = {
+      id,
+      cwd,
+      owner,
+      mode: "default",
+      buttonEl,
+      titleEl,
+      failed: false,
+      unseenDone: false,
+      userEnded: false,
+    };
     tabs.set(id, tab);
     updateTabTitle(tab);
     router.registerTab(id);
@@ -460,6 +561,8 @@ export async function init(ctx: DenContext): Promise<void> {
           updateTabTitle(tab);
         } else if (isErrorMessage(message)) {
           markTabError(tab, message.message);
+        } else if (isConversationReset(message)) {
+          tab.userEnded = true;
         } else if (isModeChanged(message)) {
           // Idempotent : un doublon de mode_changed réécrit la même valeur
           // sans effet observable.
@@ -493,9 +596,11 @@ export async function init(ctx: DenContext): Promise<void> {
     const previousState = router.getState(tabId);
     if (previousState === "error") return false;
 
+    const tab = tabs.get(tabId);
+    // Un Stop sans fin de tour ne doit pas étouffer la fin du prochain tour.
+    if (tab) tab.userEnded = false;
     router.markPromptSubmitted(tabId);
     emitStateIfChanged(tabId, previousState);
-    const tab = tabs.get(tabId);
 
     const payload = {
       type: "user_message" as const,
@@ -811,6 +916,22 @@ export async function init(ctx: DenContext): Promise<void> {
     promptInputEl.focus();
     const len = promptInputEl.value.length;
     promptInputEl.setSelectionRange(len, len);
+  });
+
+  window.addEventListener("den:request-answered", (event) => {
+    const detail = (event as CustomEvent<{ tabId: string }>).detail;
+    if (!detail) return;
+    const previousState = router.getState(detail.tabId);
+    router.markRequestResolved(detail.tabId);
+    emitStateIfChanged(detail.tabId, previousState);
+  });
+
+  // Retour du focus fenêtre : le tour fini de l'onglet actif est désormais vu.
+  window.addEventListener("focus", () => {
+    const active = activeTabId ? tabs.get(activeTabId) : undefined;
+    if (!active?.unseenDone) return;
+    active.unseenDone = false;
+    refreshStatus(active);
   });
 
   // Aucun tab au démarrage (DEN-04 A1) — état vide affiché jusqu'au premier

@@ -42,6 +42,8 @@ async function sendToSidecar(
 ): Promise<void> {
   try {
     await invoke("sidecar_send", { tabId, message: JSON.stringify(response) });
+    // Le lifecycle (module tabs) décompte les demandes en attente via cet événement.
+    window.dispatchEvent(new CustomEvent("den:request-answered", { detail: { tabId } }));
   } catch (err) {
     console.error(`Den: échec d'envoi de la réponse (tab ${tabId})`, err);
   }
