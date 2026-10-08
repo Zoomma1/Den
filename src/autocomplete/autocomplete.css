@@ -1,0 +1,108 @@
+/* Wrapper : porte le fond verre, la bordure et le radius de l'ancien .den-prompt-bar__input. */
+.den-prompt-bar__field {
+  position: relative;
+  flex: 1;
+  display: flex;
+  border: 1px solid var(--den-edge-hi, rgba(255, 255, 255, 0.22));
+  border-radius: var(--den-radius-lg, 12px);
+  background: var(--den-glass-1, rgba(255, 255, 255, 0.045));
+}
+
+.den-prompt-bar__field:focus-within {
+  border-color: var(--den-accent, #8b7cff);
+}
+
+/* Sélecteur plus spécifique que .den-prompt-bar__input (tabs.css) pour le neutraliser. */
+.den-prompt-bar__field > .den-prompt-bar__input {
+  position: relative;
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  border: 0;
+  border-radius: inherit;
+  background: transparent;
+  color: transparent;
+  caret-color: var(--den-fg, #ece9f7);
+  line-height: 1.4;
+  scrollbar-gutter: stable;
+}
+
+/* Le calque est derrière : sans fond propre, le texte sélectionné resterait illisible. */
+.den-prompt-bar__field > .den-prompt-bar__input::selection {
+  background: var(--den-accent-muted, rgba(139, 124, 255, 0.18));
+}
+
+/* Le color transparent de la textarea masquerait aussi le placeholder. */
+.den-prompt-bar__field > .den-prompt-bar__input::placeholder {
+  color: var(--den-fg-muted, #6f6b8e);
+}
+
+/* Le calque doit reproduire exactement la métrique de la textarea. */
+.den-prompt-bar__backdrop {
+  position: absolute;
+  inset: 0;
+  box-sizing: border-box;
+  overflow: hidden;
+  pointer-events: none;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  padding: var(--den-space-2, 8px);
+  border: 0;
+  color: var(--den-fg, #ece9f7);
+  font-family: var(--den-font-sans, system-ui, sans-serif);
+  font-size: var(--den-font-size-base, 13px);
+  line-height: 1.4;
+  scrollbar-gutter: stable;
+}
+
+.den-slash-token {
+  color: var(--den-accent, #8b7cff);
+}
+
+.den-slash-menu {
+  position: absolute;
+  bottom: 100%;
+  left: 0;
+  right: 0;
+  max-height: 40vh;
+  overflow-y: auto;
+  margin-bottom: var(--den-space-1, 4px);
+  padding: var(--den-space-1, 4px);
+  border: 1px solid var(--den-edge-hi, rgba(255, 255, 255, 0.22));
+  border-radius: var(--den-radius, 8px);
+  background: var(--den-bg-elevated, #1a1736);
+  z-index: 20;
+}
+
+.den-slash-menu[hidden] {
+  display: none;
+}
+
+.den-slash-menu__item {
+  display: flex;
+  flex-flow: row nowrap;
+  gap: var(--den-space-3, 12px);
+  padding: var(--den-space-1, 4px) var(--den-space-2, 8px);
+  border-radius: var(--den-radius, 8px);
+  cursor: pointer;
+  font-family: var(--den-font-sans, system-ui, sans-serif);
+  font-size: var(--den-font-size-base, 13px);
+}
+
+.den-slash-menu__item[aria-selected="true"] {
+  background: var(--den-accent-muted, rgba(139, 124, 255, 0.18));
+}
+
+.den-slash-menu__name {
+  flex: none;
+  color: var(--den-accent, #8b7cff);
+}
+
+.den-slash-menu__desc {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--den-fg-muted, #6f6b8e);
+}

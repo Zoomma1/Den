@@ -3,6 +3,7 @@ import {
   type ConversationMessage,
   type DenProtocolMessage,
   isAssistantDelta,
+  isCommands,
   isConversationReset,
   isDone,
   isErrorMessage,
@@ -38,6 +39,7 @@ const samples: DenProtocolMessage[] = [
   { type: "set_mode", mode: "acceptEdits" },
   { type: "mode_changed", mode: "plan" },
   { type: "conversation_reset", sessionId: "s1", newConversationId: "c2" },
+  { type: "commands", commands: [{ name: "plugin:skill", description: "Un skill" }] },
 ];
 
 const guards: Record<
@@ -59,6 +61,7 @@ const guards: Record<
   set_mode: isSetModeMessage,
   mode_changed: isModeChanged,
   conversation_reset: isConversationReset,
+  commands: isCommands,
 };
 
 describe("protocol type guards", () => {
