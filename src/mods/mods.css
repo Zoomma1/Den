@@ -1,0 +1,110 @@
+/* Rendu des arbres de mods (src/mods/render.ts). */
+.den-mod-tree {
+  font-family: var(--den-font-sans);
+  font-size: var(--den-font-size-base);
+  color: var(--den-fg);
+  line-height: 1.4;
+}
+
+.den-mod-box {
+  display: flex;
+  min-width: 0;
+}
+
+.den-mod-text {
+  white-space: pre-wrap;
+}
+
+.den-mod-markdown > :first-child {
+  margin-top: 0;
+}
+
+.den-mod-markdown > :last-child {
+  margin-bottom: 0;
+}
+
+.den-mod-link {
+  color: var(--den-accent);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.den-mod-code {
+  margin: var(--den-space-1) 0;
+  padding: var(--den-space-2) var(--den-space-3);
+  background: var(--den-code-bg);
+  border: 1px solid var(--den-border);
+  border-radius: var(--den-radius);
+  overflow-x: auto;
+}
+
+.den-mod-code code {
+  font-family: var(--den-font-mono);
+  color: var(--den-code-fg);
+  white-space: pre;
+}
+
+.den-mod-btn {
+  font: inherit;
+  color: var(--den-fg);
+  background: var(--den-glass-2);
+  border: 1px solid var(--den-edge);
+  border-radius: var(--den-radius);
+  padding: var(--den-space-1) var(--den-space-3);
+  cursor: pointer;
+}
+
+.den-mod-btn:hover {
+  background: var(--den-glass-3);
+  border-color: var(--den-edge-hi);
+}
+
+.den-mod-btn[data-variant="primary"] {
+  color: var(--den-accent-fg);
+  background: var(--den-accent-gradient);
+  border-color: transparent;
+}
+
+.den-mod-btn[data-role="dismiss"] {
+  color: var(--den-fg-secondary);
+  background: transparent;
+}
+
+.den-mod-field {
+  display: flex;
+  align-items: center;
+  gap: var(--den-space-2);
+}
+
+.den-mod-field-label {
+  color: var(--den-fg-secondary);
+}
+
+.den-mod-field input,
+.den-mod-field select {
+  flex: 1;
+  min-width: 0;
+  font: inherit;
+  color: var(--den-fg);
+  background: var(--den-bg-surface);
+  border: 1px solid var(--den-border);
+  border-radius: var(--den-radius);
+  padding: var(--den-space-1) var(--den-space-2);
+}
+
+.den-mod-field input:focus,
+.den-mod-field select:focus {
+  outline: none;
+  border-color: var(--den-accent);
+}
+
+.den-mod-unsupported {
+  display: flex;
+  align-items: center;
+  gap: var(--den-space-3);
+  padding: var(--den-space-2) var(--den-space-3);
+  color: var(--den-status-error);
+  background: var(--den-glass-1);
+  border: 1px solid var(--den-status-error);
+  border-radius: var(--den-radius);
+}
