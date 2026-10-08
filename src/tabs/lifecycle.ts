@@ -4,6 +4,13 @@ import {
   isDone,
   isErrorMessage,
   isModeChanged,
+  isModInvalidate,
+  isModPanes,
+  isModResult,
+  isModStatus,
+  isModToast,
+  isModTree,
+  isModsUnavailable,
   isPermissionRequest,
   isQuestionRequest,
   isSessionInfo,
@@ -68,6 +75,15 @@ export type TabLifecycleEvent =
  *   est à 0 (outils parallèles déjà autorisés) ; `request_resolved` le
  *   décrémente, `done`/`error`/`conversation_reset` le remettent à 0.
  */
+const isModMessage = (message: SidecarToUIMessage): boolean =>
+  isModStatus(message) ||
+  isModToast(message) ||
+  isModPanes(message) ||
+  isModInvalidate(message) ||
+  isModTree(message) ||
+  isModResult(message) ||
+  isModsUnavailable(message);
+
 export function reduceTabLifecycle(
   lifecycle: TabLifecycle,
   event: TabLifecycleEvent,
@@ -139,12 +155,14 @@ function reduceSidecarMessage(
   // (sélecteur, cf. index.ts) répond `mode_changed` sans que le tool call
   // bloqué ait avancé — review 07/09.
   // `commands` est exclu aussi : poussé hors tour, il ne prouve pas que le tool call a avancé.
+  // Idem pour les messages `mod_*` : statut, toast, panes et réponses de rendu arrivent hors progression du tour.
   if (
     lifecycle.state === "waiting" &&
     lifecycle.pendingRequests === 0 &&
     !isSessionInfo(message) &&
     !isModeChanged(message) &&
-    !isCommands(message)
+    !isCommands(message) &&
+    !isModMessage(message)
   ) {
     return { ...lifecycle, state: "running" };
   }
