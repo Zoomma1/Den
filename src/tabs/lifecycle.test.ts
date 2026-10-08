@@ -4,6 +4,7 @@ import {
   reduceTabLifecycle,
   type TabLifecycle,
 } from "./lifecycle";
+import type { SidecarToUIMessage } from "../types/protocol";
 
 const errorMsg = { type: "error" as const, message: "boom" };
 const doneMsg = { type: "done" as const };
@@ -156,6 +157,19 @@ describe("reduceTabLifecycle", () => {
       kind: "sidecar_message",
       message: { type: "commands", commands: [{ name: "commit", description: "d" }] },
     });
+    expect(lc.state).toBe("waiting");
+  });
+
+  it.each<SidecarToUIMessage>([
+    { type: "mod_status", plugin: "p", text: "t" },
+    { type: "mod_toast", plugin: "p", text: "t", timeoutMs: 4000 },
+    { type: "mod_panes", panes: [], shownId: null, focusedId: null },
+    { type: "mod_invalidate", instances: [] },
+    { type: "mod_tree", requestId: "r", tree: null, hooked: false, rewritten: false },
+    { type: "mod_result", requestId: "r", handled: true },
+    { type: "mods_unavailable", reason: "absent" },
+  ])("waiting sans requête en attente + $type -> reste waiting (poussé hors progression du tour)", (message) => {
+    const lc = reduceTabLifecycle(lifecycle("waiting", 0), { kind: "sidecar_message", message });
     expect(lc.state).toBe("waiting");
   });
 
