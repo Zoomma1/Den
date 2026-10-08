@@ -126,6 +126,7 @@ import {
   workspaceKey,
 } from "./owner";
 import type { TabLifecycleState } from "./lifecycle";
+import { EMPTY_ACTIVITY, displayActivity, nextActivity, type Activity } from "./activity";
 import { notificationFor, sendSystemNotification } from "./notify";
 import { TabRouter } from "./router";
 import {
@@ -134,6 +135,7 @@ import {
   setSessionTabStatus,
   type SessionTabs,
 } from "./sessionTabs";
+import { createSessionsPanel, type SessionsPanel } from "./sessionsPanel";
 import { createSidebar, type Sidebar } from "./sidebar";
 import { rollupStatus, sessionStatus } from "./status";
 
@@ -157,6 +159,8 @@ interface Tab {
   unseenDone: boolean;
   /** Prochaine fin de tour provoquée par l'utilisateur (Stop ou /clear). */
   userEnded: boolean;
+  /** Dernière activité lisible, affichée dans le panneau Sessions (DEN-16). */
+  activity: Activity;
 }
 
 /** Hors Tauri (ou échec IPC) : repli sur le focus DOM plutôt que de notifier à tort. */
@@ -240,6 +244,7 @@ export async function init(ctx: DenContext): Promise<void> {
   // assignation (clic utilisateur), jamais avant.
   let sidebar: Sidebar;
   let sessionTabs: SessionTabs;
+  let panel: SessionsPanel;
   let selectedProjectId: string | null = null;
   // Ordre d'activation (le plus récent en dernier) : fermer un onglet retombe sur le dernier utilisé du projet.
   const recentTabIds: string[] = [];
@@ -349,6 +354,24 @@ export async function init(ctx: DenContext): Promise<void> {
     const state = router.getState(tab.id) ?? "idle";
     setSessionTabStatus(tab.buttonEl, sessionStatus(state, tab));
     refreshProjectStatus(tab.owner.id);
+    renderPanel();
+  }
+
+  /** Cards du panneau Sessions depuis `tabs` — mise à jour en place côté panneau. */
+  function renderPanel(): void {
+    panel.setCards(
+      [...tabs.values()].map((t) => {
+        const status = sessionStatus(router.getState(t.id) ?? "idle", t);
+        return {
+          tabId: t.id,
+          projectName: projectNameOf(t),
+          sessionId: t.sessionId ?? null,
+          status,
+          activity: displayActivity(t.activity, status),
+          active: t.id === activeTabId,
+        };
+      }),
+    );
   }
 
   function refreshProjectStatus(projectId: string): void {
@@ -476,6 +499,7 @@ export async function init(ctx: DenContext): Promise<void> {
       active.unseenDone = false;
       refreshStatus(active);
     }
+    renderPanel();
     dispatchActiveTabChanged(active ?? null);
   }
 
@@ -514,6 +538,7 @@ export async function init(ctx: DenContext): Promise<void> {
       new CustomEvent("den:session-closed", { detail: { tabId, owner, cwd } }),
     );
     refreshProjectStatus(owner.id);
+    renderPanel();
 
     if (activeTabId === tabId) {
       // Plus d'onglet dans le projet -> `null` (contrat inter-lots) : sans ça la
@@ -547,8 +572,10 @@ export async function init(ctx: DenContext): Promise<void> {
       failed: false,
       unseenDone: false,
       userEnded: false,
+      activity: EMPTY_ACTIVITY,
     };
     tabs.set(id, tab);
+    renderPanel();
     updateTabTitle(tab);
     router.registerTab(id);
 
@@ -556,9 +583,15 @@ export async function init(ctx: DenContext): Promise<void> {
     channel.onmessage = (chunk) => {
       const previousState = router.getState(id);
       for (const { message } of router.handleChunk(id, chunk)) {
+        const activity = nextActivity(tab.activity, message);
+        if (activity !== tab.activity) {
+          tab.activity = activity;
+          renderPanel();
+        }
         if (isSessionInfo(message)) {
           tab.sessionId = message.sessionId;
           updateTabTitle(tab);
+          renderPanel();
         } else if (isErrorMessage(message)) {
           markTabError(tab, message.message);
         } else if (isConversationReset(message)) {
@@ -615,6 +648,11 @@ export async function init(ctx: DenContext): Promise<void> {
     } catch (err) {
       if (tab) markTabError(tab, err instanceof Error ? err.message : String(err));
       return false;
+    }
+    // Nouveau tour : repart d'une activité vide (ni erreur ni texte du tour précédent).
+    if (tab) {
+      tab.activity = EMPTY_ACTIVITY;
+      renderPanel();
     }
     // Écho local du prompt dans le fil (cf. UserEcho, protocol.ts) — le
     // sidecar ne renvoie jamais les prompts, sans ça le fil est illisible.
@@ -891,6 +929,14 @@ export async function init(ctx: DenContext): Promise<void> {
     (path) => shortPath(path, home),
   );
   sidebar.setState(getState());
+  // Après createSidebar : il vide son root à la création.
+  panel = createSessionsPanel(document.body, {
+    onJump: (tabId) => {
+      setActiveTab(tabId);
+      panel.close();
+    },
+  });
+  ctx.mounts.sidebar.prepend(panel.triggerEl);
 
   // La barre se monte elle-même en premier enfant, au-dessus de `.den-views` (déjà inséré par `markdown`).
   sessionTabs = createSessionTabs(ctx.mounts.conversation, { onNew: onNewSession });
