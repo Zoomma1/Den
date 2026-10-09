@@ -73,6 +73,23 @@ export interface SetModeMessage {
   mode: PermissionModeId;
 }
 
+export type ModPaneActionKind = "show" | "focus" | "close" | "roster";
+
+/** Action sur les panes ; réponse `mod_result` (handled = closed pour close, value = id pour show/focus). `roster` déclenche en plus un push `mod_panes`. */
+export interface ModPaneAction {
+  type: "mod_pane_action";
+  requestId: string;
+  action: ModPaneActionKind;
+  id?: string | null;
+}
+
+/** Réponse de l'UI à `mod_copy_request`. */
+export interface ModCopyResult {
+  type: "mod_copy_result";
+  requestId: string;
+  copied: boolean;
+}
+
 /** Composants moteur que les mods peuvent réécrire. */
 export type ModComponent =
   | "AssistantMessage"
@@ -133,7 +150,9 @@ export type UIToSidecarMessage =
   | ModRender
   | ModPress
   | ModInput
-  | ModSelect;
+  | ModSelect
+  | ModPaneAction
+  | ModCopyResult;
 
 // ---------------------------------------------------------------------------
 // sidecar -> UI
@@ -170,6 +189,8 @@ export interface ToolResult {
   id: string;
   toolUseId: string;
   output: unknown;
+  /** `tool_use_result` structuré du SDK : la forme que le moteur attend pour ToolResult.output. */
+  structured?: unknown;
   isError?: boolean;
 }
 
@@ -287,9 +308,18 @@ export interface ModToast {
 /** Liste COMPLÈTE des panes ouverts — REMPLACE la précédente (vide = tout fermé). */
 export interface ModPanes {
   type: "mod_panes";
-  panes: { id: string; title: string; plugin: string; rows?: number }[];
+  panes: {
+    id: string;
+    title: string;
+    plugin: string;
+    closeOnEscape?: boolean;
+    rows?: number;
+    columns?: number;
+  }[];
   shownId: string | null;
   focusedId: string | null;
+  /** Le mod demande le focus de ce pane. */
+  focusRequestedId?: string | null;
 }
 
 /** Instances à re-demander via `mod_render`. */
@@ -318,6 +348,14 @@ export interface ModResult {
   error?: string;
 }
 
+/** Le moteur demande de copier du texte dans le presse-papiers ; réponse `mod_copy_result`. */
+export interface ModCopyRequest {
+  type: "mod_copy_request";
+  /** Id de la requête du moteur (control_request). */
+  requestId: string;
+  text: string;
+}
+
 /** Le moteur claude système n'est pas utilisable : les mods sont désactivés. */
 export interface ModsUnavailable {
   type: "mods_unavailable";
@@ -342,6 +380,7 @@ export type SidecarToUIMessage =
   | ModInvalidate
   | ModTree
   | ModResult
+  | ModCopyRequest
   | ModsUnavailable;
 
 /**
@@ -466,6 +505,24 @@ export function isModResult(msg: DenProtocolMessage): msg is ModResult {
   return msg.type === "mod_result";
 }
 
+export function isModCopyRequest(
+  msg: DenProtocolMessage,
+): msg is ModCopyRequest {
+  return msg.type === "mod_copy_request";
+}
+
+export function isModPaneAction(
+  msg: DenProtocolMessage,
+): msg is ModPaneAction {
+  return msg.type === "mod_pane_action";
+}
+
+export function isModCopyResult(
+  msg: DenProtocolMessage,
+): msg is ModCopyResult {
+  return msg.type === "mod_copy_result";
+}
+
 export function isModsUnavailable(
   msg: DenProtocolMessage,
 ): msg is ModsUnavailable {
@@ -505,7 +562,9 @@ export function isUIToSidecarMessage(
     isModRender(msg) ||
     isModPress(msg) ||
     isModInput(msg) ||
-    isModSelect(msg)
+    isModSelect(msg) ||
+    isModPaneAction(msg) ||
+    isModCopyResult(msg)
   );
 }
 

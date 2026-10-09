@@ -9,8 +9,11 @@ import {
   isErrorMessage,
   isInterruptMessage,
   isModeChanged,
+  isModCopyRequest,
+  isModCopyResult,
   isModInput,
   isModInvalidate,
+  isModPaneAction,
   isModPanes,
   isModPress,
   isModRender,
@@ -33,6 +36,14 @@ import {
   isUIToSidecarMessage,
   isUserMessage,
 } from "./protocol";
+import {
+  MOD_EVENTS,
+  type CreateAboveBand,
+  type CreatePaneHost,
+  type ModPaneClient,
+  type OpenClaudeShell,
+  type PaneRoster,
+} from "../mods/contracts";
 
 const samples: DenProtocolMessage[] = [
   { type: "user_message", id: "1", text: "salut" },
@@ -67,6 +78,9 @@ const samples: DenProtocolMessage[] = [
   { type: "mod_press", requestId: "q2", plugin: "p", handle: 42 },
   { type: "mod_input", requestId: "q3", plugin: "p", handle: 42, kind: "change", value: "x" },
   { type: "mod_select", requestId: "q4", plugin: "p", handle: 42, value: "y" },
+  { type: "mod_copy_request", requestId: "c1", text: "à copier" },
+  { type: "mod_pane_action", requestId: "q5", action: "show", id: "a" },
+  { type: "mod_copy_result", requestId: "c1", copied: true },
 ];
 
 const guards: Record<
@@ -100,6 +114,9 @@ const guards: Record<
   mod_press: isModPress,
   mod_input: isModInput,
   mod_select: isModSelect,
+  mod_copy_request: isModCopyRequest,
+  mod_pane_action: isModPaneAction,
+  mod_copy_result: isModCopyResult,
 };
 
 describe("protocol type guards", () => {
@@ -136,6 +153,8 @@ describe("protocol type guards", () => {
       "mod_press",
       "mod_input",
       "mod_select",
+      "mod_pane_action",
+      "mod_copy_result",
     ]);
 
     for (const msg of samples) {
@@ -157,5 +176,45 @@ describe("protocol type guards", () => {
       destination: "localSettings",
     };
     expect(isPermissionResponse(alwaysAllow)).toBe(true);
+  });
+});
+
+describe("contrats run 2", () => {
+  it("accepte les champs optionnels de mod_panes et tool_result.structured", () => {
+    const panes: DenProtocolMessage = {
+      type: "mod_panes",
+      panes: [{ id: "a", title: "T", plugin: "p", closeOnEscape: true, rows: 5, columns: 40 }],
+      shownId: "a",
+      focusedId: "a",
+      focusRequestedId: "a",
+    };
+    const result: DenProtocolMessage = {
+      type: "tool_result",
+      id: "t",
+      toolUseId: "t",
+      output: "x",
+      structured: { type: "text", file: { filePath: "/f" } },
+    };
+    expect(isModPanes(panes)).toBe(true);
+    expect(isToolResult(result)).toBe(true);
+  });
+});
+
+describe("contrats mods (compilation)", () => {
+  it("des objets factices satisfont les interfaces", () => {
+    const client: ModPaneClient = {
+      requestRender: async () => ({ tree: null, hooked: false, rewritten: false }),
+      paneAction: async () => ({ handled: true }),
+    };
+    const host: CreatePaneHost = () => ({ dispose() {} });
+    const band: CreateAboveBand = () => ({ dispose() {} });
+    const shell: OpenClaudeShell = async () => {};
+    const roster: PaneRoster = { panes: [], shownId: null, focusedId: null };
+    expect(host({ mount: {} as HTMLElement, client, renderTree: () => ({}) as HTMLElement })).toBeTruthy();
+    expect(band({ client, renderTree: () => ({}) as HTMLElement })).toBeTruthy();
+    expect(shell).toBeTypeOf("function");
+    expect(roster.panes).toEqual([]);
+    expect(MOD_EVENTS.panes).toBe("den:mod-panes");
+    expect(MOD_EVENTS.invalidate).toBe("den:mod-invalidate");
   });
 });

@@ -1,4 +1,4 @@
-import type { ModComponent } from "../types/protocol";
+import type { ModComponent, ModPanes } from "../types/protocol";
 import type { RenderNode } from "./tree";
 
 type Press = { plugin: string; handle: number };
@@ -34,4 +34,49 @@ export interface ModRenderClient {
       props: Record<string, unknown>;
     },
   ): Promise<{ tree: RenderNode | null; hooked: boolean; rewritten: boolean }>;
+}
+
+/** Implémenté par le lot "intégration" (src/mods/index.ts), consommé par le pane host. */
+export interface ModPaneClient extends ModRenderClient {
+  paneAction(
+    tabId: string,
+    req: { action: "show" | "focus" | "close" | "roster"; id?: string | null },
+  ): Promise<{ handled: boolean; value?: string; error?: string }>;
+}
+
+/** Miroir camelCase de `ModPanes` sans `type` ; produit par l'intégration, consommé par le pane host. */
+export type PaneRoster = Omit<ModPanes, "type">;
+
+/** Implémenté par le lot "colonne pane" (src/mods/pane.ts), consommé par l'intégration. */
+export type CreatePaneHost = (deps: {
+  mount: HTMLElement;
+  client: ModPaneClient;
+  renderTree: RenderTreeFn;
+  options?: (tabId: string) => RenderOptions;
+}) => { dispose(): void };
+
+/** Implémenté par le lot "bande" (src/mods/band.ts), consommé par l'intégration. */
+export type CreateAboveBand = (deps: {
+  client: ModRenderClient;
+  renderTree: RenderTreeFn;
+  options?: (tabId: string) => RenderOptions;
+}) => { dispose(): void };
+
+/** Implémenté par le lot "terminal" (src/terminal/index.ts), injecté dans createModsModule. */
+export type OpenClaudeShell = (target: {
+  owner: string | null;
+  cwd: string | null;
+}) => Promise<void>;
+
+/** Événements window émis par l'intégration ; `den:active-tab-changed` existe déjà côté src/tabs/index.ts. */
+export const MOD_EVENTS = {
+  panes: "den:mod-panes",
+  invalidate: "den:mod-invalidate",
+} as const;
+
+export type ModPanesEventDetail = { tabId: string } & PaneRoster;
+
+export interface ModInvalidateEventDetail {
+  tabId: string;
+  instances: { component: string; instanceId: string }[];
 }

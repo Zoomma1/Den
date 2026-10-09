@@ -166,11 +166,21 @@ describe("TabRouter", () => {
     '{"type":"mod_tree","requestId":"q1","tree":null,"hooked":false,"rewritten":false}',
     '{"type":"mod_result","requestId":"q2","handled":true}',
     '{"type":"mods_unavailable","reason":"x"}',
+    '{"type":"mod_copy_request","requestId":"c1","text":"t"}',
   ])("ne jette pas le message mods : %s", (line) => {
     const router = new TabRouter();
     router.registerTab("tab-a");
     const routed = router.handleChunk("tab-a", line + "\n");
     expect(routed).toEqual([{ tabId: "tab-a", message: JSON.parse(line) }]);
+  });
+
+  it.each([
+    '{"type":"mod_pane_action","requestId":"q","action":"show","id":"a"}',
+    '{"type":"mod_copy_result","requestId":"c1","copied":true}',
+  ])("jette un message mod UI->sidecar reçu côté sidecar->UI : %s", (line) => {
+    const router = new TabRouter();
+    router.registerTab("tab-a");
+    expect(router.handleChunk("tab-a", line + "\n")).toEqual([]);
   });
 
   it("jette un message mod UI->sidecar reçu côté sidecar->UI", () => {
