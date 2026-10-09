@@ -4,6 +4,7 @@ import {
   isDone,
   isErrorMessage,
   isModeChanged,
+  isModCopyRequest,
   isModInvalidate,
   isModPanes,
   isModResult,
@@ -82,6 +83,7 @@ const isModMessage = (message: SidecarToUIMessage): boolean =>
   isModInvalidate(message) ||
   isModTree(message) ||
   isModResult(message) ||
+  isModCopyRequest(message) ||
   isModsUnavailable(message);
 
 export function reduceTabLifecycle(
