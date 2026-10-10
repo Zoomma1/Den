@@ -18,12 +18,12 @@
 import type {
   ConversationMessage,
   CustomBlock,
-  ModComponent,
 } from "../types/protocol";
 import { IncrementalMarkdownRenderer } from "./renderer";
 import { MOD_EVENTS } from "../mods/contracts";
 import type {
   ModInvalidateEventDetail,
+  ModOrigin,
   ModRenderClient,
   RenderOptions,
   RenderTreeFn,
@@ -37,10 +37,8 @@ interface ModBridge {
   options?: (tabId: string, origin?: ModOrigin) => RenderOptions;
 }
 
-export interface ModOrigin {
-  component: ModComponent;
-  instanceId: string;
-}
+// Une seule définition (celle du contrat), ré-exportée pour les imports existants.
+export type { ModOrigin };
 
 type ModRequest = Parameters<ModRenderClient["requestRender"]>[1];
 

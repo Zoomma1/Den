@@ -1,5 +1,17 @@
-import type { ModComponent, ModPanes } from "../types/protocol";
-import type { RenderNode } from "./tree";
+import type {
+  ClientAddress,
+  ClientModuleBundle,
+  ModClientPress,
+  ModComponent,
+  ModPanes,
+} from "../types/protocol";
+import type { ElementNode, RenderNode } from "./tree";
+
+/** Origine d'un rendu (équivalent de ModOrigin de conversationView.ts) ; fournie par le pane host et la bande. */
+export interface ModOrigin {
+  component: ModComponent;
+  instanceId: string;
+}
 
 type Press = { plugin: string; handle: number };
 
@@ -16,6 +28,8 @@ export interface RenderOptions {
   renderEngineDefault?(ref: number): Node | null;
   onUnsupported?(elementType: string): void;
   openTerminal?(): void;
+  /** Fourni par l'intégration (index.ts), consommé par render.ts pour {type:"Client"} ; absent = repli « non supporté ». */
+  renderClient?(node: ElementNode): HTMLElement;
 }
 
 /** Implémenté par le lot "rendu" (src/mods/render.ts), consommé par l'intégration. */
@@ -44,6 +58,40 @@ export interface ModPaneClient extends ModRenderClient {
   ): Promise<{ handled: boolean; value?: string; error?: string }>;
 }
 
+/** Implémenté par l'intégration (src/mods/index.ts), consommé par l'hôte Client. */
+export interface ClientBridge {
+  loadModule(tabId: string, plugin: string): Promise<ClientModuleBundle>;
+  press(
+    tabId: string,
+    address: ClientAddress,
+    element: string,
+    event: ModClientPress["event"],
+  ): Promise<{ handled: boolean; reached?: unknown; error?: string }>;
+  message(
+    tabId: string,
+    address: ClientAddress,
+    data: unknown,
+  ): Promise<{ handled: boolean; props?: unknown; error?: string }>;
+  fault(
+    tabId: string,
+    address: ClientAddress,
+    phase: "load" | "render" | "run",
+    reason: string,
+  ): Promise<void>;
+}
+
+/** Implémenté par l'intégration (src/mods/index.ts), consommé par le pane host et l'hôte Client. */
+export interface ModClient extends ModPaneClient, ClientBridge {}
+
+/** Implémenté par l'hôte Client (src/mods/client/host.ts), consommé par l'intégration. */
+export type CreateClientHost = (deps: {
+  bridge: ClientBridge;
+  clientModules?: () => Record<string, string>;
+}) => {
+  renderClient(tabId: string, origin: ModOrigin, node: ElementNode): HTMLElement;
+  dispose(): void;
+};
+
 /** Miroir camelCase de `ModPanes` sans `type` ; produit par l'intégration, consommé par le pane host. */
 export type PaneRoster = Omit<ModPanes, "type">;
 
@@ -52,14 +100,14 @@ export type CreatePaneHost = (deps: {
   mount: HTMLElement;
   client: ModPaneClient;
   renderTree: RenderTreeFn;
-  options?: (tabId: string) => RenderOptions;
+  options?: (tabId: string, origin?: ModOrigin) => RenderOptions;
 }) => { dispose(): void };
 
 /** Implémenté par le lot "bande" (src/mods/band.ts), consommé par l'intégration. */
 export type CreateAboveBand = (deps: {
   client: ModRenderClient;
   renderTree: RenderTreeFn;
-  options?: (tabId: string) => RenderOptions;
+  options?: (tabId: string, origin?: ModOrigin) => RenderOptions;
 }) => { dispose(): void };
 
 /** Implémenté par le lot "terminal" (src/terminal/index.ts), injecté dans createModsModule. */
