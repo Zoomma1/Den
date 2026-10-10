@@ -67,6 +67,10 @@ export interface LayoutState {
    * `tryParsePersistedState` : un champ nouveau ne doit jamais faire perdre
    * un état déjà persisté). */
   terminalHidden: boolean;
+  /** Colonne pane (mods) masquée ; absent -> `true` (rien à montrer tant qu'aucun pane n'est ouvert). */
+  rightPaneHidden?: boolean;
+  /** Largeur de la colonne pane en pixels ; absent -> défaut appliqué par `applyLayout`. */
+  rightPx?: number;
 }
 
 export interface PersistedState {
@@ -99,6 +103,7 @@ function defaultLayout(): LayoutState {
     },
     sidebarHidden: false,
     terminalHidden: false,
+    rightPaneHidden: true,
   };
 }
 
@@ -144,6 +149,8 @@ function isLayout(value: unknown): value is LayoutState {
     sizes?: unknown;
     sidebarHidden?: unknown;
     terminalHidden?: unknown;
+    rightPaneHidden?: unknown;
+    rightPx?: unknown;
   };
   if (!LAYOUT_PRESETS.includes(candidate.preset as LayoutPreset)) return false;
   if (typeof candidate.sizes !== "object" || candidate.sizes === null) return false;
@@ -153,6 +160,10 @@ function isLayout(value: unknown): value is LayoutState {
   if (candidate.terminalHidden !== undefined && typeof candidate.terminalHidden !== "boolean") {
     return false;
   }
+  if (candidate.rightPaneHidden !== undefined && typeof candidate.rightPaneHidden !== "boolean") {
+    return false;
+  }
+  if (candidate.rightPx !== undefined && typeof candidate.rightPx !== "number") return false;
   const sizes = candidate.sizes as Record<string, unknown>;
   return LAYOUT_PRESETS.every((preset) => isLayoutSizes(sizes[preset]));
 }
@@ -199,6 +210,7 @@ function normalizeLayout(layout: LayoutState): LayoutState {
     ...layout,
     sidebarHidden: layout.sidebarHidden ?? false,
     terminalHidden: layout.terminalHidden ?? false,
+    rightPaneHidden: layout.rightPaneHidden ?? true,
   };
 }
 

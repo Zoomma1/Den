@@ -37,6 +37,7 @@ describe("tryParsePersistedState / parsePersistedState / serializePersistedState
         },
         sidebarHidden: false,
         terminalHidden: false,
+        rightPaneHidden: true,
       },
     };
     expect(parsePersistedState(serializePersistedState(state))).toEqual(state);
@@ -208,6 +209,37 @@ describe("tryParsePersistedState / parsePersistedState / serializePersistedState
       layout: { ...defaultState().layout, terminalHidden: "yes" },
     });
     expect(tryParsePersistedState(raw)).toBeNull();
+  });
+
+  it("normalizes a layout missing the pane column fields to hidden (v1 and v2)", () => {
+    const layout = defaultState().layout as Partial<PersistedState["layout"]>;
+    delete layout.rightPaneHidden;
+    delete layout.rightPx;
+    const v2 = tryParsePersistedState(JSON.stringify({ version: 2, workspaces: [], projects: [], layout }));
+    expect(v2?.state.layout.rightPaneHidden).toBe(true);
+    expect(v2?.state.layout.rightPx).toBeUndefined();
+    const v1 = tryParsePersistedState(JSON.stringify({ version: 1, projects: [{ id: "p1", path: "/a" }], layout }));
+    expect(v1?.state.layout.rightPaneHidden).toBe(true);
+  });
+
+  it("roundtrips rightPaneHidden: false and rightPx", () => {
+    const state: PersistedState = {
+      ...defaultState(),
+      layout: { ...defaultState().layout, rightPaneHidden: false, rightPx: 400 },
+    };
+    expect(parsePersistedState(serializePersistedState(state))).toEqual(state);
+  });
+
+  it("returns null when rightPaneHidden or rightPx has the wrong type", () => {
+    for (const bad of [{ rightPaneHidden: "no" }, { rightPx: "400" }]) {
+      const raw = JSON.stringify({
+        version: 2,
+        workspaces: [],
+        projects: [],
+        layout: { ...defaultState().layout, ...bad },
+      });
+      expect(tryParsePersistedState(raw)).toBeNull();
+    }
   });
 
   it("parsePersistedState falls back to the default state on any invalid payload", () => {

@@ -37,12 +37,21 @@ export const MAX_SIDEBAR_PX = 640;
 export const MIN_RATIO = 0.2;
 export const MAX_RATIO = 0.8;
 
+/** Largeur de la colonne pane (mods) : défaut et bornes de confort. */
+export const DEFAULT_RIGHT_PX = 320;
+export const MIN_RIGHT_PX = 240;
+export const MAX_RIGHT_PX = 640;
+
 function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
 }
 
 export function clampSidebarPx(px: number): number {
   return clamp(px, MIN_SIDEBAR_PX, MAX_SIDEBAR_PX);
+}
+
+export function clampRightPx(px: number): number {
+  return clamp(px, MIN_RIGHT_PX, MAX_RIGHT_PX);
 }
 
 export function clampRatio(ratio: number): number {
@@ -54,6 +63,8 @@ export function clampRatio(ratio: number): number {
  * `data-sidebar="hidden"` (retiré quand la sidebar est visible) et les
  * custom properties CSS consommées par `layout.css` :
  * - `--den-sidebar-px` : largeur de la sidebar du preset courant, clampée.
+ * - `--den-right-px` : largeur de la colonne pane, clampée ; `data-pane="hidden"`
+ *   quand elle est masquée (absent du state -> masquée).
  * - `--den-conversation-fr` / `--den-terminal-fr` : le `conversationRatio`
  *   du preset courant, clampé puis projeté en deux `fr` complémentaires.
  *
@@ -77,7 +88,14 @@ export function applyLayout(app: HTMLElement, layout: LayoutState): void {
     delete app.dataset.terminal;
   }
 
+  if (layout.rightPaneHidden ?? true) {
+    app.dataset.pane = "hidden";
+  } else {
+    delete app.dataset.pane;
+  }
+
   app.style.setProperty("--den-sidebar-px", `${sidebarPx}px`);
+  app.style.setProperty("--den-right-px", `${clampRightPx(layout.rightPx ?? DEFAULT_RIGHT_PX)}px`);
   app.style.setProperty("--den-conversation-fr", `${roundFr(ratio)}fr`);
   // `1 - ratio` en flottant JS (ex. 1 - 0.7 = 0.30000000000000004) donnerait
   // une custom property illisible dans le devtools — arrondi à 4 décimales.
@@ -131,4 +149,20 @@ export function withSidebarHidden(layout: LayoutState, hidden: boolean): LayoutS
 /** Nouvel état avec `terminalHidden` remplacé. Immuable. */
 export function withTerminalHidden(layout: LayoutState, hidden: boolean): LayoutState {
   return { ...layout, terminalHidden: hidden };
+}
+
+/** Nouvel état avec `rightPaneHidden` remplacé. Immuable. */
+export function withRightPaneHidden(layout: LayoutState, hidden: boolean): LayoutState {
+  return { ...layout, rightPaneHidden: hidden };
+}
+
+/** Nouvel état avec la largeur de la colonne pane remplacée (clampée). Immuable. */
+export function withRightPx(layout: LayoutState, px: number): LayoutState {
+  return { ...layout, rightPx: clampRightPx(px) };
+}
+
+/** Nouvelle largeur de la colonne pane pendant un drag : le splitter est à sa
+ * GAUCHE, tirer vers la gauche (delta < 0) l'élargit. Arrondie puis clampée. */
+export function rightPxFromDrag(startPx: number, delta: number): number {
+  return clampRightPx(Math.round(startPx - delta));
 }
