@@ -61,8 +61,27 @@ vi.mock("@xterm/addon-webgl", () => ({
   },
 }));
 
+const layoutState = vi.hoisted(() => ({
+  layout: {
+    preset: "stacked",
+    sizes: {
+      "side-by-side": { sidebarPx: 240, conversationRatio: 0.6 },
+      stacked: { sidebarPx: 240, conversationRatio: 0.6 },
+    },
+    sidebarHidden: false,
+    terminalHidden: false,
+  } as Record<string, unknown>,
+}));
+vi.mock("../workspace", () => ({
+  getState: () => ({ layout: layoutState.layout }),
+  setLayout: (layout: Record<string, unknown>) => {
+    layoutState.layout = layout;
+  },
+  saveState: () => Promise.resolve(),
+}));
+
 import type { DenContext } from "../core/registry";
-import { init } from "./index";
+import { init, openClaudeShell } from "./index";
 
 const fakeCtx = (root: HTMLElement): DenContext =>
   ({ mounts: { terminal: root } }) as unknown as DenContext;
@@ -361,6 +380,90 @@ describe("terminal/index — fond opaque et attente des polices", () => {
       expect(spawnCallsFor("/test/fonts-hang")).toHaveLength(1);
     } finally {
       vi.useRealTimers();
+    }
+  });
+});
+
+describe("terminal/index — openClaudeShell", () => {
+  let root: HTMLElement;
+  const claudeWrites = () =>
+    invokeMock.mock.calls.filter(([cmd, args]) => cmd === "pty_write" && (args as { data?: string }).data === "claude\n");
+
+  beforeEach(() => {
+    invokeMock.mockClear();
+    layoutState.layout = { ...layoutState.layout, terminalHidden: false };
+    root = document.createElement("section");
+  });
+
+  afterEach(() => {
+    for (const [target, type, listener] of trackedListeners) {
+      target.removeEventListener(type, listener);
+    }
+    trackedListeners.length = 0;
+    document.getElementById("den-app")?.remove();
+  });
+
+  it("rejette si le module n'est pas initialisé", async () => {
+    vi.resetModules();
+    const fresh = await import("./index");
+    await expect(fresh.openClaudeShell({ owner: "x", cwd: "/x" })).rejects.toThrow(/non initialisé/);
+  });
+
+  it("crée un onglet actif et écrit claude\\n seulement après la résolution de ptyId", async () => {
+    initIsolated(root);
+    dispatchActiveTabChanged("tab-1", "/test/claude-a", { kind: "project", id: "pc-1" });
+    await flushMicrotasks();
+    invokeMock.mockClear();
+
+    let resolveSpawn!: (id: number) => void;
+    invokeMock.mockImplementationOnce(() => new Promise<number>((r) => (resolveSpawn = r)));
+    const done = openClaudeShell({ owner: "pc-1", cwd: "/test/claude-a" });
+
+    const tabs = root.querySelectorAll(".den-terminal__tab");
+    expect(tabs).toHaveLength(2);
+    expect(tabs[1].classList.contains("den-terminal__tab--active")).toBe(true);
+    expect(claudeWrites()).toHaveLength(0);
+
+    resolveSpawn(42);
+    await done;
+    expect(invokeMock).toHaveBeenCalledWith("pty_write", { id: 42, data: "claude\n" });
+  });
+
+  it("réaffiche le terminal masqué", async () => {
+    const app = document.createElement("div");
+    app.id = "den-app";
+    document.body.appendChild(app);
+    layoutState.layout = { ...layoutState.layout, terminalHidden: true };
+    app.dataset.terminal = "hidden";
+
+    initIsolated(root);
+    await openClaudeShell({ owner: "pc-2", cwd: "/test/claude-b" });
+
+    expect((layoutState.layout as { terminalHidden: boolean }).terminalHidden).toBe(false);
+    expect(app.dataset.terminal).toBeUndefined();
+  });
+
+  it("réutilise le groupe d'un même owner", async () => {
+    initIsolated(root);
+    await openClaudeShell({ owner: "pc-3", cwd: "/test/claude-c" });
+    await openClaudeShell({ owner: "pc-3", cwd: "/test/claude-c" });
+
+    expect(root.querySelectorAll(".den-terminal__group")).toHaveLength(1);
+    expect(root.querySelectorAll(".den-terminal__tab")).toHaveLength(3);
+    expect(claudeWrites()).toHaveLength(2);
+  });
+
+  it("n'écrit rien et rejette si pty_spawn échoue", async () => {
+    initIsolated(root);
+    invokeMock.mockImplementation((cmd: string) =>
+      cmd === "pty_spawn" ? Promise.reject(new Error("nope")) : Promise.resolve(1),
+    );
+    try {
+      await expect(openClaudeShell({ owner: "pc-4", cwd: "/test/claude-d" })).rejects.toThrow(/claude non lancé/);
+      expect(claudeWrites()).toHaveLength(0);
+    } finally {
+      invokeMock.mockReset();
+      invokeMock.mockResolvedValue(1);
     }
   });
 });

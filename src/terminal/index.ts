@@ -40,9 +40,12 @@ import { WebglAddon } from "@xterm/addon-webgl";
 import type { DenContext } from "../core/registry";
 import { decodePtyChunk, type PtyChunk } from "./decode";
 import { debounce, type Debounced } from "./debounce";
+import { applyLayout, withTerminalHidden } from "../layout/layout";
+import { getState, saveState, setLayout } from "../workspace";
 import { groupKey, nextActiveIndex, shellLabel } from "./group";
 import "@xterm/xterm/css/xterm.css";
 import "./terminal.css";
+import type { OpenClaudeShell } from "../mods/contracts";
 
 const RESIZE_DEBOUNCE_MS = 80;
 
@@ -93,6 +96,8 @@ interface TerminalShell {
   tabButtonEl: HTMLButtonElement;
   ptyId: number | undefined;
   spawnFailed: boolean;
+  /** Résolu quand `pty_spawn` a répondu (succès ou échec) — `openClaudeShell` attend `ptyId` avant d'écrire. */
+  ready: Promise<void>;
   resizeObserver: ResizeObserver;
   debouncedResize: Debounced<[]>;
   /** Applique immédiatement (pas debouncé) le resize xterm + `pty_resize` —
@@ -116,6 +121,16 @@ interface TerminalGroup {
    * (dernier onglet fermé — le "+" le repeuple). */
   activeIndex: number;
 }
+
+// Posée par `init` : les helpers de groupe sont des fermetures privées de ce module.
+let openClaudeShellImpl: OpenClaudeShell | null = null;
+
+export const openClaudeShell: OpenClaudeShell = (target) => {
+  if (!openClaudeShellImpl) {
+    return Promise.reject(new Error("Den/terminal: module non initialisé, impossible d'ouvrir claude"));
+  }
+  return openClaudeShellImpl(target);
+};
 
 /** Lit une custom property `--den-*` sur `document.documentElement`, déjà
  * appliquée par le module `theme` (ordre d'init : theme avant terminal). */
@@ -303,6 +318,7 @@ export function init(ctx: DenContext): void {
       tabButtonEl,
       ptyId: undefined,
       spawnFailed: false,
+      ready: Promise.resolve(),
       // Assignés juste dessous — `applyResize` referme sur `shell` lui-même
       // (ptyId muté après coup par la résolution de `pty_spawn`).
       resizeObserver: undefined as unknown as ResizeObserver,
@@ -351,7 +367,7 @@ export function init(ctx: DenContext): void {
       term.write(decodePtyChunk(chunk));
     };
 
-    invoke<number>("pty_spawn", { cols: term.cols, rows: term.rows, cwd: group.cwd, onData })
+    shell.ready = invoke<number>("pty_spawn", { cols: term.cols, rows: term.rows, cwd: group.cwd, onData })
       .then((id) => {
         shell.ptyId = id;
       })
@@ -512,6 +528,40 @@ export function init(ctx: DenContext): void {
     }
     showGroup(key);
   }
+
+  async function openShellWithClaude(target: {
+    owner: string | null;
+    cwd: string | null;
+  }): Promise<void> {
+    const app = document.getElementById("den-app");
+    const layout = getState().layout;
+    if (app && layout.terminalHidden) {
+      const next = withTerminalHidden(layout, false);
+      setLayout(next);
+      applyLayout(app, next);
+      void saveState();
+    }
+
+    const key = target.owner !== null ? groupKey({ kind: "project", id: target.owner }) : shownKey;
+    let group = key !== null ? groups.get(key) : undefined;
+    if (!group) {
+      if (key === null || target.cwd === null) {
+        throw new Error("Den/terminal: aucun dossier de projet pour ouvrir le terminal");
+      }
+      group = createGroup(key, target.cwd);
+    }
+    showGroup(group.key);
+
+    // Le groupe fraîchement créé a déjà son shell 1 : on ajoute toujours un onglet dédié à claude.
+    const shell = spawnShell(group);
+    setActiveShellIndex(group, group.shells.length - 1);
+    await shell.ready;
+    if (shell.ptyId === undefined || shell.spawnFailed) {
+      throw new Error("Den/terminal: shell indisponible, claude non lancé");
+    }
+    await invoke("pty_write", { id: shell.ptyId, data: "claude\n" });
+  }
+  openClaudeShellImpl = openShellWithClaude;
 
   function handleOwnerRemoved(event: Event): void {
     const detail = (event as CustomEvent<OwnerRemovedDetail>).detail;
