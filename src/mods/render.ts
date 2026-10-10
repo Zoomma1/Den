@@ -177,6 +177,7 @@ function build(node: RenderNode, opts: RenderOptions): Node {
       if (lab) wrap.appendChild(lab);
       const input = document.createElement("input");
       input.type = "text";
+      if (key !== undefined) input.dataset.modKey = key;
       input.value = str(p.value);
       input.placeholder = str(p.placeholder);
       const submit = () => {
@@ -205,6 +206,7 @@ function build(node: RenderNode, opts: RenderOptions): Node {
       const lab = labelSpan(p.label);
       if (lab) wrap.appendChild(lab);
       const select = document.createElement("select");
+      if (key !== undefined) select.dataset.modKey = key;
       for (const o of Array.isArray(p.options) ? p.options : []) {
         const rec = (typeof o === "object" && o !== null ? o : { value: o }) as Record<string, unknown>;
         const opt = document.createElement("option");
@@ -228,3 +230,31 @@ export const renderTree: RenderTreeFn = (node, opts = {}) => {
   root.appendChild(build(node, opts));
   return root;
 };
+
+/** Remplace le contenu d'un conteneur en gardant le focus, le caret et la saisie en cours d'un champ de mod : sans ça, chaque invalidation (une par frappe) recrée l'<input> et fait perdre le focus. */
+export function replaceKeepingFocus(container: HTMLElement, next: Node): void {
+  const active = document.activeElement;
+  const field =
+    active instanceof HTMLInputElement || active instanceof HTMLSelectElement
+      ? active
+      : null;
+  const key = field && container.contains(field) ? field.dataset.modKey : undefined;
+  const saved =
+    key !== undefined && field instanceof HTMLInputElement
+      ? { value: field.value, start: field.selectionStart, end: field.selectionEnd }
+      : null;
+
+  container.replaceChildren(next);
+  if (key === undefined) return;
+
+  const fresh = container.querySelector<HTMLInputElement | HTMLSelectElement>(
+    `[data-mod-key="${CSS.escape(key)}"]`,
+  );
+  if (!fresh) return;
+  fresh.focus({ preventScroll: true });
+  // La saisie locale fait foi tant que l'utilisateur tape : le moteur rattrape à l'invalidation suivante.
+  if (saved && fresh instanceof HTMLInputElement) {
+    fresh.value = saved.value;
+    if (saved.start !== null && saved.end !== null) fresh.setSelectionRange(saved.start, saved.end);
+  }
+}

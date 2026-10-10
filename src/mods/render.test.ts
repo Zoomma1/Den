@@ -2,7 +2,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
 import { parseThemeCSS } from "../theme/theme";
-import { renderTree } from "./render";
+import { renderTree, replaceKeepingFocus } from "./render";
 import { isRenderNode, type RenderNode } from "./tree";
 
 function fixtureTree(file: string, id: string): RenderNode {
@@ -150,4 +150,48 @@ describe("tokens --den-ansi-*", () => {
       for (const n of names) expect(vars?.[`--den-ansi-${n}`]).toBeTruthy();
     });
   }
+});
+
+describe("replaceKeepingFocus", () => {
+  const field = (value: string): RenderNode => ({
+    type: "Input",
+    props: { key: "focus", value },
+    press: { plugin: "p", handle: 1 },
+  });
+
+  it("garde le focus, la saisie locale et le caret d'un champ recréé par un re-rendu", () => {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    container.appendChild(renderTree(field("")));
+    const input = container.querySelector("input") as HTMLInputElement;
+    input.focus();
+    input.value = "abcd";
+    input.setSelectionRange(2, 2);
+
+    // Re-rendu avec une valeur moteur périmée : la saisie en cours ne doit pas être écrasée.
+    replaceKeepingFocus(container, renderTree(field("ab")));
+
+    const fresh = container.querySelector("input") as HTMLInputElement;
+    expect(fresh).not.toBe(input);
+    expect(document.activeElement).toBe(fresh);
+    expect(fresh.value).toBe("abcd");
+    expect([fresh.selectionStart, fresh.selectionEnd]).toEqual([2, 2]);
+    container.remove();
+  });
+
+  it("ne vole pas le focus quand aucun champ de mod n'était actif", () => {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const other = document.createElement("input");
+    document.body.appendChild(other);
+    container.appendChild(renderTree(field("x")));
+    other.focus();
+
+    replaceKeepingFocus(container, renderTree(field("y")));
+
+    expect(document.activeElement).toBe(other);
+    expect((container.querySelector("input") as HTMLInputElement).value).toBe("y");
+    container.remove();
+    other.remove();
+  });
 });
