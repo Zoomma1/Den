@@ -1,0 +1,41 @@
+{
+ "_fixture": "Réponse FACTICE : sources de client-stub/ (pas une capture du moteur) ; request_id et hash inventés. Synchronisation vérifiée par client-stub.test.ts.",
+ "type": "control_response",
+ "response": {
+  "subtype": "success",
+  "request_id": "den-ui-client-module",
+  "response": {
+   "plugin": "demo",
+   "hash": "hash-factice-0001",
+   "modules": [
+    {
+     "module": "hooks/rows.tsx",
+     "entry": "surface:///hooks/rows.tsx",
+     "component": "default"
+    }
+   ],
+   "runtime": "claude:surface-runtime",
+   "limits": {
+    "nodes": 20000,
+    "depth": 32,
+    "chars": 100000,
+    "values": 20000,
+    "dataDepth": 32
+   },
+   "files": [
+    {
+     "key": "claude:surface-runtime",
+     "source": "// Runtime factice de test : respecte le contrat install(host, limits) d'un surface-runtime, écrit pour Den (ce n'est pas le runtime du moteur).\nconst flatten = (children, out) => {\n  for (const c of children) {\n    if (c === null || c === undefined || typeof c === 'boolean') continue\n    if (Array.isArray(c)) flatten(c, out)\n    else out.push(typeof c === 'number' ? String(c) : c)\n  }\n}\nlet counter = 0\nexport function Fragment(props) {\n  return { type: 'Box', props: { flexDirection: 'column' }, children: props.children ?? [] }\n}\nexport function h(type, props, ...rest) {\n  const children = []\n  flatten(rest, children)\n  if (typeof type === 'function') return type({ ...(props ?? {}), children })\n  const { onPress, onSubmit, onInput, onSelect, ...plain } = props ?? {}\n  if (type === 'Button') return { type, props: plain, press: { plugin: '', handle: ++counter }, onPress }\n  if (type === 'Input') {\n    return { type, props: plain, press: { plugin: '', handle: ++counter }, onEvent: e => (e.kind === 'submit' ? onSubmit?.(e.value, e) : onInput?.(e.value, e)) }\n  }\n  if (type === 'Select') return { type, props: plain, press: { plugin: '', handle: ++counter }, onEvent: e => onSelect?.(e.value, e) }\n  return { type, ...(Object.keys(plain).length > 0 && { props: plain }), ...(children.length > 0 && { children }) }\n}\n\nexport const install = (host, limits) => {\n  const instances = new Map()\n  let pending = null\n  const elements = {}\n  for (const name of ['Box', 'Text', 'Button', 'Input', 'Select', 'Link', 'Code', 'Markdown']) {\n    elements[name] = props => {\n      const { children, ...rest } = props ?? {}\n      return h(name, rest, ...(children === undefined ? [] : Array.isArray(children) ? children : [children]))\n    }\n  }\n  Object.defineProperty(globalThis, '__surface__', {\n    value: { run: () => { const s = pending; pending = null; return s === null ? undefined : s() } },\n    configurable: true,\n  })\n  const instanceOf = id => instances.get(id) ?? (() => { throw new Error('no client instance ' + id) })()\n\n  const exportTree = (instance, tree) => {\n    let nodes = 0\n    const walk = (node, depth) => {\n      if (typeof node === 'string') return node\n      if (typeof node !== 'object' || node === null) throw new Error('a child that is neither a string nor an element')\n      if (++nodes > limits.nodes) throw new Error('a tree of more than ' + limits.nodes + ' nodes')\n      if (depth > limits.depth) throw new Error('a tree deeper than ' + limits.depth)\n      if (node.type === 'Client') throw new Error('a Client inside the tree')\n      const out = { type: node.type }\n      if (node.props !== undefined) out.props = JSON.parse(JSON.stringify(node.props))\n      const closure = node.type === 'Button' ? node.onPress : node.type === 'Input' || node.type === 'Select' ? node.onEvent : undefined\n      if (node.type === 'Button' || node.type === 'Input' || node.type === 'Select') {\n        const handle = ++instance.heldCounter\n        instance.held.set(handle, closure)\n        out.held = handle\n        return out\n      }\n      if (node.children !== undefined) out.children = node.children.map(c => walk(c, depth + 1))\n      return out\n    }\n    const text = JSON.stringify(walk(tree, 0))\n    if (text.length > limits.chars) throw new Error('a tree serializing to more than ' + limits.chars + ' characters')\n    return text\n  }\n\n  const act = (id, instance, kind, payload) => {\n    switch (kind) {\n      case 'render': instance.scheduled = false; return exportTree(instance, instance.fn(instance.props, instance.surface))\n      case 'pointer': instance.pointer?.(payload); return undefined\n      case 'key': instance.key?.(payload); return undefined\n      case 'tick': instance.timers.get(payload)?.(); return undefined\n      case 'held': instance.held.get(payload.handle)?.(payload.event); return undefined\n      default: throw new Error('unknown surface call ' + kind)\n    }\n  }\n\n  return Object.freeze({\n    mount: (id, fn, props) => {\n      const instance = { fn, props, state: undefined, columns: 0, rows: 0, scheduled: false, pointer: null, key: null, timers: new Map(), held: new Map(), heldCounter: 0 }\n      instance.surface = Object.freeze({\n        elements,\n        get state() { return instance.state },\n        get columns() { return instance.columns },\n        get rows() { return instance.rows },\n        setState: next => { instance.state = next; if (!instance.scheduled) { instance.scheduled = true; host.schedule(id) } },\n        every: (ms, fn2) => { const t = host.startTimer(id, ms); instance.timers.set(t, fn2); return () => { if (instance.timers.delete(t)) host.stopTimer(id, t) } },\n        onPointer: fn2 => { instance.pointer = fn2; return () => { if (instance.pointer === fn2) instance.pointer = null } },\n        onKey: fn2 => { instance.key = fn2; return () => { if (instance.key === fn2) instance.key = null } },\n        post: data => host.post(id, JSON.stringify(data)),\n      })\n      instances.set(id, instance)\n    },\n    setProps: (id, props) => { instanceOf(id).props = props },\n    resize: (id, columns, rows) => { const i = instanceOf(id); i.columns = columns; i.rows = rows },\n    stage: (id, kind, payload) => { const instance = instanceOf(id); pending = () => act(id, instance, kind, payload) },\n    dropHeld: (id, handles) => { const i = instances.get(id); if (i) for (const hd of handles) i.held.delete(hd) },\n    hasListener: (id, kind) => { const i = instances.get(id); return !!i && (kind === 'pointer' ? i.pointer : i.key) !== null },\n    unmount: id => { const i = instances.get(id); if (!i) return; instances.delete(id); i.timers.clear(); i.held.clear(); i.pointer = null; i.key = null },\n  })\n}\n"
+    },
+    {
+     "key": "claude:hooks-types",
+     "source": "export {}\n"
+    },
+    {
+     "key": "surface:///hooks/rows.tsx",
+     "source": "// Surface module factice : des lignes cliquables, une touche, un bouton et un timer.\nexport default function Rows(props, surface) {\n  const { Box, Text, Button } = surface.elements\n  const state = surface.state ?? { hover: -1, ticks: 0, wired: false }\n  if (!state.wired) {\n    state.wired = true\n    surface.setState(state)\n    surface.onPointer(e => {\n      const row = props.rows[e.y]\n      if (e.type === 'down' && row) surface.post({ press: row.id })\n      else if (e.type === 'move') surface.setState({ ...surface.state, hover: e.y })\n    })\n    surface.onKey(e => surface.post({ key: e.key }))\n    surface.every(50, () => surface.setState({ ...surface.state, ticks: surface.state.ticks + 1 }))\n  }\n  return h(Box, { flexDirection: 'column' },\n    ...props.rows.map((r, i) => h(Text, { key: r.id, color: state.hover === i ? 'cyan' : undefined }, r.label)),\n    h(Text, { dimColor: true }, 'ticks:' + state.ticks),\n    h(Button, { key: 'more', label: 'plus', onPress: () => surface.post({ more: true }) }),\n  )\n}\n"
+    }
+   ]
+  }
+ }
+}

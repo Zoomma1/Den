@@ -1,0 +1,4 @@
+{"type": "control_response", "response": {"subtype": "success", "request_id": "den-ui-msg", "response": {"handled": true}}}
+{"type": "control_response", "response": {"subtype": "success", "request_id": "den-ui-fault", "response": {"handled": true}}}
+{"type": "control_response", "response": {"subtype": "success", "request_id": "den-ui-client-press", "response": {"handled": true, "reached": {"plugin": "demo", "element": "x", "component": "Pane", "requestId": "demo", "surface": "desktop"}}}}
+{"type": "system", "subtype": "ui_invalidate", "event": "ui.render", "instances": [{"surface": "desktop", "component": "Pane", "instance_id": "demo"}], "uuid": "uuid-factice", "session_id": "session-factice"}
