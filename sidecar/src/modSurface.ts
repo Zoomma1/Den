@@ -7,7 +7,10 @@ import { spawn as nodeSpawn, type ChildProcess } from "node:child_process";
 import { StringDecoder } from "node:string_decoder";
 import type { SpawnedProcess, SpawnOptions } from "@anthropic-ai/claude-agent-sdk";
 import type {
+  ModCopyResult,
   ModInput,
+  ModPaneAction,
+  ModPanes,
   ModPress,
   ModRender,
   ModSelect,
@@ -15,7 +18,18 @@ import type {
 } from "../../src/types/protocol";
 
 type UiRequest = ModRender | ModPress | ModInput | ModSelect;
-type Pending = { kind: "render" | "result"; requestId: string; timer: NodeJS.Timeout };
+// requestId null = requête interne (roster à l'attache), aucune réponse à l'UI.
+type Pending = {
+  kind: "render" | "result" | "pane";
+  requestId: string | null;
+  action?: ModPaneAction["action"];
+  timer: NodeJS.Timeout;
+};
+
+// Le moteur abandonne ui_copy à 5 s : on répond avant lui.
+const COPY_TIMEOUT_MS = 4_000;
+// La réponse de ui_press n'arrive qu'à la fin du handler du mod (peut durer des secondes).
+const INTERACTION_TIMEOUT_MS = 120_000;
 
 const ID_PREFIX = "den-ui-";
 const ATTACH_ID = `${ID_PREFIX}attach`;
@@ -27,15 +41,20 @@ export interface ModSurfaceDeps {
   send(message: SidecarToUIMessage): void;
   /** Écrit une ligne dans le stdin du moteur ; défaut : stdin du process spawné. */
   write?(line: string): void;
+  /** Rendus et actions de pane. */
   timeoutMs?: number;
+  /** Press / input / select. */
+  interactionTimeoutMs?: number;
 }
 
 export class ModSurface {
   private readonly send: (message: SidecarToUIMessage) => void;
   private readonly timeoutMs: number;
+  private readonly interactionTimeoutMs: number;
   private writeLine: (line: string) => void;
   private readonly clientId = `den-${++clientCounter}`;
   private readonly pending = new Map<string, Pending>();
+  private readonly copies = new Map<string, NodeJS.Timeout>();
   private counter = 0;
   private attachStarted = false;
   private attachRetried = false;
@@ -44,6 +63,7 @@ export class ModSurface {
   constructor(deps: ModSurfaceDeps) {
     this.send = deps.send;
     this.timeoutMs = deps.timeoutMs ?? 10_000;
+    this.interactionTimeoutMs = deps.interactionTimeoutMs ?? INTERACTION_TIMEOUT_MS;
     this.writeLine = deps.write ?? (() => {});
   }
 
@@ -93,7 +113,44 @@ export class ModSurface {
       isRender ? "render" : "result",
       msg.requestId,
       toEngineRequest(msg, this.clientId),
+      isRender ? this.timeoutMs : this.interactionTimeoutMs,
     );
+  }
+
+  handlePaneAction(msg: ModPaneAction): void {
+    if (!this.isAttached) {
+      this.reply({ kind: "pane", requestId: msg.requestId }, NOT_ATTACHED);
+      return;
+    }
+    this.request(
+      "pane",
+      msg.requestId,
+      { subtype: PANE_SUBTYPES[msg.action], client_id: this.clientId, id: msg.id ?? undefined },
+      this.timeoutMs,
+      msg.action,
+    );
+  }
+
+  handleCopyResult(msg: ModCopyResult): void {
+    this.answerCopy(msg.requestId, msg.copied);
+  }
+
+  private answerCopy(requestId: string, copied: boolean): void {
+    const timer = this.copies.get(requestId);
+    if (!timer) return;
+    clearTimeout(timer);
+    this.copies.delete(requestId);
+    this.writeLine(
+      JSON.stringify({
+        type: "control_response",
+        response: { subtype: "success", request_id: requestId, response: { copied } },
+      }),
+    );
+  }
+
+  private handleCopyRequest(requestId: string, text: unknown): void {
+    this.copies.set(requestId, setTimeout(() => this.answerCopy(requestId, false), COPY_TIMEOUT_MS));
+    this.send({ type: "mod_copy_request", requestId, text: String(text ?? "") });
   }
 
   handleLine(line: string): void {
@@ -110,6 +167,8 @@ export class ModSurface {
 
     if (obj.type === "control_response") {
       this.handleResponse(obj.response);
+    } else if (obj.type === "control_request" && obj.request?.subtype === "ui_copy") {
+      if (typeof obj.request_id === "string") this.handleCopyRequest(obj.request_id, obj.request.text);
     } else if (obj.type === "system") {
       this.handlePush(obj);
     }
@@ -121,6 +180,7 @@ export class ModSurface {
       subtype: "ui_attach",
       surface: "desktop",
       client_id: this.clientId,
+      answers: ["ui_copy"],
     });
   }
 
@@ -128,13 +188,19 @@ export class ModSurface {
     this.writeLine(JSON.stringify({ type: "control_request", request_id: requestId, request }));
   }
 
-  private request(kind: Pending["kind"], requestId: string, request: Record<string, unknown>): void {
+  private request(
+    kind: Pending["kind"],
+    requestId: string | null,
+    request: Record<string, unknown>,
+    timeoutMs: number,
+    action?: Pending["action"],
+  ): void {
     const id = `${ID_PREFIX}${++this.counter}`;
     const timer = setTimeout(() => {
       this.pending.delete(id);
       this.reply({ kind, requestId }, "timeout");
-    }, this.timeoutMs);
-    this.pending.set(id, { kind, requestId, timer });
+    }, timeoutMs);
+    this.pending.set(id, { kind, requestId, action, timer });
     this.writeRequest(id, request);
   }
 
@@ -146,6 +212,8 @@ export class ModSurface {
     if (id === ATTACH_ID) {
       if (!failure) {
         this.isAttached = true;
+        // Un pane ouvert avant l'attache ne pousse rien : on lit le roster.
+        this.request("pane", null, { subtype: PANE_SUBTYPES.roster, client_id: this.clientId }, this.timeoutMs, "roster");
       } else if (!this.attachRetried) {
         this.attachRetried = true;
         this.attach();
@@ -157,15 +225,28 @@ export class ModSurface {
     if (!entry) return;
     clearTimeout(entry.timer);
     this.pending.delete(id);
-    this.reply(entry, failure, response.response ?? {});
+    const r = response.response ?? {};
+    if (entry.action === "roster" && !failure) this.send(toModPanes(r));
+    this.reply(entry, failure, r);
   }
 
   private reply(
-    target: { kind: Pending["kind"]; requestId: string },
+    target: { kind: Pending["kind"]; requestId: string | null; action?: Pending["action"] },
     error: string | null,
     r: any = {},
   ): void {
-    if (target.kind === "render") {
+    if (target.requestId === null) return;
+    if (target.kind === "pane") {
+      const handled = !error && (target.action === "close" ? r.closed === true : true);
+      const value = target.action === "show" ? r.shown_id : target.action === "focus" ? r.focused_id : undefined;
+      this.send({
+        type: "mod_result",
+        requestId: target.requestId,
+        handled,
+        ...(!error && value !== undefined ? { value } : {}),
+        ...(error ? { error } : {}),
+      });
+    } else if (target.kind === "render") {
       this.send({
         type: "mod_tree",
         requestId: target.requestId,
@@ -200,12 +281,7 @@ export class ModSurface {
         });
         break;
       case "ui_panes":
-        this.send({
-          type: "mod_panes",
-          panes: obj.panes,
-          shownId: obj.shown_id ?? null,
-          focusedId: obj.focused_id ?? null,
-        });
+        this.send(toModPanes(obj));
         break;
       case "ui_invalidate":
         this.send({
@@ -222,12 +298,39 @@ export class ModSurface {
   // Le moteur est mort : plus rien ne répondra aux requêtes en vol.
   private reset(error: string): void {
     this.isAttached = false;
+    for (const timer of this.copies.values()) clearTimeout(timer);
+    this.copies.clear();
     for (const [id, entry] of this.pending) {
       clearTimeout(entry.timer);
       this.pending.delete(id);
       this.reply(entry, error);
     }
   }
+}
+
+const PANE_SUBTYPES = {
+  show: "ui_pane_show",
+  focus: "ui_pane_focus",
+  close: "ui_close",
+  roster: "ui_panes",
+} as const;
+
+// Le moteur parle snake_case, le protocole UI camelCase.
+function toModPanes(r: any): ModPanes {
+  return {
+    type: "mod_panes",
+    panes: (r.panes ?? []).map((p: any) => ({
+      id: p.id,
+      title: p.title,
+      plugin: p.plugin,
+      closeOnEscape: p.close_on_escape,
+      rows: p.rows,
+      columns: p.columns,
+    })),
+    shownId: r.shown_id ?? null,
+    focusedId: r.focused_id ?? null,
+    focusRequestedId: r.focus_requested_id ?? null,
+  };
 }
 
 function toEngineRequest(msg: UiRequest, clientId: string): Record<string, unknown> {

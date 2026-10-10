@@ -24,7 +24,9 @@ import { createInterface } from "node:readline";
 import { query, type SDKUserMessage, type SlashCommand } from "@anthropic-ai/claude-agent-sdk";
 import {
   isInterruptMessage,
+  isModCopyResult,
   isModInput,
+  isModPaneAction,
   isModPress,
   isModRender,
   isModSelect,
@@ -310,6 +312,9 @@ async function pump(): Promise<void> {
         // chiefly the tool_result blocks").
         const content = sdkMessage.message.content;
         if (Array.isArray(content)) {
+          // tool_use_result est par message, pas par bloc : ambigu dès qu'il y a plusieurs tool_result.
+          const single = content.filter((b) => b.type === "tool_result").length === 1;
+          const structured = single ? sdkMessage.tool_use_result : undefined;
           for (const block of content) {
             if (block.type === "tool_result") {
               send({
@@ -317,6 +322,7 @@ async function pump(): Promise<void> {
                 id: currentTurnId(),
                 toolUseId: block.tool_use_id,
                 output: block.content,
+                ...(structured !== undefined ? { structured } : {}),
                 isError: block.is_error,
               });
             }
@@ -394,6 +400,10 @@ rl.on("line", (line) => {
     void handleSetMode(msg.mode);
   } else if (isModRender(msg) || isModPress(msg) || isModInput(msg) || isModSelect(msg)) {
     modSurface.handleUiMessage(msg);
+  } else if (isModPaneAction(msg)) {
+    modSurface.handlePaneAction(msg);
+  } else if (isModCopyResult(msg)) {
+    modSurface.handleCopyResult(msg);
   }
 });
 

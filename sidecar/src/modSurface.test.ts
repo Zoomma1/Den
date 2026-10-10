@@ -10,6 +10,10 @@ const fixture = (name: string) =>
 
 const responses = [...fixture("responses-render.ndjson"), ...fixture("responses-pane-handoff.ndjson")];
 const pushes = fixture("pushes.ndjson");
+const panesLines = fixture("run2-panes.ndjson").map((l) => JSON.parse(l));
+const [copyRequest] = fixture("run2-copy.ndjson").map((l) => JSON.parse(l));
+
+const paneResponse = (id: string) => panesLines.find((o) => o.response?.request_id === id)!;
 
 /** Ligne de fixture dont le request_id est remplacé par celui réellement émis. */
 function respondLike(fixtureId: string, requestId: string): string {
@@ -33,6 +37,9 @@ function setup(attach = true) {
         response: { subtype: "success", request_id: written[0].request_id, response: { surfaces: ["desktop"] } },
       }),
     );
+    // Lecture du roster à l'attache : hors du périmètre des tests de requêtes (indices written[1+]).
+    expect(written[1].request.subtype).toBe("ui_panes");
+    written.splice(1, 1);
   }
   return { surface, sent, written };
 }
@@ -48,6 +55,7 @@ describe("attache", () => {
     expect(written).toHaveLength(1);
     expect(written[0].request.subtype).toBe("ui_attach");
     expect(written[0].request.surface).toBe("desktop");
+    expect(written[0].request.answers).toEqual(["ui_copy"]);
     expect(written[0].request.client_id).toMatch(/^den-\d+$/);
     expect(written[0].request_id).toMatch(/^den-ui-/);
   });
@@ -174,11 +182,30 @@ describe("requêtes UI -> moteur", () => {
 
   it("timeout -> réponse en erreur, réponse tardive ignorée", () => {
     const { surface, sent, written } = setup();
-    surface.handleUiMessage({ type: "mod_press", requestId: "t", plugin: "p", handle: 1 });
+    surface.handleUiMessage({ type: "mod_render", requestId: "t", component: "Pane", instanceId: "p", props: {} });
     vi.advanceTimersByTime(1000);
-    expect(sent).toEqual([{ type: "mod_result", requestId: "t", handled: false, error: "timeout" }]);
+    expect(sent).toEqual([
+      { type: "mod_tree", requestId: "t", tree: null, hooked: false, rewritten: false, error: "timeout" },
+    ]);
     surface.handleLine(respondLike("den-ui-later", written[1].request_id));
     expect(sent).toHaveLength(1);
+  });
+
+  it("press/input/select attendent 120 s, les rendus 10 s", () => {
+    const surface = new ModSurface({ send: (m) => sent.push(m), write: () => {} });
+    const sent: SidecarToUIMessage[] = [];
+    surface.handleLine("{}");
+    surface.handleLine(
+      JSON.stringify({ type: "control_response", response: { subtype: "success", request_id: "den-ui-attach" } }),
+    );
+    surface.handleUiMessage({ type: "mod_press", requestId: "p", plugin: "x", handle: 1 });
+    surface.handleUiMessage({ type: "mod_render", requestId: "r", component: "Pane", instanceId: "p", props: {} });
+    vi.advanceTimersByTime(10_000);
+    expect(sent.map((m) => m.type)).toEqual(["mod_tree"]);
+    vi.advanceTimersByTime(109_999);
+    expect(sent).toHaveLength(1);
+    vi.advanceTimersByTime(1);
+    expect(sent[1]).toEqual({ type: "mod_result", requestId: "p", handled: false, error: "timeout" });
   });
 
   it("corrèle plusieurs requêtes en vol dans le désordre", () => {
@@ -209,12 +236,13 @@ describe("pushes moteur -> UI (fixtures réelles)", () => {
         panes: [{ id: "handoff-copy", title: "Handoff : contexte à 2%", plugin: "handoff-copy", rows: 8 }],
         shownId: "handoff-copy",
         focusedId: null,
+        focusRequestedId: null,
       },
       {
         type: "mod_invalidate",
         instances: [{ component: "Pane", instanceId: "handoff-copy" }],
       },
-      { type: "mod_panes", panes: [], shownId: null, focusedId: null },
+      { type: "mod_panes", panes: [], shownId: null, focusedId: null, focusRequestedId: null },
     ]);
   });
 
@@ -243,5 +271,126 @@ describe("ModSurface.spawn", () => {
     });
     expect(await exited).toBe(true);
     stderr.mockRestore();
+  });
+});
+
+describe("panes (fixtures run 2)", () => {
+  const rosterResponse = (id: string) => JSON.stringify(paneResponse("den-ui-roster")).replace("den-ui-roster", id);
+
+  it("mappe le roster en camelCase", () => {
+    const { surface, sent, written } = setup();
+    surface.handlePaneAction({ type: "mod_pane_action", requestId: "k", action: "roster" });
+    expect(written[1].request).toMatchObject({ subtype: "ui_panes", client_id: written[0].request.client_id });
+    surface.handleLine(rosterResponse(written[1].request_id));
+    expect(sent).toEqual([
+      {
+        type: "mod_panes",
+        panes: [
+          { id: "files-pane", title: "Files touched", plugin: "files-pane" },
+          { id: "daily-todos", title: "Plan du jour", plugin: "daily-todos", closeOnEscape: true },
+          { id: "handoff-copy", title: "Handoff : contexte à 2%", plugin: "handoff-copy", rows: 8 },
+        ],
+        shownId: "handoff-copy",
+        focusedId: null,
+        focusRequestedId: "daily-todos",
+      },
+      { type: "mod_result", requestId: "k", handled: true },
+    ]);
+  });
+
+  it("pousse le roster à l'attache", () => {
+    const sent: SidecarToUIMessage[] = [];
+    const written: any[] = [];
+    const surface = new ModSurface({ send: (m) => sent.push(m), write: (l) => written.push(JSON.parse(l)) });
+    surface.handleLine("{}");
+    surface.handleLine(JSON.stringify({ type: "control_response", response: { subtype: "success", request_id: written[0].request_id } }));
+    surface.handleLine(rosterResponse(written[1].request_id));
+    expect(sent).toHaveLength(1);
+    expect(sent[0]).toMatchObject({ type: "mod_panes", shownId: "handoff-copy" });
+  });
+
+  it.each([
+    ["show", "ui_pane_show", "den-ui-show", { handled: true, value: "files-pane" }],
+    ["focus", "ui_pane_focus", "den-ui-focus", { handled: true, value: "files-pane" }],
+    ["close", "ui_close", "den-ui-close", { handled: true }],
+  ] as const)("%s -> %s", (action, subtype, fixtureId, expected) => {
+    const { surface, sent, written } = setup();
+    surface.handlePaneAction({ type: "mod_pane_action", requestId: "a", action, id: "files-pane" });
+    expect(written[1].request).toMatchObject({ subtype, id: "files-pane" });
+    surface.handleLine(JSON.stringify(paneResponse(fixtureId)).replace(fixtureId, written[1].request_id));
+    expect(sent).toEqual([{ type: "mod_result", requestId: "a", ...expected }]);
+  });
+
+  it("close avec closed:false -> handled false ; erreur et non attaché propagés", () => {
+    const { surface, sent, written } = setup();
+    surface.handlePaneAction({ type: "mod_pane_action", requestId: "a", action: "close", id: "x" });
+    surface.handleLine(
+      JSON.stringify({ type: "control_response", response: { subtype: "success", request_id: written[1].request_id, response: { closed: false } } }),
+    );
+    expect(sent).toEqual([{ type: "mod_result", requestId: "a", handled: false }]);
+
+    const cold = setup(false);
+    cold.surface.handlePaneAction({ type: "mod_pane_action", requestId: "b", action: "show", id: "x" });
+    expect(cold.sent).toEqual([{ type: "mod_result", requestId: "b", handled: false, error: "surface not attached" }]);
+  });
+
+  it("timeout des actions de pane à 10 s", () => {
+    const sent: SidecarToUIMessage[] = [];
+    const surface = new ModSurface({ send: (m) => sent.push(m), write: () => {} });
+    surface.handleLine("{}");
+    surface.handleLine(JSON.stringify({ type: "control_response", response: { subtype: "success", request_id: "den-ui-attach" } }));
+    surface.handlePaneAction({ type: "mod_pane_action", requestId: "t", action: "show", id: "x" });
+    vi.advanceTimersByTime(10_000);
+    expect(sent).toEqual([{ type: "mod_result", requestId: "t", handled: false, error: "timeout" }]);
+  });
+});
+
+describe("ui_copy (fixtures run 2)", () => {
+  const engineId = copyRequest.request_id;
+  const copyReplies = (written: any[]) => written.filter((w) => w.type === "control_response");
+
+  it("relaie en mod_copy_request puis répond au retour de l'UI", () => {
+    const { surface, sent, written } = setup();
+    surface.handleLine(JSON.stringify(copyRequest));
+    expect(sent).toEqual([{ type: "mod_copy_request", requestId: engineId, text: "<texte du handoff>" }]);
+    surface.handleCopyResult({ type: "mod_copy_result", requestId: engineId, copied: true });
+    expect(copyReplies(written)).toEqual([fixture("run2-copy.ndjson").map((l) => JSON.parse(l))[1]]);
+  });
+
+  it("répond copied:false après 4 s sans réponse de l'UI, une seule fois", () => {
+    const { surface, written } = setup();
+    surface.handleLine(JSON.stringify(copyRequest));
+    vi.advanceTimersByTime(3_999);
+    expect(copyReplies(written)).toHaveLength(0);
+    vi.advanceTimersByTime(1);
+    expect(copyReplies(written)).toEqual([
+      { type: "control_response", response: { subtype: "success", request_id: engineId, response: { copied: false } } },
+    ]);
+    surface.handleCopyResult({ type: "mod_copy_result", requestId: engineId, copied: true });
+    expect(copyReplies(written)).toHaveLength(1);
+  });
+
+  it("ignore un mod_copy_result inconnu ou déjà traité", () => {
+    const { surface, written } = setup();
+    surface.handleCopyResult({ type: "mod_copy_result", requestId: "nope", copied: true });
+    surface.handleLine(JSON.stringify(copyRequest));
+    surface.handleCopyResult({ type: "mod_copy_result", requestId: engineId, copied: true });
+    surface.handleCopyResult({ type: "mod_copy_result", requestId: engineId, copied: false });
+    vi.advanceTimersByTime(10_000);
+    expect(copyReplies(written)).toHaveLength(1);
+  });
+
+  it("ne touche à aucun autre control_request", () => {
+    const { surface, sent, written } = setup();
+    const before = written.length;
+    surface.handleLine(
+      JSON.stringify({ type: "control_request", request_id: "sdk-1", request: { subtype: "can_use_tool", tool_name: "Bash", input: {} } }),
+    );
+    surface.handleLine(
+      JSON.stringify({ type: "control_request", request_id: "sdk-2", request: { subtype: "ui_other", text: "x" } }),
+    );
+    vi.advanceTimersByTime(10_000);
+    expect(sent).toEqual([]);
+    expect(written).toHaveLength(before);
   });
 });

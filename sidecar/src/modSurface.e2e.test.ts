@@ -37,6 +37,12 @@ describe.skipIf(process.env.DEN_E2E_MODS !== "1")("modSurface e2e", () => {
       for (let i = 0; i < 100 && !surface.attached; i++) await wait(100);
       expect(surface.attached).toBe(true);
 
+      surface.handlePaneAction({ type: "mod_pane_action", requestId: "e2e-roster", action: "roster" });
+      for (let i = 0; i < 100 && !sent.some((m) => m.type === "mod_result"); i++) await wait(100);
+      const roster = sent.find((m) => m.type === "mod_result");
+      console.log("roster:", JSON.stringify(roster), JSON.stringify(sent.find((m) => m.type === "mod_panes")));
+      expect(roster).toMatchObject({ type: "mod_result", requestId: "e2e-roster", handled: true });
+
       surface.handleUiMessage({
         type: "mod_render",
         requestId: "e2e-1",
