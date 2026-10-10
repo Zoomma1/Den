@@ -93,6 +93,49 @@ function unsupported(type: string, opts: RenderOptions): HTMLElement {
   return box;
 }
 
+const SVG_MAX_CHARS = 131072;
+
+function svgError(alt: unknown): HTMLElement {
+  const box = document.createElement("div");
+  box.className = "den-mod-svg-error";
+  box.textContent = typeof alt === "string" && alt ? `Dessin indisponible : ${alt}` : "Dessin indisponible";
+  return box;
+}
+
+// Bornes 1..4000 px : un mod ne dimensionne pas le panneau à sa guise.
+function pixels(value: unknown): string | undefined {
+  if (typeof value !== "number" || !Number.isFinite(value)) return undefined;
+  return `${Math.min(4000, Math.max(1, Math.round(value)))}px`;
+}
+
+function svgElement(p: Record<string, unknown>): HTMLElement {
+  const { source, alt } = p;
+  if (typeof source !== "string" || typeof alt !== "string" || source.length > SVG_MAX_CHARS) {
+    return svgError(alt);
+  }
+  const width = pixels(p.width);
+  const height = pixels(p.height);
+  // Jamais d'insertion du markup dans le DOM : <img> data: n'exécute aucun script, l'iframe sandbox="" non plus.
+  if (p.isInteractive === true) {
+    const frame = document.createElement("iframe");
+    frame.className = "den-mod-svg";
+    frame.setAttribute("sandbox", "");
+    frame.setAttribute("referrerpolicy", "no-referrer");
+    frame.title = alt;
+    frame.srcdoc = source;
+    setStyle(frame, "width", width);
+    frame.style.height = height ?? "160px";
+    return frame;
+  }
+  const img = document.createElement("img");
+  img.className = "den-mod-svg";
+  img.alt = alt;
+  img.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(source)}`;
+  setStyle(img, "width", width);
+  setStyle(img, "height", height);
+  return img;
+}
+
 function build(node: RenderNode, opts: RenderOptions): Node {
   if (typeof node === "string" || typeof node === "number") {
     return document.createTextNode(String(node));
@@ -102,6 +145,16 @@ function build(node: RenderNode, opts: RenderOptions): Node {
     return opts.renderEngineDefault?.(ref) ?? document.createDocumentFragment();
   }
   const el = node as ElementNode;
+  if (el.type === "Client" && opts.renderClient) {
+    try {
+      return opts.renderClient(el);
+    } catch {
+      const box = document.createElement("div");
+      box.className = "den-mod-unsupported";
+      box.textContent = "Ce module client n'a pas pu s'afficher.";
+      return box;
+    }
+  }
   if (!isSupportedElement(el.type)) return unsupported(el.type, opts);
   const p = el.props ?? {};
   const key = typeof p.key === "string" ? p.key : undefined;
@@ -150,6 +203,8 @@ function build(node: RenderNode, opts: RenderOptions): Node {
       });
       return a;
     }
+    case "Svg":
+      return svgElement(p);
     case "Code": {
       const pre = document.createElement("pre");
       pre.className = "den-mod-code";

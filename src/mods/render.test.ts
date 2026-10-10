@@ -89,12 +89,12 @@ describe("renderTree", () => {
     const onUnsupported = vi.fn();
     const openTerminal = vi.fn();
     const root = renderTree(
-      { type: "Box", children: [{ type: "Svg", props: { width: 3 } }, "après"] },
+      { type: "Box", children: [{ type: "Raster", props: { width: 3 } }, "après"] },
       { onUnsupported, openTerminal },
     );
     const block = root.querySelector(".den-mod-unsupported");
-    expect(block?.textContent).toContain("Ce mod utilise un element que Den ne sait pas afficher : Svg");
-    expect(onUnsupported).toHaveBeenCalledWith("Svg");
+    expect(block?.textContent).toContain("Ce mod utilise un element que Den ne sait pas afficher : Raster");
+    expect(onUnsupported).toHaveBeenCalledWith("Raster");
     expect(root.textContent).toContain("après");
     (block?.querySelector("button") as HTMLButtonElement).click();
     expect(openTerminal).toHaveBeenCalled();
@@ -193,5 +193,99 @@ describe("replaceKeepingFocus", () => {
     expect((container.querySelector("input") as HTMLInputElement).value).toBe("y");
     container.remove();
     other.remove();
+  });
+});
+
+describe("renderTree Svg, Client et types inchangés", () => {
+  describe("Svg", () => {
+    const svg = '<svg xmlns="http://www.w3.org/2000/svg"><circle r="1"/></svg>';
+
+    it("rend un <img> data: avec alt et taille, sans <svg> dans le DOM", () => {
+      const root = renderTree({ type: "Svg", props: { source: svg, alt: "rond", width: 40, height: 9999 } });
+      const img = root.querySelector("img") as HTMLImageElement;
+      expect(img.getAttribute("src")).toBe(`data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`);
+      expect(img.alt).toBe("rond");
+      expect(img.style.width).toBe("40px");
+      expect(img.style.height).toBe("4000px");
+      expect(root.querySelector("svg, circle")).toBeNull();
+    });
+
+    it("garde un source avec <script> en URL de données", () => {
+      const evil = '<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>';
+      const root = renderTree({ type: "Svg", props: { source: evil, alt: "x" } });
+      expect(root.querySelector("script, svg")).toBeNull();
+      expect(root.querySelector("img")?.getAttribute("src")).toContain(encodeURIComponent("<script>"));
+    });
+
+    it("isInteractive : iframe au sandbox vide, hauteur 160 par défaut", () => {
+      const root = renderTree({ type: "Svg", props: { source: svg, alt: "anim", isInteractive: true } });
+      const frame = root.querySelector("iframe") as HTMLIFrameElement;
+      expect(frame.sandbox.length).toBe(0);
+      expect(frame.getAttribute("sandbox")).toBe("");
+      expect(frame.getAttribute("referrerpolicy")).toBe("no-referrer");
+      expect(frame.title).toBe("anim");
+      expect(frame.style.height).toBe("160px");
+      expect(root.querySelector("svg")).toBeNull();
+    });
+
+    it("affiche « indisponible » si source trop long, absent, non string ou alt manquant", () => {
+      const bad = [
+        { source: "x".repeat(131073), alt: "gros" },
+        { alt: "vide" },
+        { source: 3, alt: "num" },
+        { source: svg },
+      ];
+      for (const props of bad) {
+        const root = renderTree({ type: "Svg", props });
+        expect(root.querySelector(".den-mod-svg-error")?.textContent).toContain("Dessin indisponible");
+        expect(root.querySelector("img, iframe")).toBeNull();
+      }
+      const withAlt = renderTree({ type: "Svg", props: { source: "x".repeat(131073), alt: "gros" } });
+      expect(withAlt.textContent).toContain("gros");
+      expect(renderTree({ type: "Svg" }).querySelector(".den-mod-svg-error")).not.toBeNull();
+    });
+  });
+
+  describe("Client", () => {
+    const node = { type: "Client", props: { key: "k", module: "m" }, client: { plugin: "p" } } as unknown as RenderNode;
+
+    it("délègue à renderClient une fois avec le nœud", () => {
+      const out = document.createElement("section");
+      const renderClient = vi.fn(() => out);
+      const onUnsupported = vi.fn();
+      const root = renderTree(node, { renderClient, onUnsupported });
+      expect(renderClient).toHaveBeenCalledTimes(1);
+      expect(renderClient).toHaveBeenCalledWith(node);
+      expect(root.firstChild).toBe(out);
+      expect(onUnsupported).not.toHaveBeenCalled();
+    });
+
+    it("sans renderClient : repli non supporté inchangé", () => {
+      const onUnsupported = vi.fn();
+      const root = renderTree(node, { onUnsupported });
+      expect(root.querySelector(".den-mod-unsupported")?.textContent).toContain("Client");
+      expect(onUnsupported).toHaveBeenCalledWith("Client");
+    });
+
+    it("renderClient qui lève : bloc d'erreur, sans throw ni onUnsupported", () => {
+      const onUnsupported = vi.fn();
+      const root = renderTree(node, {
+        renderClient: () => {
+          throw new Error("boom");
+        },
+        onUnsupported,
+      });
+      expect(root.querySelector(".den-mod-unsupported")).not.toBeNull();
+      expect(onUnsupported).not.toHaveBeenCalled();
+    });
+  });
+
+  it("Image et type inconnu gardent le bloc d'erreur et le bouton terminal", () => {
+    const onUnsupported = vi.fn();
+    for (const type of ["Image", "Inconnu"]) {
+      const root = renderTree({ type }, { onUnsupported });
+      expect(root.querySelector(".den-mod-unsupported button")).not.toBeNull();
+      expect(onUnsupported).toHaveBeenLastCalledWith(type);
+    }
   });
 });

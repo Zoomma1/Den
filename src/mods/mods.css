@@ -108,3 +108,17 @@
   border: 1px solid var(--den-status-error);
   border-radius: var(--den-radius);
 }
+
+.den-mod-svg {
+  display: block;
+  max-width: 100%;
+  border: 0;
+}
+
+.den-mod-svg-error {
+  padding: var(--den-space-1) var(--den-space-3);
+  color: var(--den-fg-secondary);
+  background: var(--den-glass-1);
+  border: 1px dashed var(--den-border);
+  border-radius: var(--den-radius);
+}
