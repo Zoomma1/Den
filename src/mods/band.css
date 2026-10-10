@@ -1,0 +1,17 @@
+.den-mod-band {
+  flex: none;
+  max-height: 8lh;
+  overflow-y: auto;
+  margin: 0 var(--den-space-3) var(--den-space-2);
+  padding: var(--den-space-1) var(--den-space-2);
+  font-family: var(--den-font-mono);
+  font-size: calc(var(--den-font-size-base) - 1px);
+  color: var(--den-fg-secondary);
+  background: var(--den-glass-1);
+  border: 1px solid var(--den-border);
+  border-radius: var(--den-radius);
+}
+
+.den-mod-band[hidden] {
+  display: none;
+}
