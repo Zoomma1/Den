@@ -1,0 +1,25 @@
+.den-mod-client {
+  position: relative;
+  font-family: inherit;
+  cursor: default;
+  overflow: hidden;
+}
+
+.den-mod-client:focus-visible {
+  outline: 1px solid var(--den-accent, currentColor);
+  outline-offset: -1px;
+}
+
+.den-mod-client-probe {
+  position: absolute;
+  width: 1ch;
+  height: 1lh;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.den-mod-client-fault {
+  color: var(--den-ansi-red, #c33);
+  font-size: 0.9em;
+  opacity: 0.85;
+}
