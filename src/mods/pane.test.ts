@@ -97,6 +97,16 @@ describe("createPaneHost", () => {
     expect(mount.querySelector(".rendered")).not.toBeNull();
   });
 
+  it("transmet tab et origine Pane aux options", async () => {
+    const options = vi.fn(() => ({}));
+    host.dispose();
+    host = createPaneHost({ mount, client, renderTree, options });
+    activate("t1");
+    pushPanes({ tabId: "t1", panes: [A, B], shownId: "b" });
+    await flush();
+    expect(options).toHaveBeenCalledWith("t1", { component: "Pane", instanceId: "b" });
+  });
+
   it("arbre null, moteur ou erreur -> corps vide", async () => {
     activate("t1");
     client.requestRender.mockResolvedValueOnce({ tree: null, hooked: false, rewritten: false });

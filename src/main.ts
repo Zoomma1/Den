@@ -9,6 +9,7 @@ import "./mods/mods.css";
 import "./mods/chrome.css";
 import "./mods/pane.css";
 import "./mods/band.css";
+import "./mods/client/client.css";
 import { Registry, type DenContext } from "./core/registry";
 import * as theme from "./theme";
 import * as workspace from "./workspace";
@@ -20,6 +21,7 @@ import * as interactive from "./interactive";
 import * as plugins from "./plugins";
 import { createModsModule, getModRenderClient, getModRenderOptions } from "./mods";
 import { createAboveBand } from "./mods/band";
+import { createClientHost } from "./mods/client/host";
 import { createPaneHost } from "./mods/pane";
 import { renderTree } from "./mods/render";
 
@@ -63,7 +65,7 @@ registry.register({ name: "tabs", init: tabs.init });
 registry.register({ name: "terminal", init: terminal.init });
 registry.register({ name: "interactive", init: interactive.init });
 // mods après markdown et tabs : il branche le pont de la vue conversation et écoute les événements de tab.
-registry.register(createModsModule({ renderTree, openClaudeShell: terminal.openClaudeShell }));
+registry.register(createModsModule({ renderTree, openClaudeShell: terminal.openClaudeShell, createClientHost }));
 registry.register({ name: "plugins", init: plugins.init });
 
 registry

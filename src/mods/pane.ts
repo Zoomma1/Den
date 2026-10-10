@@ -138,7 +138,7 @@ export const createPaneHost: CreatePaneHost = ({ mount, client, renderTree, opti
       emptyBody();
       return;
     }
-    replaceKeepingFocus(bodyEl, renderTree(tree, options?.(tabId)));
+    replaceKeepingFocus(bodyEl, renderTree(tree, options?.(tabId, { component: "Pane", instanceId: pane.id })));
   }
 
   function syncVisibility(roster: PaneRoster | null): void {

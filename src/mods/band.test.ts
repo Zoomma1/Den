@@ -87,6 +87,16 @@ describe("createAboveBand", () => {
     expect(band()?.querySelector(".rendered")).not.toBeNull();
   });
 
+  it("transmet tab et origine AbovePrompt aux options", async () => {
+    const options = vi.fn(() => ({}));
+    const requestRender = vi.fn(async () => hooked);
+    const renderTree = vi.fn(() => document.createElement("div"));
+    active = createAboveBand({ client: { requestRender }, renderTree, options });
+    emit("den:active-tab-changed", { tabId: "t1" });
+    await tick();
+    expect(options).toHaveBeenCalledWith("t1", { component: "AbovePrompt", instanceId: "above-prompt" });
+  });
+
   it("masque la bande quand rien n'est hooké ou que l'arbre est engine", async () => {
     let res: Res = { tree: null, hooked: false, rewritten: false };
     const { renderTree } = setup(async () => res);

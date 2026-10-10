@@ -5,17 +5,25 @@ import {
   isModCopyRequest,
   isModInvalidate,
   isModPanes,
+  isModClientModuleResult,
+  isModClientPressResult,
+  isModMessageResult,
   isModResult,
   isModStatus,
   isModToast,
   isModTree,
   isModsUnavailable,
   type DenProtocolMessage,
+  type ModClientModuleResult,
+  type ModClientPressResult,
+  type ModMessageResult,
   type ModResult,
   type ModTree,
 } from "../types/protocol";
 import {
   MOD_EVENTS,
+  type CreateClientHost,
+  type ModClient,
   type ModInvalidateEventDetail,
   type ModPaneClient,
   type ModPanesEventDetail,
@@ -30,17 +38,18 @@ const RENDER_TIMEOUT_MS = 5000;
 const ACTION_TIMEOUT_MS = 10_000;
 // La réponse d'un press n'arrive qu'à la fin du handler du mod (ex. Copier = model.fork, plusieurs secondes).
 const PRESS_TIMEOUT_MS = 120_000;
+const MESSAGE_TIMEOUT_MS = 120_000;
 const NOT_HOOKED = { tree: null, hooked: false, rewritten: false } as const;
 
 type RenderResult = Awaited<ReturnType<ModPaneClient["requestRender"]>>;
 type ActionResult = Awaited<ReturnType<ModPaneClient["paneAction"]>>;
 type TabInfo = { cwd: string | null; owner: string | null };
 
-let current: ModPaneClient | null = null;
+let current: ModClient | null = null;
 let currentOptions: ((tabId: string, origin?: ModOrigin) => RenderOptions) | null = null;
 
 /** Client des mods une fois le module initialisé ; `null` avant. */
-export function getModRenderClient(): ModPaneClient | null {
+export function getModRenderClient(): ModClient | null {
   return current;
 }
 
@@ -64,22 +73,26 @@ async function copyToClipboard(text: string): Promise<boolean> {
 
 // Un seul jeu de listeners window à la fois (ré-init, tests).
 let listeners: AbortController | null = null;
+let clientHost: ReturnType<CreateClientHost> | null = null;
 
 export function createModsModule(deps: {
   renderTree: RenderTreeFn;
   openClaudeShell?: OpenClaudeShell;
+  createClientHost?: CreateClientHost;
 }): DenModule {
   return {
     name: "mods",
     init(ctx: DenContext) {
       listeners?.abort();
       listeners = new AbortController();
+      clientHost?.dispose();
+      clientHost = null;
       const { signal } = listeners;
       const pending = new Map<string, (r: RenderResult) => void>();
-      const pendingResults = new Map<string, (r: ModResult) => void>();
+      const pendingResults = new Map<string, (r: DenProtocolMessage) => void>();
       let nextId = 0;
 
-      const client: ModPaneClient = {
+      const client: ModClient = {
         requestRender(tabId, req) {
           const requestId = `den-mod-${++nextId}`;
           return new Promise<RenderResult>((resolve) => {
@@ -98,36 +111,92 @@ export function createModsModule(deps: {
         paneAction(tabId, req) {
           return request(tabId, { type: "mod_pane_action", ...req }, ACTION_TIMEOUT_MS);
         },
+        async loadModule(tabId, plugin) {
+          const r = await exchange<ModClientModuleResult>(
+            tabId,
+            { type: "mod_client_module", plugin },
+            ACTION_TIMEOUT_MS,
+          );
+          if (!r.ok || !r.bundle) throw new Error(r.error ?? "bundle indisponible");
+          return r.bundle;
+        },
+        async press(tabId, address, element, event) {
+          const r = await exchange<ModClientPressResult>(
+            tabId,
+            { type: "mod_client_press", address, element, event },
+            PRESS_TIMEOUT_MS,
+          ).catch(failure);
+          return {
+            handled: r.handled,
+            ...(r.reached !== undefined && { reached: r.reached }),
+            ...(r.error !== undefined && { error: r.error }),
+          };
+        },
+        async message(tabId, address, data) {
+          const r = await exchange<ModMessageResult>(
+            tabId,
+            { type: "mod_message", address, data },
+            MESSAGE_TIMEOUT_MS,
+          ).catch(failure);
+          return {
+            handled: r.handled,
+            ...(r.props !== undefined && { props: r.props }),
+            ...(r.error !== undefined && { error: r.error }),
+          };
+        },
+        async fault(tabId, address, phase, reason) {
+          await request(tabId, { type: "mod_client_fault", address, phase, reason }, ACTION_TIMEOUT_MS);
+        },
       };
       current = client;
 
-      // Envoie et attend le mod_result de même requestId ; ne rejette jamais.
-      function request(tabId: string, message: object, timeoutMs: number): Promise<ActionResult> {
+      // Envoie et attend la réponse de même requestId ; rejette sur timeout ou échec d'envoi.
+      function exchange<R extends DenProtocolMessage>(
+        tabId: string,
+        message: object,
+        timeoutMs: number,
+      ): Promise<R> {
         const requestId = `den-mod-${++nextId}`;
-        return new Promise<ActionResult>((resolve) => {
-          const settle = (r: ActionResult) => {
+        return new Promise<R>((resolve, reject) => {
+          const done = () => {
             clearTimeout(timer);
             pendingResults.delete(requestId);
-            resolve(r);
           };
-          const timer = setTimeout(
-            () => settle({ handled: false, error: "délai dépassé" }),
-            timeoutMs,
-          );
-          pendingResults.set(requestId, (r) =>
-            settle({
-              handled: r.handled,
-              ...(r.value !== undefined && { value: r.value }),
-              ...(r.error !== undefined && { error: r.error }),
-            }),
-          );
-          send(tabId, { requestId, ...message }).catch((e) =>
-            settle({ handled: false, error: String(e) }),
-          );
+          const timer = setTimeout(() => {
+            done();
+            reject(new Error("délai dépassé"));
+          }, timeoutMs);
+          pendingResults.set(requestId, (r) => {
+            done();
+            resolve(r as R);
+          });
+          send(tabId, { requestId, ...message }).catch((e) => {
+            done();
+            reject(e instanceof Error ? e : new Error(String(e)));
+          });
         });
       }
 
-      function onTree(msg: ModTree): void {
+      const failure = (e: unknown): { handled: false; error: string; reached?: undefined; props?: undefined; value?: undefined } => ({
+        handled: false,
+        error: e instanceof Error ? e.message : String(e),
+      });
+
+      // Ne rejette jamais : handled:false + error.
+      async function request(tabId: string, message: object, timeoutMs: number): Promise<ActionResult> {
+        const r = await exchange<ModResult>(tabId, message, timeoutMs).catch(failure);
+        return {
+          handled: r.handled,
+          ...(r.value !== undefined && { value: r.value }),
+          ...(r.error !== undefined && { error: r.error }),
+        };
+      }
+
+      const clientModulesByTab = new Map<string, Record<string, string>>();
+
+      function onTree(tabId: string, msg: ModTree): void {
+        // Fusion : un rendu qui ne cite que certains plugins ne doit pas effacer le hash des autres.
+        if (msg.clientModules) clientModulesByTab.set(tabId, { ...clientModulesByTab.get(tabId), ...msg.clientModules });
         const settle = pending.get(msg.requestId);
         if (!settle) return;
         // Un arbre invalide ne doit jamais atteindre le rendu : on retombe sur le rendu Den.
@@ -146,6 +215,10 @@ export function createModsModule(deps: {
         });
       };
 
+      // Le getter du contrat n'a pas de tabId : on sert le record du tab actif.
+      const getClientModules = () => (activeTab && clientModulesByTab.get(activeTab)) || {};
+      clientHost = deps.createClientHost?.({ bridge: client, clientModules: getClientModules }) ?? null;
+
       const tabInfo = new Map<string, TabInfo>();
       const unsupportedSeen = new Set<string>();
       const options = (tabId: string, origin?: ModOrigin): RenderOptions => ({
@@ -163,6 +236,8 @@ export function createModsModule(deps: {
             { type: "mod_select", ...press, value, key, ...origin },
             ACTION_TIMEOUT_MS,
           ),
+        ...(clientHost &&
+          origin && { renderClient: (node) => clientHost!.renderClient(tabId, origin, node) }),
         openTerminal: () => {
           Promise.resolve(
             deps.openClaudeShell?.({
@@ -248,6 +323,7 @@ export function createModsModule(deps: {
         if (!tabId) return;
         statusByTab.delete(tabId);
         tabInfo.delete(tabId);
+        clientModulesByTab.delete(tabId);
         for (const k of unsupportedSeen) if (k.startsWith(`${tabId}\0`)) unsupportedSeen.delete(k);
         if (tabId === activeTab) renderStatus();
       }, { signal });
@@ -258,7 +334,7 @@ export function createModsModule(deps: {
         if (!detail) return;
         const { tabId, message: msg } = detail;
         if (isModTree(msg)) {
-          onTree(msg);
+          onTree(tabId, msg);
         } else if (isModStatus(msg)) {
           const texts = statusByTab.get(tabId) ?? new Map<string, string>();
           if (msg.text === "") texts.delete(msg.plugin);
@@ -271,7 +347,12 @@ export function createModsModule(deps: {
           // Sans moteur de mods, chaque rendu demandé ne ferait qu'un aller-retour IPC et un timer de 5 s pour rien.
           setModBridge(null);
           showBanner(msg.reason);
-        } else if (isModResult(msg)) {
+        } else if (
+          isModResult(msg) ||
+          isModClientModuleResult(msg) ||
+          isModClientPressResult(msg) ||
+          isModMessageResult(msg)
+        ) {
           pendingResults.get(msg.requestId)?.(msg);
         } else if (isModCopyRequest(msg)) {
           void copyToClipboard(msg.text).then((copied) =>

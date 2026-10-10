@@ -564,3 +564,156 @@ describe("mods/index — cache, invalidate, renderEngineDefault", () => {
     expect(box.querySelector("pre")).not.toBeNull();
   });
 });
+
+describe("mods/index — client des surfaces", () => {
+  const ADDR = { plugin: "p", component: "Pane" as const, instanceId: "r1", client: "k", module: "m" };
+  type Bridge = import("./contracts").ClientBridge;
+  let bridge: Bridge;
+
+  const lastSent = (type: string) => sent(type).at(-1)!;
+
+  beforeEach(() => {
+    bridge = getModRenderClient() as unknown as Bridge;
+  });
+
+  it("loadModule : résout sur le bundle, rejette sur ok:false et sur délai", async () => {
+    const p = bridge.loadModule("t1", "p");
+    const { msg } = lastSent("mod_client_module");
+    expect(msg).toMatchObject({ plugin: "p" });
+    const bundle = { plugin: "p", hash: "h" };
+    dispatch("t1", { type: "mod_client_module_result", requestId: msg.requestId, ok: true, bundle });
+    await expect(p).resolves.toEqual(bundle);
+
+    const p2 = bridge.loadModule("t1", "p");
+    dispatch("t1", { type: "mod_client_module_result", requestId: lastSent("mod_client_module").msg.requestId, ok: false, error: "nope" });
+    await expect(p2).rejects.toThrow("nope");
+
+    const p3 = bridge.loadModule("t1", "p");
+    const rejected = expect(p3).rejects.toThrow();
+    await vi.advanceTimersByTimeAsync(10_000);
+    await rejected;
+  });
+
+  it("press : résout sur mod_client_press_result, jamais de rejet (erreur, timeout 120 s, envoi en échec)", async () => {
+    const event = { type: "press" } as const;
+    const p = bridge.press("t1", ADDR, "el", event);
+    const { msg } = lastSent("mod_client_press");
+    expect(msg).toMatchObject({ address: ADDR, element: "el", event });
+    dispatch("t1", { type: "mod_client_press_result", requestId: msg.requestId, handled: true, reached: 1 });
+    await expect(p).resolves.toEqual({ handled: true, reached: 1 });
+
+    const p2 = bridge.press("t1", ADDR, "el", event);
+    dispatch("t1", { type: "mod_client_press_result", requestId: lastSent("mod_client_press").msg.requestId, handled: false, error: "boom" });
+    await expect(p2).resolves.toEqual({ handled: false, error: "boom" });
+
+    const p3 = bridge.press("t1", ADDR, "el", event);
+    await vi.advanceTimersByTimeAsync(119_999);
+    let settled = false;
+    void p3.then(() => (settled = true));
+    await flush();
+    expect(settled).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    await expect(p3).resolves.toMatchObject({ handled: false, error: expect.any(String) });
+
+    invokeMock.mockRejectedValueOnce(new Error("ipc"));
+    await expect(bridge.press("t1", ADDR, "el", event)).resolves.toEqual({ handled: false, error: "ipc" });
+  });
+
+  it("message : résout sur mod_message_result avec props, jamais de rejet", async () => {
+    const p = bridge.message("t1", ADDR, { a: 1 });
+    const { msg } = lastSent("mod_message");
+    expect(msg).toMatchObject({ address: ADDR, data: { a: 1 } });
+    dispatch("t1", { type: "mod_message_result", requestId: msg.requestId, handled: true, props: { x: 2 } });
+    await expect(p).resolves.toEqual({ handled: true, props: { x: 2 } });
+
+    const p2 = bridge.message("t1", ADDR, null);
+    await vi.advanceTimersByTimeAsync(120_000);
+    await expect(p2).resolves.toMatchObject({ handled: false, error: expect.any(String) });
+  });
+
+  it("fault : attend le mod_result et ne lève jamais", async () => {
+    const p = bridge.fault("t1", ADDR, "run", "crash");
+    const { msg } = lastSent("mod_client_fault");
+    expect(msg).toMatchObject({ address: ADDR, phase: "run", reason: "crash" });
+    dispatch("t1", { type: "mod_result", requestId: msg.requestId, handled: true });
+    await expect(p).resolves.toBeUndefined();
+
+    const p2 = bridge.fault("t1", ADDR, "load", "x");
+    await vi.advanceTimersByTimeAsync(10_000);
+    await expect(p2).resolves.toBeUndefined();
+
+    invokeMock.mockRejectedValueOnce(new Error("ipc"));
+    await expect(bridge.fault("t1", ADDR, "load", "x")).resolves.toBeUndefined();
+  });
+});
+
+describe("mods/index — hôte Client", () => {
+  const makeHost = () => ({ renderClient: vi.fn(() => document.createElement("section")), dispose: vi.fn() });
+  const node = { type: "Client", props: {}, children: [] } as never;
+  const origin = { component: "Pane" as const, instanceId: "p1" };
+  type Opts = (tabId: string, origin?: { component: "Pane"; instanceId: string }) => RenderOptions;
+  const optionsOf = () => (captured.bridge as { options: Opts }).options;
+
+  it("sans hôte ou sans origine : pas de renderClient", () => {
+    expect(optionsOf()("t1", origin).renderClient).toBeUndefined();
+    const host = makeHost();
+    const factory = vi.fn(() => host);
+    createModsModule({ renderTree: fakeRenderTree, createClientHost: factory }).init(makeCtx());
+    expect(optionsOf()("t1").renderClient).toBeUndefined();
+    const opts = optionsOf()("t1", origin);
+    expect(opts.renderClient?.(node)).toBeInstanceOf(HTMLElement);
+    expect(host.renderClient).toHaveBeenCalledWith("t1", origin, node);
+  });
+
+  it("crée l'hôte une fois par init et le dispose au réinit", () => {
+    const hosts = [makeHost(), makeHost()];
+    const factory = vi.fn(() => hosts[factory.mock.calls.length - 1]);
+    const mod = createModsModule({ renderTree: fakeRenderTree, createClientHost: factory });
+    mod.init(makeCtx());
+    optionsOf()("t1", origin);
+    optionsOf()("t2", origin);
+    expect(factory).toHaveBeenCalledTimes(1);
+    expect(hosts[0].dispose).not.toHaveBeenCalled();
+    mod.init(makeCtx());
+    expect(hosts[0].dispose).toHaveBeenCalledTimes(1);
+    expect(factory).toHaveBeenCalledTimes(2);
+  });
+
+  it("clientModules : dernier record par tab, servi pour le tab actif, purgé à la fermeture", () => {
+    let getter: (() => Record<string, string>) | undefined;
+    const factory = vi.fn((d: { clientModules?: () => Record<string, string> }) => {
+      getter = d.clientModules;
+      return makeHost();
+    });
+    createModsModule({ renderTree: fakeRenderTree, createClientHost: factory as never }).init(makeCtx());
+    const c = (captured.bridge as { client: ModRenderClient }).client;
+    void c.requestRender("t1", REQ);
+    void c.requestRender("t2", REQ);
+    const [r1, r2] = sentRenders();
+    dispatch("t1", { type: "mod_tree", requestId: r1.msg.requestId, tree: OK_TREE, hooked: true, rewritten: false, clientModules: { p: "h1" } });
+    dispatch("t2", { type: "mod_tree", requestId: r2.msg.requestId, tree: OK_TREE, hooked: true, rewritten: false, clientModules: { p: "h2" } });
+    activate("t1");
+    expect(getter!()).toEqual({ p: "h1" });
+    activate("t2");
+    expect(getter!()).toEqual({ p: "h2" });
+    window.dispatchEvent(new CustomEvent("den:session-closed", { detail: { tabId: "t2" } }));
+    expect(getter!()).toEqual({});
+  });
+
+  it("clientModules : un rendu qui cite un autre plugin fusionne, il n'efface pas le premier", () => {
+    let getter: (() => Record<string, string>) | undefined;
+    const factory = vi.fn((d: { clientModules?: () => Record<string, string> }) => {
+      getter = d.clientModules;
+      return makeHost();
+    });
+    createModsModule({ renderTree: fakeRenderTree, createClientHost: factory as never }).init(makeCtx());
+    const c = (captured.bridge as { client: ModRenderClient }).client;
+    void c.requestRender("t1", REQ);
+    void c.requestRender("t1", REQ);
+    const [a, b] = sentRenders();
+    dispatch("t1", { type: "mod_tree", requestId: a.msg.requestId, tree: OK_TREE, hooked: true, rewritten: false, clientModules: { p: "h1" } });
+    dispatch("t1", { type: "mod_tree", requestId: b.msg.requestId, tree: OK_TREE, hooked: true, rewritten: false, clientModules: { q: "h2" } });
+    activate("t1");
+    expect(getter!()).toEqual({ p: "h1", q: "h2" });
+  });
+});

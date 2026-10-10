@@ -66,7 +66,7 @@ export const createAboveBand: CreateAboveBand = ({
       ) {
         return hide();
       }
-      replaceKeepingFocus(band, renderTree(tree, options?.(requested)));
+      replaceKeepingFocus(band, renderTree(tree, options?.(requested, { component: "AbovePrompt", instanceId: "above-prompt" })));
       band.hidden = false;
     } catch {
       if (!disposed && tabId === requested) hide();
