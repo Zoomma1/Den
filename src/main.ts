@@ -7,6 +7,8 @@ import "@fontsource/jetbrains-mono/500.css";
 import "./styles.css";
 import "./mods/mods.css";
 import "./mods/chrome.css";
+import "./mods/pane.css";
+import "./mods/band.css";
 import { Registry, type DenContext } from "./core/registry";
 import * as theme from "./theme";
 import * as workspace from "./workspace";
@@ -16,7 +18,9 @@ import * as markdown from "./markdown";
 import * as terminal from "./terminal";
 import * as interactive from "./interactive";
 import * as plugins from "./plugins";
-import { createModsModule } from "./mods";
+import { createModsModule, getModRenderClient, getModRenderOptions } from "./mods";
+import { createAboveBand } from "./mods/band";
+import { createPaneHost } from "./mods/pane";
 import { renderTree } from "./mods/render";
 
 function mount(id: string): HTMLElement {
@@ -59,10 +63,20 @@ registry.register({ name: "tabs", init: tabs.init });
 registry.register({ name: "terminal", init: terminal.init });
 registry.register({ name: "interactive", init: interactive.init });
 // mods après markdown et tabs : il branche le pont de la vue conversation et écoute les événements de tab.
-registry.register(createModsModule({ renderTree }));
+registry.register(createModsModule({ renderTree, openClaudeShell: terminal.openClaudeShell }));
 registry.register({ name: "plugins", init: plugins.init });
 
-registry.initAll(ctx).catch((err: unknown) => {
+registry
+  .initAll(ctx)
+  .then(() => {
+    // Pane et bande dépendent du client des mods, créé à l'init du module mods.
+    const client = getModRenderClient();
+    const options = getModRenderOptions() ?? undefined;
+    const paneMount = document.getElementById("den-pane");
+    if (client && paneMount) createPaneHost({ mount: paneMount, client, renderTree, options });
+    if (client) createAboveBand({ client, renderTree, options });
+  })
+  .catch((err: unknown) => {
   console.error("Den: échec d'initialisation des modules", err);
   // #den-status est partagé (les plugins y montent leurs items) : on n'y ajoute que ce span, jamais le textContent entier.
   const bootStatus = document.createElement("span");
