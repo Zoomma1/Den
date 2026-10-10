@@ -24,6 +24,16 @@ import { createInterface } from "node:readline";
 import { query, type SDKUserMessage, type SlashCommand } from "@anthropic-ai/claude-agent-sdk";
 import {
   isInterruptMessage,
+  isModClientFault,
+  isModClientModule,
+  isModClientPress,
+  isModCopyResult,
+  isModInput,
+  isModMessage,
+  isModPaneAction,
+  isModPress,
+  isModRender,
+  isModSelect,
   isPermissionResponse,
   isQuestionResponse,
   isSetModeMessage,
@@ -33,6 +43,8 @@ import {
   type SidecarToUIMessage,
   type UserMessage,
 } from "../../src/types/protocol";
+import { resolveClaudeBinary } from "./claudeBinary";
+import { ModSurface } from "./modSurface";
 import { PermissionBroker } from "./permissions";
 
 function send(message: SidecarToUIMessage): void {
@@ -157,6 +169,16 @@ async function handleSetMode(mode: PermissionModeId): Promise<void> {
   }
 }
 
+/**
+ * Mods (DEN-32) : le binaire embarqué du SDK n'a pas de moteur de mods, on
+ * lance donc le `claude` système et on s'y attache comme surface "desktop".
+ * Repli sur le binaire du SDK si indisponible — la surface reste alors non
+ * attachée et les `mod_*` reçoivent une réponse en erreur.
+ */
+const modSurface = new ModSurface({ send });
+const claude = await resolveClaudeBinary(process.env);
+if (!claude.ok) send({ type: "mods_unavailable", reason: claude.reason });
+
 const queryHandle = query({
   prompt: inputQueue,
   // `includePartialMessages` (DEN-10 lot 1b) : sans ce flag, les messages
@@ -164,7 +186,14 @@ const queryHandle = query({
   // le tour, cf. sonde 05/09) — avec lui, le SDK émet en plus des
   // `stream_event` (`SDKPartialAssistantMessage`, sdk.d.ts l.4748) au fil de
   // la génération, relayés en `assistant_delta` ci-dessous.
-  options: { canUseTool: permissionBroker.canUseTool, includePartialMessages: true },
+  options: {
+    canUseTool: permissionBroker.canUseTool,
+    includePartialMessages: true,
+    ...(claude.ok && {
+      pathToClaudeCodeExecutable: claude.path,
+      spawnClaudeCodeProcess: (o) => modSurface.spawn(o),
+    }),
+  },
 });
 
 let commandsSent = false;
@@ -287,6 +316,9 @@ async function pump(): Promise<void> {
         // chiefly the tool_result blocks").
         const content = sdkMessage.message.content;
         if (Array.isArray(content)) {
+          // tool_use_result est par message, pas par bloc : ambigu dès qu'il y a plusieurs tool_result.
+          const single = content.filter((b) => b.type === "tool_result").length === 1;
+          const structured = single ? sdkMessage.tool_use_result : undefined;
           for (const block of content) {
             if (block.type === "tool_result") {
               send({
@@ -294,6 +326,7 @@ async function pump(): Promise<void> {
                 id: currentTurnId(),
                 toolUseId: block.tool_use_id,
                 output: block.content,
+                ...(structured !== undefined ? { structured } : {}),
                 isError: block.is_error,
               });
             }
@@ -369,6 +402,20 @@ rl.on("line", (line) => {
     permissionBroker.handleQuestionResponse(msg);
   } else if (isSetModeMessage(msg)) {
     void handleSetMode(msg.mode);
+  } else if (isModRender(msg) || isModPress(msg) || isModInput(msg) || isModSelect(msg)) {
+    modSurface.handleUiMessage(msg);
+  } else if (isModPaneAction(msg)) {
+    modSurface.handlePaneAction(msg);
+  } else if (isModCopyResult(msg)) {
+    modSurface.handleCopyResult(msg);
+  } else if (isModClientModule(msg)) {
+    modSurface.handleClientModule(msg);
+  } else if (isModClientPress(msg)) {
+    modSurface.handleClientPress(msg);
+  } else if (isModMessage(msg)) {
+    modSurface.handleMessage(msg);
+  } else if (isModClientFault(msg)) {
+    modSurface.handleClientFault(msg);
   }
 });
 

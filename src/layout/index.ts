@@ -2,7 +2,7 @@
  * Module `layout` — câblage DOM du layout de `#den-app` (DEN-04 A3) :
  * applique l'état persisté (`workspace.getState().layout`) à chaque
  * démarrage, gère les deux splitters redimensionnables (pointer events) et
- * le raccourci clavier de masquage de la sidebar. La math pure (clamp,
+ * les raccourcis clavier de masquage (sidebar, terminal, colonne pane). La math pure (clamp,
  * calcul de drag, mises à jour immuables) vit dans `./layout.ts`, testée
  * sans DOM.
  *
@@ -44,16 +44,19 @@ import { debounce, type Debounced } from "../terminal/debounce";
 import {
   applyLayout,
   ratioFromDrag,
+  rightPxFromDrag,
   sidebarPxFromDrag,
+  withRightPaneHidden,
   withSidebarHidden,
   withTerminalHidden,
   withSizes,
+  withRightPx,
 } from "./layout";
 import "./layout.css";
 
 const PERSIST_DEBOUNCE_MS = 300;
 
-type SplitterKind = "sidebar" | "panes";
+type SplitterKind = "sidebar" | "panes" | "pane";
 
 export function init(): void {
   const app = document.getElementById("den-app");
@@ -65,7 +68,8 @@ export function init(): void {
 
   const sidebarSplitter = createSplitter("sidebar", "Resize sidebar");
   const panesSplitter = createSplitter("panes", "Resize conversation and terminal panes");
-  app.append(sidebarSplitter, panesSplitter);
+  const paneSplitter = createSplitter("pane", "Resize mod pane column");
+  app.append(sidebarSplitter, panesSplitter, paneSplitter);
   syncPanesOrientation(app, panesSplitter);
 
   // Écriture disque seule — l'état mémoire est déjà à jour (`setLayout`
@@ -76,8 +80,26 @@ export function init(): void {
 
   wireSidebarDrag(app, sidebarSplitter, persist);
   wirePanesDrag(app, panesSplitter, persist);
+  wirePaneColumnDrag(app, paneSplitter, persist);
   wirePaneShortcut(app, "b", (layout) => withSidebarHidden(layout, !layout.sidebarHidden));
   wirePaneShortcut(app, "j", (layout) => withTerminalHidden(layout, !layout.terminalHidden));
+  wirePaneShortcut(app, "l", (layout) => withRightPaneHidden(layout, !(layout.rightPaneHidden ?? true)));
+  wirePaneVisibility(app);
+}
+
+/** Le pane host (src/mods/pane.ts) demande l'affichage/masquage de la colonne
+ * sans importer layout : un événement window suffit. */
+function wirePaneVisibility(app: HTMLElement): void {
+  window.addEventListener("den:pane-visibility-request", (e) => {
+    const visible = (e as CustomEvent<{ visible: boolean }>).detail?.visible;
+    if (typeof visible !== "boolean") return;
+    const current = getState().layout;
+    if ((current.rightPaneHidden ?? true) === !visible) return;
+    const next = withRightPaneHidden(current, !visible);
+    setLayout(next);
+    applyLayout(app, next);
+    void saveState();
+  });
 }
 
 function createSplitter(kind: SplitterKind, ariaLabel: string): HTMLDivElement {
@@ -89,7 +111,7 @@ function createSplitter(kind: SplitterKind, ariaLabel: string): HTMLDivElement {
   // Le splitter sidebar est toujours une ligne verticale (dispo à gauche
   // dans les deux presets) — orientation fixe, contrairement au splitter
   // `panes` dont l'axe dépend du preset (cf. syncPanesOrientation).
-  if (kind === "sidebar") {
+  if (kind === "sidebar" || kind === "pane") {
     el.setAttribute("aria-orientation", "vertical");
   }
   return el;
@@ -193,6 +215,22 @@ function wirePanesDrag(app: HTMLElement, el: HTMLElement, persist: Debounced<[]>
         ...current.sizes[preset],
         conversationRatio: newRatio,
       });
+      setLayout(next);
+      applyLayout(app, next);
+      persist();
+    }, () => flushPersist(persist));
+  });
+}
+
+/** Splitter de la colonne pane (à sa gauche) : tirer vers la gauche l'élargit. */
+function wirePaneColumnDrag(app: HTMLElement, el: HTMLElement, persist: Debounced<[]>): void {
+  el.addEventListener("pointerdown", (e) => {
+    e.preventDefault();
+    const startPx = document.getElementById("den-pane")!.getBoundingClientRect().width;
+    const startClientX = e.clientX;
+
+    startDrag(app, el, e.pointerId, (ev) => {
+      const next = withRightPx(getState().layout, rightPxFromDrag(startPx, ev.clientX - startClientX));
       setLayout(next);
       applyLayout(app, next);
       persist();

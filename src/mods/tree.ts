@@ -15,12 +15,13 @@ export const SUPPORTED_ELEMENTS = [
   "Button",
   "Input",
   "Select",
+  "Svg",
 ] as const;
 
 export type ElementType = (typeof SUPPORTED_ELEMENTS)[number];
 
 export interface ElementNode {
-  // string large : Svg, Image, Raster, Client et types inconnus restent représentables.
+  // string large : Image, Raster, Client et types inconnus restent représentables.
   type: string;
   props?: Record<string, unknown>;
   children?: RenderNode[];

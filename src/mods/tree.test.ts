@@ -31,14 +31,15 @@ describe("isRenderNode sur les captures réelles", () => {
   });
 
   it("représente les types non supportés", () => {
-    expect(isRenderNode({ type: "Svg", props: { a: 1 } })).toBe(true);
+    expect(isRenderNode({ type: "Raster", props: { a: 1 } })).toBe(true);
   });
 });
 
 describe("isSupportedElement", () => {
-  it("accepte la liste supportée et rejette le reste", () => {
+  it("accepte la liste supportée (Svg inclus) et rejette le reste", () => {
+    expect(isSupportedElement("Svg")).toBe(true);
     for (const t of SUPPORTED_ELEMENTS) expect(isSupportedElement(t)).toBe(true);
-    for (const t of ["Svg", "Image", "Raster", "Client", "Inconnu", "box"]) {
+    for (const t of ["Image", "Raster", "Client", "Inconnu", "box"]) {
       expect(isSupportedElement(t)).toBe(false);
     }
   });

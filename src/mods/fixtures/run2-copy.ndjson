@@ -1,0 +1,2 @@
+{"type": "control_request", "request_id": "uuid-du-moteur", "request": {"subtype": "ui_copy", "surface": "desktop", "client_id": "den-1", "plugin": "handoff-copy", "text": "<texte du handoff>"}}
+{"type": "control_response", "response": {"subtype": "success", "request_id": "uuid-du-moteur", "response": {"copied": true}}}

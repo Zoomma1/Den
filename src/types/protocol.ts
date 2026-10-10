@@ -73,6 +73,23 @@ export interface SetModeMessage {
   mode: PermissionModeId;
 }
 
+export type ModPaneActionKind = "show" | "focus" | "close" | "roster";
+
+/** Action sur les panes ; réponse `mod_result` (handled = closed pour close, value = id pour show/focus). `roster` déclenche en plus un push `mod_panes`. */
+export interface ModPaneAction {
+  type: "mod_pane_action";
+  requestId: string;
+  action: ModPaneActionKind;
+  id?: string | null;
+}
+
+/** Réponse de l'UI à `mod_copy_request`. */
+export interface ModCopyResult {
+  type: "mod_copy_result";
+  requestId: string;
+  copied: boolean;
+}
+
 /** Composants moteur que les mods peuvent réécrire. */
 export type ModComponent =
   | "AssistantMessage"
@@ -124,6 +141,70 @@ export interface ModSelect {
   instanceId?: string;
 }
 
+/** Adresse d'un Client : instanceId = l'instance_id du ui_render (id du pane, du message…), client = key du noeud, module = chemin sous le plugin. */
+export interface ClientAddress {
+  plugin: string;
+  component: ModComponent;
+  instanceId: string;
+  client: string;
+  module: string;
+}
+
+/** Plafonds appliqués par l'hôte Client (mesurés côté moteur). */
+export interface ClientLimits {
+  nodes: number;
+  depth: number;
+  chars: number;
+  values: number;
+  dataDepth: number;
+}
+
+/** Bundle d'un plugin : sources des modules Client + runtime à exécuter dans le Worker. */
+export interface ClientModuleBundle {
+  plugin: string;
+  hash: string;
+  modules: { module: string; entry: string; component: string }[];
+  runtime: string;
+  limits: ClientLimits;
+  files: { key: string; source: string }[];
+}
+
+/** L'UI demande le bundle Client d'un plugin ; réponse `mod_client_module_result`. */
+export interface ModClientModule {
+  type: "mod_client_module";
+  requestId: string;
+  plugin: string;
+}
+
+/** Événement utilisateur dans un Client ; réponse `mod_client_press_result`. */
+export interface ModClientPress {
+  type: "mod_client_press";
+  requestId: string;
+  address: ClientAddress;
+  element: string;
+  event:
+    | { type: "press" }
+    | { type: "input"; kind: "change" | "submit"; value: string }
+    | { type: "select"; value: string };
+}
+
+/** Message module -> plugin (surface.post) ; réponse `mod_message_result`. */
+export interface ModMessage {
+  type: "mod_message";
+  requestId: string;
+  address: ClientAddress;
+  data: unknown;
+}
+
+/** Panne d'un module Client signalée au moteur ; réponse `mod_result`. */
+export interface ModClientFault {
+  type: "mod_client_fault";
+  requestId: string;
+  address: ClientAddress;
+  phase: "load" | "render" | "run";
+  reason: string;
+}
+
 export type UIToSidecarMessage =
   | UserMessage
   | PermissionResponse
@@ -133,7 +214,13 @@ export type UIToSidecarMessage =
   | ModRender
   | ModPress
   | ModInput
-  | ModSelect;
+  | ModSelect
+  | ModPaneAction
+  | ModCopyResult
+  | ModClientModule
+  | ModClientPress
+  | ModMessage
+  | ModClientFault;
 
 // ---------------------------------------------------------------------------
 // sidecar -> UI
@@ -170,6 +257,8 @@ export interface ToolResult {
   id: string;
   toolUseId: string;
   output: unknown;
+  /** `tool_use_result` structuré du SDK : la forme que le moteur attend pour ToolResult.output. */
+  structured?: unknown;
   isError?: boolean;
 }
 
@@ -287,9 +376,18 @@ export interface ModToast {
 /** Liste COMPLÈTE des panes ouverts — REMPLACE la précédente (vide = tout fermé). */
 export interface ModPanes {
   type: "mod_panes";
-  panes: { id: string; title: string; plugin: string; rows?: number }[];
+  panes: {
+    id: string;
+    title: string;
+    plugin: string;
+    closeOnEscape?: boolean;
+    rows?: number;
+    columns?: number;
+  }[];
   shownId: string | null;
   focusedId: string | null;
+  /** Le mod demande le focus de ce pane. */
+  focusRequestedId?: string | null;
 }
 
 /** Instances à re-demander via `mod_render`. */
@@ -305,10 +403,12 @@ export interface ModTree {
   tree: RenderNode | null;
   hooked: boolean;
   rewritten: boolean;
+  /** plugin -> hash des bundles Client référencés (client_modules de ui_render). */
+  clientModules?: Record<string, string>;
   error?: string;
 }
 
-/** Réponse à `mod_press` / `mod_input` / `mod_select`. */
+/** Réponse à `mod_press` / `mod_input` / `mod_select` / `mod_pane_action` / `mod_client_fault`. */
 export interface ModResult {
   type: "mod_result";
   requestId: string;
@@ -316,6 +416,41 @@ export interface ModResult {
   element?: string;
   value?: string;
   error?: string;
+}
+
+/** Réponse à `mod_client_press` : `reached` = ce que le moteur a laissé passer (absent = un hook a bloqué). */
+export interface ModClientPressResult {
+  type: "mod_client_press_result";
+  requestId: string;
+  handled: boolean;
+  reached?: unknown;
+  error?: string;
+}
+
+/** Réponse à `mod_client_module`. */
+export interface ModClientModuleResult {
+  type: "mod_client_module_result";
+  requestId: string;
+  ok: boolean;
+  bundle?: ClientModuleBundle;
+  error?: string;
+}
+
+/** Réponse à `mod_message`. */
+export interface ModMessageResult {
+  type: "mod_message_result";
+  requestId: string;
+  handled: boolean;
+  props?: unknown;
+  error?: string;
+}
+
+/** Le moteur demande de copier du texte dans le presse-papiers ; réponse `mod_copy_result`. */
+export interface ModCopyRequest {
+  type: "mod_copy_request";
+  /** Id de la requête du moteur (control_request). */
+  requestId: string;
+  text: string;
 }
 
 /** Le moteur claude système n'est pas utilisable : les mods sont désactivés. */
@@ -342,6 +477,10 @@ export type SidecarToUIMessage =
   | ModInvalidate
   | ModTree
   | ModResult
+  | ModCopyRequest
+  | ModClientModuleResult
+  | ModMessageResult
+  | ModClientPressResult
   | ModsUnavailable;
 
 /**
@@ -466,6 +605,24 @@ export function isModResult(msg: DenProtocolMessage): msg is ModResult {
   return msg.type === "mod_result";
 }
 
+export function isModCopyRequest(
+  msg: DenProtocolMessage,
+): msg is ModCopyRequest {
+  return msg.type === "mod_copy_request";
+}
+
+export function isModPaneAction(
+  msg: DenProtocolMessage,
+): msg is ModPaneAction {
+  return msg.type === "mod_pane_action";
+}
+
+export function isModCopyResult(
+  msg: DenProtocolMessage,
+): msg is ModCopyResult {
+  return msg.type === "mod_copy_result";
+}
+
 export function isModsUnavailable(
   msg: DenProtocolMessage,
 ): msg is ModsUnavailable {
@@ -488,6 +645,80 @@ export function isModSelect(msg: DenProtocolMessage): msg is ModSelect {
   return msg.type === "mod_select";
 }
 
+const MOD_COMPONENT_NAMES: readonly string[] = ["AssistantMessage", "ToolResult", "AbovePrompt", "Pane"];
+const CLIENT_PHASES: readonly string[] = ["load", "render", "run"];
+
+const isStr = (v: unknown): v is string => typeof v === "string";
+
+function isClientAddress(v: unknown): v is ClientAddress {
+  if (typeof v !== "object" || v === null) return false;
+  const a = v as Record<string, unknown>;
+  return (
+    isStr(a.plugin) &&
+    isStr(a.instanceId) &&
+    isStr(a.client) &&
+    isStr(a.module) &&
+    isStr(a.component) &&
+    MOD_COMPONENT_NAMES.includes(a.component)
+  );
+}
+
+function isClientEvent(v: unknown): v is ModClientPress["event"] {
+  if (typeof v !== "object" || v === null) return false;
+  const e = v as Record<string, unknown>;
+  if (e.type === "press") return true;
+  if (e.type === "input") return (e.kind === "change" || e.kind === "submit") && isStr(e.value);
+  return e.type === "select" && isStr(e.value);
+}
+
+export function isModClientModule(msg: DenProtocolMessage): msg is ModClientModule {
+  const m = msg as unknown as Partial<ModClientModule>;
+  return m.type === "mod_client_module" && isStr(m.requestId) && isStr(m.plugin);
+}
+
+export function isModClientPress(msg: DenProtocolMessage): msg is ModClientPress {
+  const m = msg as unknown as Partial<ModClientPress>;
+  return (
+    m.type === "mod_client_press" &&
+    isStr(m.requestId) &&
+    isClientAddress(m.address) &&
+    isStr(m.element) &&
+    isClientEvent(m.event)
+  );
+}
+
+export function isModMessage(msg: DenProtocolMessage): msg is ModMessage {
+  const m = msg as unknown as Partial<ModMessage>;
+  return m.type === "mod_message" && isStr(m.requestId) && isClientAddress(m.address);
+}
+
+export function isModClientFault(msg: DenProtocolMessage): msg is ModClientFault {
+  const m = msg as unknown as Partial<ModClientFault>;
+  return (
+    m.type === "mod_client_fault" &&
+    isStr(m.requestId) &&
+    isClientAddress(m.address) &&
+    isStr(m.phase) &&
+    CLIENT_PHASES.includes(m.phase) &&
+    isStr(m.reason)
+  );
+}
+
+export function isModClientModuleResult(msg: DenProtocolMessage): msg is ModClientModuleResult {
+  const m = msg as unknown as Partial<ModClientModuleResult>;
+  return m.type === "mod_client_module_result" && isStr(m.requestId) && typeof m.ok === "boolean";
+}
+
+export function isModMessageResult(msg: DenProtocolMessage): msg is ModMessageResult {
+  const m = msg as unknown as Partial<ModMessageResult>;
+  return m.type === "mod_message_result" && isStr(m.requestId) && typeof m.handled === "boolean";
+}
+
+export function isModClientPressResult(msg: DenProtocolMessage): msg is ModClientPressResult {
+  const m = msg as unknown as Partial<ModClientPressResult>;
+  return m.type === "mod_client_press_result" && isStr(m.requestId) && typeof m.handled === "boolean";
+}
+
 export function isUserEcho(msg: ConversationMessage): msg is UserEcho {
   return msg.type === "user_echo";
 }
@@ -505,7 +736,13 @@ export function isUIToSidecarMessage(
     isModRender(msg) ||
     isModPress(msg) ||
     isModInput(msg) ||
-    isModSelect(msg)
+    isModSelect(msg) ||
+    isModPaneAction(msg) ||
+    isModCopyResult(msg) ||
+    isModClientModule(msg) ||
+    isModClientPress(msg) ||
+    isModMessage(msg) ||
+    isModClientFault(msg)
   );
 }
 

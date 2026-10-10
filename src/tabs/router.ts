@@ -5,6 +5,10 @@ import {
   isDone,
   isErrorMessage,
   isModeChanged,
+  isModClientModuleResult,
+  isModCopyRequest,
+  isModMessageResult,
+  isModClientPressResult,
   isModInvalidate,
   isModPanes,
   isModResult,
@@ -143,6 +147,10 @@ function parseSidecarMessage(line: string): SidecarToUIMessage | null {
     isModInvalidate(candidate) ||
     isModTree(candidate) ||
     isModResult(candidate) ||
+    isModCopyRequest(candidate) ||
+    isModClientModuleResult(candidate) ||
+    isModMessageResult(candidate) ||
+    isModClientPressResult(candidate) ||
     isModsUnavailable(candidate);
 
   return isKnownSidecarMessage ? (candidate as SidecarToUIMessage) : null;

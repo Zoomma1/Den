@@ -6,7 +6,14 @@ import { describe, it, expect } from "vitest";
 import {
   applyLayout,
   clampRatio,
+  clampRightPx,
   clampSidebarPx,
+  DEFAULT_RIGHT_PX,
+  MAX_RIGHT_PX,
+  MIN_RIGHT_PX,
+  rightPxFromDrag,
+  withRightPaneHidden,
+  withRightPx,
   MAX_RATIO,
   MAX_SIDEBAR_PX,
   MIN_RATIO,
@@ -190,5 +197,54 @@ describe("with* — immuabilité", () => {
     expect(next.terminalHidden).toBe(true);
     expect(layout.terminalHidden).toBe(false);
     expect(next).not.toBe(layout);
+  });
+});
+
+describe("colonne pane", () => {
+  it("masquée par défaut : data-pane=hidden et --den-right-px à 320px", () => {
+    const app = document.createElement("div");
+    applyLayout(app, makeLayout());
+    expect(app.dataset.pane).toBe("hidden");
+    expect(app.style.getPropertyValue("--den-right-px")).toBe(`${DEFAULT_RIGHT_PX}px`);
+  });
+
+  it("un ancien état sans les nouveaux champs reste masqué avec la largeur par défaut", () => {
+    const layout = makeLayout();
+    delete layout.rightPaneHidden;
+    delete layout.rightPx;
+    const app = document.createElement("div");
+    applyLayout(app, layout);
+    expect(app.dataset.pane).toBe("hidden");
+    expect(app.style.getPropertyValue("--den-right-px")).toBe("320px");
+  });
+
+  it("retire data-pane quand la colonne est visible", () => {
+    const app = document.createElement("div");
+    applyLayout(app, makeLayout({ rightPaneHidden: false, rightPx: 400 }));
+    expect(app.dataset.pane).toBeUndefined();
+    expect(app.style.getPropertyValue("--den-right-px")).toBe("400px");
+  });
+
+  it("clamp rightPx à l'application", () => {
+    const app = document.createElement("div");
+    applyLayout(app, makeLayout({ rightPx: 0 }));
+    expect(app.style.getPropertyValue("--den-right-px")).toBe(`${MIN_RIGHT_PX}px`);
+    applyLayout(app, makeLayout({ rightPx: 9999 }));
+    expect(app.style.getPropertyValue("--den-right-px")).toBe(`${MAX_RIGHT_PX}px`);
+    expect(clampRightPx(300)).toBe(300);
+  });
+
+  it("with* helpers sont immuables", () => {
+    const layout = makeLayout();
+    expect(withRightPaneHidden(layout, false).rightPaneHidden).toBe(false);
+    expect(withRightPx(layout, 9999).rightPx).toBe(MAX_RIGHT_PX);
+    expect(layout.rightPaneHidden).toBe(true);
+    expect(layout.rightPx).toBeUndefined();
+  });
+
+  it("rightPxFromDrag : tirer vers la gauche élargit, arrondi et clampé", () => {
+    expect(rightPxFromDrag(320, -50.4)).toBe(370);
+    expect(rightPxFromDrag(320, 1000)).toBe(MIN_RIGHT_PX);
+    expect(rightPxFromDrag(320, -1000)).toBe(MAX_RIGHT_PX);
   });
 });

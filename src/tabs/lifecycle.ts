@@ -4,6 +4,10 @@ import {
   isDone,
   isErrorMessage,
   isModeChanged,
+  isModClientModuleResult,
+  isModCopyRequest,
+  isModMessageResult,
+  isModClientPressResult,
   isModInvalidate,
   isModPanes,
   isModResult,
@@ -75,13 +79,17 @@ export type TabLifecycleEvent =
  *   est à 0 (outils parallèles déjà autorisés) ; `request_resolved` le
  *   décrémente, `done`/`error`/`conversation_reset` le remettent à 0.
  */
-const isModMessage = (message: SidecarToUIMessage): boolean =>
+const isModPushedMessage = (message: SidecarToUIMessage): boolean =>
   isModStatus(message) ||
   isModToast(message) ||
   isModPanes(message) ||
   isModInvalidate(message) ||
   isModTree(message) ||
   isModResult(message) ||
+  isModCopyRequest(message) ||
+  isModClientModuleResult(message) ||
+  isModMessageResult(message) ||
+  isModClientPressResult(message) ||
   isModsUnavailable(message);
 
 export function reduceTabLifecycle(
@@ -162,7 +170,7 @@ function reduceSidecarMessage(
     !isSessionInfo(message) &&
     !isModeChanged(message) &&
     !isCommands(message) &&
-    !isModMessage(message)
+    !isModPushedMessage(message)
   ) {
     return { ...lifecycle, state: "running" };
   }

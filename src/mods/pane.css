@@ -1,0 +1,87 @@
+/* Colonne pane des mods : barre d'onglets (même langage que le terminal) + corps rendu. */
+.den-pane {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--den-bg-surface);
+  color: var(--den-fg);
+  font-family: var(--den-font-sans);
+  font-size: var(--den-font-size-base);
+}
+
+.den-pane__tabs {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: var(--den-space-1);
+  padding: var(--den-space-1) var(--den-space-2);
+  background: var(--den-surface-gradient, var(--den-bg-elevated));
+  border-bottom: 1px solid var(--den-edge, var(--den-border));
+  overflow-x: auto;
+  user-select: none;
+}
+
+.den-pane__tabitem {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+}
+
+.den-pane__tab {
+  padding: 2px var(--den-space-2);
+  border: 1px solid transparent;
+  border-radius: var(--den-radius);
+  background: transparent;
+  color: var(--den-fg-muted);
+  font: inherit;
+  cursor: pointer;
+}
+
+.den-pane__tab:hover {
+  background: var(--den-glass-2, var(--den-bg-surface));
+}
+
+.den-pane__tab--active {
+  background-color: var(--den-bg-surface);
+  border-color: var(--den-edge, var(--den-border));
+  color: var(--den-fg);
+}
+
+/* Focus demandé par un mod : filet d'accent sous l'onglet. */
+.den-pane__tab--focused {
+  box-shadow: inset 0 -2px 0 var(--den-accent);
+}
+
+.den-pane__tab-close {
+  border: 0;
+  border-radius: var(--den-radius);
+  background: transparent;
+  color: var(--den-fg-muted);
+  font: inherit;
+  line-height: 1;
+  padding: 2px var(--den-space-1);
+  opacity: 0.6;
+  cursor: pointer;
+}
+
+.den-pane__tab-close:hover {
+  opacity: 1;
+  background: var(--den-glass-3, var(--den-bg-elevated));
+}
+
+.den-pane__body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding: var(--den-space-2) var(--den-space-3);
+  outline: none;
+}
+
+.den-pane__body--focused {
+  box-shadow: inset 2px 0 0 var(--den-accent);
+}
+
+.den-pane__empty {
+  min-height: 1px;
+}

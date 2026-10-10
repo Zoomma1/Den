@@ -20,6 +20,43 @@ import type {
   CustomBlock,
 } from "../types/protocol";
 import { IncrementalMarkdownRenderer } from "./renderer";
+import { MOD_EVENTS } from "../mods/contracts";
+import type {
+  ModInvalidateEventDetail,
+  ModOrigin,
+  ModRenderClient,
+  RenderOptions,
+  RenderTreeFn,
+} from "../mods/contracts";
+import { isRenderNode } from "../mods/tree";
+
+interface ModBridge {
+  client: ModRenderClient;
+  renderTree: RenderTreeFn;
+  /** `origin` = bloc d'où vient l'interaction, absent pour les hôtes qui n'en ont pas (pane, bande). */
+  options?: (tabId: string, origin?: ModOrigin) => RenderOptions;
+}
+
+// Une seule définition (celle du contrat), ré-exportée pour les imports existants.
+export type { ModOrigin };
+
+type ModRequest = Parameters<ModRenderClient["requestRender"]>[1];
+
+/** Un bloc réécrivable : de quoi le redemander (props) et le restaurer (instantané du DOM d'origine). */
+interface ModBlock {
+  target: HTMLElement;
+  req: ModRequest;
+  original: DocumentFragment | null;
+}
+
+const MAX_MOD_BLOCKS = 200;
+
+let modBridge: ModBridge | null = null;
+
+/** Branché par le module mods ; `null` = comportement Den pur, sans aucun aller-retour moteur. */
+export function setModBridge(bridge: ModBridge | null): void {
+  modBridge = bridge;
+}
 
 /**
  * Seuil de RACCROCHAGE (pas de décrochage) au fil qui descend — cf. bug
@@ -40,6 +77,9 @@ const COPY_FEEDBACK_MS = 1200;
 interface ActiveAssistant {
   id: string;
   renderer: IncrementalMarkdownRenderer;
+  block: HTMLElement;
+  text: string;
+  isFirstOfReply: boolean;
   finalizedEl: HTMLElement;
   currentEl: HTMLElement;
   rafHandle: number | null;
@@ -129,7 +169,10 @@ export class ConversationView {
   private readonly copyFeedbackTimers = new Map<HTMLButtonElement, ReturnType<typeof setTimeout>>();
   private lastScrollTop = 0;
   private readonly toolBlocksByToolUseId = new Map<string, HTMLElement>();
+  private readonly toolNamesByToolUseId = new Map<string, string>();
+  private assistantSinceUser = false;
   private readonly onTabStateChangedBound: (event: Event) => void;
+  private readonly modBlocks = new Map<string, ModBlock>();
 
   constructor(tabId: string) {
     this.tabId = tabId;
@@ -164,6 +207,9 @@ export class ConversationView {
     // refléter l'état reçu sur l'événement, filtré sur son propre tabId.
     this.onTabStateChangedBound = (event) => this.onTabStateChanged(event);
     window.addEventListener("den:tab-state-changed", this.onTabStateChangedBound);
+    window.addEventListener(MOD_EVENTS.invalidate, (event) =>
+      this.onModInvalidate((event as CustomEvent<ModInvalidateEventDetail>).detail),
+    );
 
     // Onglet masqué (index.ts du module markdown fait `el.hidden = true`
     // sur les vues inactives) -> `scrollHeight` vaut 0 pendant que l'onglet
@@ -187,7 +233,7 @@ export class ConversationView {
         return;
       case "tool_result":
         this.finalizeActiveAssistant();
-        this.onToolResult(msg.toolUseId, msg.output, msg.isError === true);
+        this.onToolResult(msg.toolUseId, msg.output, msg.isError === true, msg.structured);
         return;
       case "done":
         this.finalizeActiveAssistant();
@@ -203,6 +249,9 @@ export class ConversationView {
         this.flowEl.replaceChildren();
         this.active = null;
         this.toolBlocksByToolUseId.clear();
+        this.toolNamesByToolUseId.clear();
+        this.modBlocks.clear();
+        this.assistantSinceUser = false;
         this.stickToBottom = true;
         this.lastScrollTop = 0;
         return;
@@ -367,6 +416,7 @@ export class ConversationView {
       this.active = this.createActiveAssistant(id);
     }
     const active = this.active;
+    active.text += text;
     const { finalizedHtml, currentHtml } = active.renderer.feed(text);
 
     for (const html of finalizedHtml) {
@@ -394,8 +444,13 @@ export class ConversationView {
     block.appendChild(currentEl);
     this.flowEl.appendChild(block);
 
+    const isFirstOfReply = !this.assistantSinceUser;
+    this.assistantSinceUser = true;
     return {
       id,
+      block,
+      text: "",
+      isFirstOfReply,
       renderer: new IncrementalMarkdownRenderer(),
       finalizedEl,
       currentEl,
@@ -431,6 +486,57 @@ export class ConversationView {
     }
     active.currentEl.innerHTML = "";
     this.active = null;
+    this.rewriteWithMods(
+      active.block,
+      { component: "AssistantMessage", instanceId: active.id, props: { text: active.text, isFirstOfReply: active.isFirstOfReply } },
+      active.text !== "",
+    );
+  }
+
+  /** Remplace le contenu de `target` si un mod le réécrit ; sinon (ou si `target` a quitté le DOM) ne touche à rien. */
+  private rewriteWithMods(target: HTMLElement, req: ModRequest, enabled: boolean): void {
+    if (!modBridge || !enabled) return;
+    const key = `${req.component}:${req.instanceId}`;
+    // Borné : le plus ancien cède la place, il ne sera plus ré-invalidable.
+    this.modBlocks.delete(key);
+    this.modBlocks.set(key, { target, req, original: null });
+    if (this.modBlocks.size > MAX_MOD_BLOCKS) {
+      this.modBlocks.delete(this.modBlocks.keys().next().value as string);
+    }
+    this.renderModBlock(this.modBlocks.get(key)!);
+  }
+
+  private renderModBlock(block: ModBlock): void {
+    const bridge = modBridge;
+    if (!bridge) return;
+    const { target, req } = block;
+    bridge.client.requestRender(this.tabId, req).then(
+      ({ tree, hooked }) => {
+        if (!hooked || !this.flowEl.contains(target)) return;
+        if (!isRenderNode(tree) || (typeof tree === "object" && tree.type === "engine")) return;
+        // L'original est capturé avant le premier remplacement : un mod peut l'envelopper (engine ref 0).
+        if (!block.original) {
+          block.original = document.createDocumentFragment();
+          for (const child of target.childNodes) block.original.appendChild(child.cloneNode(true));
+        }
+        const original = block.original;
+        const opts: RenderOptions = {
+          ...bridge.options?.(this.tabId, { component: req.component, instanceId: req.instanceId }),
+          renderEngineDefault: (ref) => (ref === 0 ? original.cloneNode(true) : null),
+        };
+        target.replaceChildren(bridge.renderTree(tree, opts));
+        this.scrollToBottomIfStuck();
+      },
+      () => {},
+    );
+  }
+
+  private onModInvalidate(detail: ModInvalidateEventDetail | undefined): void {
+    if (!detail || detail.tabId !== this.tabId) return;
+    for (const { component, instanceId } of detail.instances) {
+      const block = this.modBlocks.get(`${component}:${instanceId}`);
+      if (block) this.renderModBlock(block);
+    }
   }
 
   private onToolUse(
@@ -462,10 +568,16 @@ export class ConversationView {
     details.appendChild(pre);
     this.flowEl.appendChild(details);
     this.toolBlocksByToolUseId.set(toolUseId, details);
+    this.toolNamesByToolUseId.set(toolUseId, name);
     this.scrollToBottomIfStuck();
   }
 
-  private onToolResult(toolUseId: string, output: unknown, isError: boolean): void {
+  private onToolResult(
+    toolUseId: string,
+    output: unknown,
+    isError: boolean,
+    structured?: unknown,
+  ): void {
     const resultEl = document.createElement("div");
     resultEl.className = isError
       ? "den-tool-result den-tool-result-error"
@@ -495,6 +607,21 @@ export class ConversationView {
       orphan.appendChild(resultEl);
       this.flowEl.appendChild(orphan);
     }
+    this.rewriteWithMods(
+      resultEl,
+      {
+        component: "ToolResult",
+        instanceId: toolUseId,
+        props: {
+          tool_use_id: toolUseId,
+          tool: this.toolNamesByToolUseId.get(toolUseId) ?? "",
+          // Le moteur attend l'objet structuré du SDK, pas la chaîne affichée.
+          output: structured ?? output,
+          isErrored: isError,
+        },
+      },
+      true,
+    );
     this.scrollToBottomIfStuck();
   }
 
@@ -507,6 +634,7 @@ export class ConversationView {
   }
 
   private onUserEcho(text: string): void {
+    this.assistantSinceUser = false;
     const el = document.createElement("div");
     el.className = "den-msg den-msg-user";
     el.appendChild(createCopyButton());

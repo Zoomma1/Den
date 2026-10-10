@@ -64,4 +64,20 @@
   --den-status-needs-input: #ffc15e;
   --den-status-done: #5ee6a8;
   --den-status-error-state: #ff6b8a;
+  --den-ansi-black: #1b1a2b;
+  --den-ansi-red: #ff6b8a;
+  --den-ansi-green: #5ee6a8;
+  --den-ansi-yellow: #ffc15e;
+  --den-ansi-blue: #6f9bff;
+  --den-ansi-magenta: #d98cff;
+  --den-ansi-cyan: #35d0ff;
+  --den-ansi-white: #ece9f7;
+  --den-ansi-gray: #6f6b8e;
+  --den-ansi-bright-red: #ff8fa8;
+  --den-ansi-bright-green: #8af0c2;
+  --den-ansi-bright-yellow: #ffd88a;
+  --den-ansi-bright-blue: #92b4ff;
+  --den-ansi-bright-magenta: #e6b0ff;
+  --den-ansi-bright-cyan: #7fe0ff;
+  --den-ansi-bright-white: #ffffff;
 }

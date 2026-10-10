@@ -166,11 +166,32 @@ describe("TabRouter", () => {
     '{"type":"mod_tree","requestId":"q1","tree":null,"hooked":false,"rewritten":false}',
     '{"type":"mod_result","requestId":"q2","handled":true}',
     '{"type":"mods_unavailable","reason":"x"}',
+    '{"type":"mod_copy_request","requestId":"c1","text":"t"}',
+    '{"type":"mod_client_module_result","requestId":"m1","ok":true}',
+    '{"type":"mod_message_result","requestId":"m3","handled":true}',
+    '{"type":"mod_client_press_result","requestId":"m2","handled":true}',
   ])("ne jette pas le message mods : %s", (line) => {
     const router = new TabRouter();
     router.registerTab("tab-a");
     const routed = router.handleChunk("tab-a", line + "\n");
     expect(routed).toEqual([{ tabId: "tab-a", message: JSON.parse(line) }]);
+  });
+
+  it.each([
+    '{"type":"mod_pane_action","requestId":"q","action":"show","id":"a"}',
+    '{"type":"mod_copy_result","requestId":"c1","copied":true}',
+  ])("jette un message mod UI->sidecar reçu côté sidecar->UI : %s", (line) => {
+    const router = new TabRouter();
+    router.registerTab("tab-a");
+    expect(router.handleChunk("tab-a", line + "\n")).toEqual([]);
+  });
+
+  it("jette un mod_client_press reçu côté sidecar->UI", () => {
+    const router = new TabRouter();
+    router.registerTab("tab-a");
+    const line =
+      '{"type":"mod_client_press","requestId":"q","address":{"plugin":"p","component":"Pane","instanceId":"i","client":"k","module":"m"},"element":"b","event":{"type":"press"}}\n';
+    expect(router.handleChunk("tab-a", line)).toEqual([]);
   });
 
   it("jette un message mod UI->sidecar reçu côté sidecar->UI", () => {
