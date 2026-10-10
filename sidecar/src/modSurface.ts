@@ -7,8 +7,13 @@ import { spawn as nodeSpawn, type ChildProcess } from "node:child_process";
 import { StringDecoder } from "node:string_decoder";
 import type { SpawnedProcess, SpawnOptions } from "@anthropic-ai/claude-agent-sdk";
 import type {
+  ClientAddress,
+  ModClientFault,
+  ModClientModule,
+  ModClientPress,
   ModCopyResult,
   ModInput,
+  ModMessage,
   ModPaneAction,
   ModPanes,
   ModPress,
@@ -20,7 +25,7 @@ import type {
 type UiRequest = ModRender | ModPress | ModInput | ModSelect;
 // requestId null = requête interne (roster à l'attache), aucune réponse à l'UI.
 type Pending = {
-  kind: "render" | "result" | "pane";
+  kind: "render" | "result" | "pane" | "clientModule" | "clientPress" | "message";
   requestId: string | null;
   action?: ModPaneAction["action"];
   timer: NodeJS.Timeout;
@@ -30,6 +35,9 @@ type Pending = {
 const COPY_TIMEOUT_MS = 4_000;
 // La réponse de ui_press n'arrive qu'à la fin du handler du mod (peut durer des secondes).
 const INTERACTION_TIMEOUT_MS = 120_000;
+
+// Une raison de panne vient d'un module tiers : on borne ce qu'on pousse au moteur.
+const FAULT_REASON_MAX = 200;
 
 const ID_PREFIX = "den-ui-";
 const ATTACH_ID = `${ID_PREFIX}attach`;
@@ -45,6 +53,20 @@ export interface ModSurfaceDeps {
   timeoutMs?: number;
   /** Press / input / select. */
   interactionTimeoutMs?: number;
+}
+
+/** Une réponse partielle du moteur ne doit pas devenir un bundle dont les champs sont undefined. */
+function isBundle(r: any): boolean {
+  const isFile = (f: any) => typeof f?.key === "string" && typeof f?.source === "string";
+  const isModule = (m: any) => typeof m?.module === "string" && typeof m?.entry === "string" && typeof m?.component === "string";
+  const limits = r?.limits;
+  return (
+    typeof r?.hash === "string" &&
+    typeof r?.runtime === "string" &&
+    Array.isArray(r?.modules) && r.modules.every(isModule) &&
+    Array.isArray(r?.files) && r.files.every(isFile) &&
+    ["nodes", "depth", "chars", "values", "dataDepth"].every((k) => typeof limits?.[k] === "number")
+  );
 }
 
 export class ModSurface {
@@ -129,6 +151,61 @@ export class ModSurface {
       this.timeoutMs,
       msg.action,
     );
+  }
+
+  handleClientModule(msg: ModClientModule): void {
+    this.clientRequest("clientModule", msg.requestId, { subtype: "ui_client_module", plugin: msg.plugin }, this.timeoutMs);
+  }
+
+  handleClientPress(msg: ModClientPress): void {
+    this.clientRequest(
+      "clientPress",
+      msg.requestId,
+      { subtype: "ui_client_press", ...this.address(msg.address), element: msg.element, event: msg.event },
+      this.interactionTimeoutMs,
+    );
+  }
+
+  handleMessage(msg: ModMessage): void {
+    this.clientRequest(
+      "message",
+      msg.requestId,
+      { subtype: "ui_message", ...this.address(msg.address), data: msg.data },
+      this.interactionTimeoutMs,
+    );
+  }
+
+  handleClientFault(msg: ModClientFault): void {
+    this.clientRequest(
+      "result",
+      msg.requestId,
+      {
+        subtype: "ui_client_fault",
+        ...this.address(msg.address),
+        phase: msg.phase,
+        reason: msg.reason.slice(0, FAULT_REASON_MAX),
+      },
+      this.timeoutMs,
+    );
+  }
+
+  private clientRequest(kind: Pending["kind"], requestId: string, request: Record<string, unknown>, timeoutMs: number): void {
+    if (!this.isAttached) {
+      this.reply({ kind, requestId }, NOT_ATTACHED);
+      return;
+    }
+    this.request(kind, requestId, request, timeoutMs);
+  }
+
+  private address(a: ClientAddress): Record<string, unknown> {
+    return {
+      client_id: this.clientId,
+      plugin: a.plugin,
+      component: a.component,
+      instance_id: a.instanceId,
+      client: a.client,
+      module: a.module,
+    };
   }
 
   handleCopyResult(msg: ModCopyResult): void {
@@ -246,6 +323,40 @@ export class ModSurface {
         ...(!error && value !== undefined ? { value } : {}),
         ...(error ? { error } : {}),
       });
+    } else if (target.kind === "clientModule") {
+      this.send({
+        type: "mod_client_module_result",
+        requestId: target.requestId,
+        ok: !error && isBundle(r),
+        ...(!error && isBundle(r)
+          ? {
+              bundle: {
+                plugin: r.plugin,
+                hash: r.hash,
+                modules: r.modules,
+                runtime: r.runtime,
+                limits: r.limits,
+                files: r.files,
+              },
+            }
+          : { error: error ?? "invalid bundle" }),
+      });
+    } else if (target.kind === "clientPress") {
+      this.send({
+        type: "mod_client_press_result",
+        requestId: target.requestId,
+        handled: !error && r.handled === true,
+        ...(!error && r.reached !== undefined ? { reached: r.reached } : {}),
+        ...(error ? { error } : {}),
+      });
+    } else if (target.kind === "message") {
+      this.send({
+        type: "mod_message_result",
+        requestId: target.requestId,
+        handled: !error && r.handled === true,
+        ...(!error && r.props !== undefined ? { props: r.props } : {}),
+        ...(error ? { error } : {}),
+      });
     } else if (target.kind === "render") {
       this.send({
         type: "mod_tree",
@@ -253,6 +364,7 @@ export class ModSurface {
         tree: error ? null : (r.tree ?? null),
         hooked: !error && r.hooked === true,
         rewritten: !error && r.rewritten === true,
+        ...(!error && r.client_modules ? { clientModules: r.client_modules } : {}),
         ...(error ? { error } : {}),
       });
     } else {

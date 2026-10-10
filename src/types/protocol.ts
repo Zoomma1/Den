@@ -141,7 +141,7 @@ export interface ModSelect {
   instanceId?: string;
 }
 
-/** Adresse d'un Client : instanceId = requestId du ui_render, client = key du noeud, module = chemin sous le plugin. */
+/** Adresse d'un Client : instanceId = l'instance_id du ui_render (id du pane, du message…), client = key du noeud, module = chemin sous le plugin. */
 export interface ClientAddress {
   plugin: string;
   component: ModComponent;

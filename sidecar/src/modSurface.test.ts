@@ -13,6 +13,17 @@ const pushes = fixture("pushes.ndjson");
 const panesLines = fixture("run2-panes.ndjson").map((l) => JSON.parse(l));
 const [copyRequest] = fixture("run2-copy.ndjson").map((l) => JSON.parse(l));
 
+const roundtrips = fixture("client-roundtrips.ndjson");
+const renderClient = fixture("client-render.ndjson")[0];
+const clientModuleFixture = JSON.parse(readFileSync(new URL("../../src/mods/fixtures/client-module.json", import.meta.url), "utf8"));
+
+/** Ligne de fixture (par request_id) rejouée sous l'id réellement émis. */
+function replay(line: string, fixtureId: string, requestId: string): string {
+  return line.replace(`"${fixtureId}"`, `"${requestId}"`);
+}
+const roundtrip = (fixtureId: string) => roundtrips.find((l) => l.includes(`"${fixtureId}"`))!;
+const address = { plugin: "demo", component: "Pane", instanceId: "demo", client: "k", module: "hooks/rows.tsx" } as const;
+
 const paneResponse = (id: string) => panesLines.find((o) => o.response?.request_id === id)!;
 
 /** Ligne de fixture dont le request_id est remplacé par celui réellement émis. */
@@ -21,13 +32,13 @@ function respondLike(fixtureId: string, requestId: string): string {
   return line.replace(`"${fixtureId}"`, `"${requestId}"`);
 }
 
-function setup(attach = true) {
+function setup(attach = true, timeoutMs = 1000) {
   const sent: SidecarToUIMessage[] = [];
   const written: any[] = [];
   const surface = new ModSurface({
     send: (m) => sent.push(m),
     write: (l) => written.push(JSON.parse(l)),
-    timeoutMs: 1000,
+    timeoutMs,
   });
   if (attach) {
     surface.handleLine('{"type":"system","subtype":"init"}');
@@ -392,5 +403,160 @@ describe("ui_copy (fixtures run 2)", () => {
     vi.advanceTimersByTime(10_000);
     expect(sent).toEqual([]);
     expect(written).toHaveLength(before);
+  });
+});
+
+describe("requêtes Client", () => {
+  it("mod_client_module -> ui_client_module, bundle mappé", () => {
+    const { surface, sent, written } = setup();
+    surface.handleClientModule({ type: "mod_client_module", requestId: "cm1", plugin: "demo" });
+    expect(written[1].request).toEqual({ subtype: "ui_client_module", plugin: "demo" });
+    surface.handleLine(JSON.stringify({ ...clientModuleFixture, response: { ...clientModuleFixture.response, request_id: written[1].request_id } }));
+    const { plugin, hash, modules, runtime, limits, files } = clientModuleFixture.response.response;
+    expect(sent).toEqual([
+      { type: "mod_client_module_result", requestId: "cm1", ok: true, bundle: { plugin, hash, modules, runtime, limits, files } },
+    ]);
+  });
+
+  it("mod_client_module : erreur moteur, timeout 10 s, réponse sans bundle", () => {
+    const { surface, sent, written } = setup(true, 10_000);
+    surface.handleClientModule({ type: "mod_client_module", requestId: "e", plugin: "demo" });
+    surface.handleLine(
+      JSON.stringify({ type: "control_response", response: { subtype: "error", request_id: written[1].request_id, error: "no such plugin" } }),
+    );
+    surface.handleClientModule({ type: "mod_client_module", requestId: "t", plugin: "demo" });
+    vi.advanceTimersByTime(9_999);
+    expect(sent).toHaveLength(1);
+    vi.advanceTimersByTime(1);
+    surface.handleClientModule({ type: "mod_client_module", requestId: "v", plugin: "demo" });
+    surface.handleLine(
+      JSON.stringify({ type: "control_response", response: { subtype: "success", request_id: written[3].request_id, response: {} } }),
+    );
+    expect(sent).toEqual([
+      { type: "mod_client_module_result", requestId: "e", ok: false, error: "no such plugin" },
+      { type: "mod_client_module_result", requestId: "t", ok: false, error: "timeout" },
+      { type: "mod_client_module_result", requestId: "v", ok: false, error: "invalid bundle" },
+    ]);
+  });
+
+  it("mod_client_module : une réponse partielle (hash sans files ni limits) est refusée", () => {
+    const { surface, sent, written } = setup();
+    surface.handleClientModule({ type: "mod_client_module", requestId: "p", plugin: "demo" });
+    surface.handleLine(
+      JSON.stringify({
+        type: "control_response",
+        response: { subtype: "success", request_id: written.at(-1).request_id, response: { plugin: "demo", hash: "h", modules: [], runtime: "r" } },
+      }),
+    );
+    expect(sent).toEqual([{ type: "mod_client_module_result", requestId: "p", ok: false, error: "invalid bundle" }]);
+  });
+
+  it("mod_client_press -> ui_client_press, reached relayé", () => {
+    const { surface, sent, written } = setup();
+    surface.handleClientPress({ type: "mod_client_press", requestId: "cp1", address, element: "x", event: { type: "press" } });
+    expect(written[1].request).toMatchObject({
+      subtype: "ui_client_press",
+      client_id: written[0].request.client_id,
+      plugin: "demo",
+      component: "Pane",
+      instance_id: "demo",
+      client: "k",
+      module: "hooks/rows.tsx",
+      element: "x",
+      event: { type: "press" },
+    });
+    surface.handleLine(replay(roundtrip("den-ui-client-press"), "den-ui-client-press", written[1].request_id));
+    expect(sent).toHaveLength(1);
+    expect(sent[0]).toMatchObject({ type: "mod_client_press_result", requestId: "cp1", handled: true });
+    expect((sent[0] as any).reached).toMatchObject({ plugin: "demo", element: "x" });
+  });
+
+  it("mod_client_press : handled sans reached, timeout 120 s, repli", () => {
+    const { surface, sent, written } = setup();
+    surface.handleClientPress({ type: "mod_client_press", requestId: "b", address, element: "x", event: { type: "select", value: "v" } });
+    surface.handleLine(
+      JSON.stringify({ type: "control_response", response: { subtype: "success", request_id: written[1].request_id, response: { handled: true } } }),
+    );
+    surface.handleClientPress({ type: "mod_client_press", requestId: "t", address, element: "x", event: { type: "press" } });
+    vi.advanceTimersByTime(119_999);
+    expect(sent).toHaveLength(1);
+    vi.advanceTimersByTime(1);
+    expect(sent).toEqual([
+      { type: "mod_client_press_result", requestId: "b", handled: true },
+      { type: "mod_client_press_result", requestId: "t", handled: false, error: "timeout" },
+    ]);
+    const off = setup(false);
+    off.surface.handleClientPress({ type: "mod_client_press", requestId: "o", address, element: "x", event: { type: "press" } });
+    expect(off.sent).toEqual([{ type: "mod_client_press_result", requestId: "o", handled: false, error: "surface not attached" }]);
+  });
+
+  it("mod_message -> ui_message, props relayées", () => {
+    const { surface, sent, written } = setup();
+    surface.handleMessage({ type: "mod_message", requestId: "m1", address, data: { scrollTo: 3 } });
+    expect(written[1].request).toMatchObject({ subtype: "ui_message", plugin: "demo", instance_id: "demo", client: "k", data: { scrollTo: 3 } });
+    surface.handleLine(replay(roundtrip("den-ui-msg"), "den-ui-msg", written[1].request_id));
+    surface.handleMessage({ type: "mod_message", requestId: "m2", address, data: null });
+    surface.handleLine(
+      JSON.stringify({ type: "control_response", response: { subtype: "success", request_id: written[2].request_id, response: { handled: true, props: { n: 1 } } } }),
+    );
+    expect(sent).toEqual([
+      { type: "mod_message_result", requestId: "m1", handled: true },
+      { type: "mod_message_result", requestId: "m2", handled: true, props: { n: 1 } },
+    ]);
+  });
+
+  it("mod_message : erreur, timeout 120 s, repli", () => {
+    const { surface, sent, written } = setup();
+    surface.handleMessage({ type: "mod_message", requestId: "e", address, data: 1 });
+    surface.handleLine(
+      JSON.stringify({ type: "control_response", response: { subtype: "error", request_id: written[1].request_id, error: "boom" } }),
+    );
+    surface.handleMessage({ type: "mod_message", requestId: "t", address, data: 1 });
+    vi.advanceTimersByTime(120_000);
+    const off = setup(false);
+    off.surface.handleMessage({ type: "mod_message", requestId: "o", address, data: 1 });
+    expect(sent).toEqual([
+      { type: "mod_message_result", requestId: "e", handled: false, error: "boom" },
+      { type: "mod_message_result", requestId: "t", handled: false, error: "timeout" },
+    ]);
+    expect(off.sent).toEqual([{ type: "mod_message_result", requestId: "o", handled: false, error: "surface not attached" }]);
+  });
+
+  it("mod_client_fault -> ui_client_fault, reason plafonnée, réponse mod_result", () => {
+    const { surface, sent, written } = setup();
+    surface.handleClientFault({ type: "mod_client_fault", requestId: "f1", address, phase: "run", reason: "x".repeat(500) });
+    expect(written[1].request).toMatchObject({ subtype: "ui_client_fault", plugin: "demo", client: "k", phase: "run" });
+    expect(written[1].request.reason).toHaveLength(200);
+    surface.handleLine(replay(roundtrip("den-ui-fault"), "den-ui-fault", written[1].request_id));
+    expect(sent).toEqual([{ type: "mod_result", requestId: "f1", handled: true }]);
+  });
+
+  it("mod_client_fault : timeout 10 s et repli", () => {
+    const { surface, sent } = setup(true, 10_000);
+    surface.handleClientFault({ type: "mod_client_fault", requestId: "t", address, phase: "load", reason: "r" });
+    vi.advanceTimersByTime(9_999);
+    expect(sent).toEqual([]);
+    vi.advanceTimersByTime(1);
+    const off = setup(false);
+    off.surface.handleClientFault({ type: "mod_client_fault", requestId: "o", address, phase: "load", reason: "r" });
+    expect(sent).toEqual([{ type: "mod_result", requestId: "t", handled: false, error: "timeout" }]);
+    expect(off.sent).toEqual([{ type: "mod_result", requestId: "o", handled: false, error: "surface not attached" }]);
+  });
+
+  it("mod_tree relaie client_modules de ui_render, absent sinon", () => {
+    const { surface, sent, written } = setup();
+    surface.handleUiMessage({ type: "mod_render", requestId: "r1", component: "Pane", instanceId: "demo", props: {} });
+    surface.handleLine(renderClient.replace(/"request_id": ?"[^"]*"/, `"request_id":"${written[1].request_id}"`));
+    surface.handleUiMessage({ type: "mod_render", requestId: "r2", component: "ToolResult", instanceId: "t", props: {} });
+    surface.handleLine(respondLike("den-ui-toolres", written[2].request_id));
+    expect(sent[0]).toMatchObject({ type: "mod_tree", requestId: "r1", clientModules: { demo: "hash-factice-0001" } });
+    expect(sent[1]).not.toHaveProperty("clientModules");
+  });
+
+  it("une panne du moteur en cours de requête répond en erreur", () => {
+    const { surface, sent } = setup();
+    surface.handleMessage({ type: "mod_message", requestId: "m", address, data: 1 });
+    (surface as any).reset("engine exited");
+    expect(sent).toEqual([{ type: "mod_message_result", requestId: "m", handled: false, error: "engine exited" }]);
   });
 });

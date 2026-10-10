@@ -24,8 +24,12 @@ import { createInterface } from "node:readline";
 import { query, type SDKUserMessage, type SlashCommand } from "@anthropic-ai/claude-agent-sdk";
 import {
   isInterruptMessage,
+  isModClientFault,
+  isModClientModule,
+  isModClientPress,
   isModCopyResult,
   isModInput,
+  isModMessage,
   isModPaneAction,
   isModPress,
   isModRender,
@@ -404,6 +408,14 @@ rl.on("line", (line) => {
     modSurface.handlePaneAction(msg);
   } else if (isModCopyResult(msg)) {
     modSurface.handleCopyResult(msg);
+  } else if (isModClientModule(msg)) {
+    modSurface.handleClientModule(msg);
+  } else if (isModClientPress(msg)) {
+    modSurface.handleClientPress(msg);
+  } else if (isModMessage(msg)) {
+    modSurface.handleMessage(msg);
+  } else if (isModClientFault(msg)) {
+    modSurface.handleClientFault(msg);
   }
 });
 
