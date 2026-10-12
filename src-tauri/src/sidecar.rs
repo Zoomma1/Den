@@ -26,6 +26,8 @@ use std::time::{Duration, Instant};
 
 use tauri::ipc::Channel;
 
+use crate::login_path;
+
 /// Un sidecar en cours d'exécution pour un tab donné.
 struct TabSidecar {
     /// `Arc` plutôt qu'un `Mutex<ChildStdin>` nu : `sidecar_send` clone ce
@@ -63,6 +65,13 @@ fn lock_registry() -> MutexGuard<'static, HashMap<String, TabSidecar>> {
     registry()
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
+/// Injecte le PATH du shell de login (DEN-11) ; `None` -> PATH hérité conservé.
+fn apply_login_path(command: &mut Command, path: Option<&str>) {
+    if let Some(path) = path {
+        command.env("PATH", path);
+    }
 }
 
 /// Résout la commande de spawn du sidecar Node.
@@ -109,6 +118,7 @@ fn resolve_sidecar_command(cwd: &str) -> Result<Command, String> {
     // 2026-08-24). Pas de `env_clear()` : casserait PATH/HOME et donc la
     // résolution de node lui-même et l'OAuth.
     command.env_remove("ANTHROPIC_API_KEY");
+    apply_login_path(&mut command, login_path::login_path().as_deref());
 
     command
         .stdin(Stdio::piped())
@@ -155,7 +165,7 @@ fn enumerate_descendants(root: u32) -> Vec<u32> {
 }
 
 #[tauri::command]
-pub fn sidecar_spawn(
+pub async fn sidecar_spawn(
     tab_id: String,
     cwd: String,
     on_message: Channel<String>,
@@ -165,6 +175,11 @@ pub fn sidecar_spawn(
     }
 
     let mut command = resolve_sidecar_command(&cwd)?;
+
+    // Un `type:error` mettrait l'onglet en erreur définitive : on logue, le 127 éventuel s'affiche déjà.
+    if login_path::login_path().is_none() {
+        eprintln!("[sidecar:{tab_id}] PATH du shell de login introuvable, PATH minimal conservé");
+    }
 
     // Marqueur d'identification de l'ARBRE sidecar (DEN-06) : hérité par
     // tout descendant (tsx -> node main.ts -> CLI -> bash detached), il
@@ -401,4 +416,35 @@ pub fn sidecar_kill_all() -> Result<(), String> {
         entry.shutdown.store(true, Ordering::SeqCst);
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::ffi::OsStr;
+
+    fn env_of<'a>(command: &'a Command, key: &str) -> Option<Option<&'a OsStr>> {
+        command.get_envs().find(|(k, _)| *k == OsStr::new(key)).map(|(_, v)| v)
+    }
+
+    #[test]
+    fn sidecar_gets_login_path() {
+        let mut command = Command::new("true");
+        apply_login_path(&mut command, Some("/opt/homebrew/bin:/usr/bin"));
+        assert_eq!(env_of(&command, "PATH"), Some(Some(OsStr::new("/opt/homebrew/bin:/usr/bin"))));
+    }
+
+    // Garde la règle CLAUDE.md sur la vraie commande de spawn, pas sur un Command de test.
+    #[test]
+    fn resolved_sidecar_command_never_carries_api_key() {
+        let command = resolve_sidecar_command("/tmp").unwrap();
+        assert_eq!(env_of(&command, "ANTHROPIC_API_KEY"), Some(None));
+    }
+
+    #[test]
+    fn no_login_path_leaves_inherited_path() {
+        let mut command = Command::new("true");
+        apply_login_path(&mut command, None);
+        assert_eq!(env_of(&command, "PATH"), None);
+    }
 }

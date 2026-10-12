@@ -1,3 +1,4 @@
+mod login_path;
 mod pty;
 mod sidecar;
 mod state;
@@ -24,6 +25,13 @@ pub fn run() {
             state::path_canonicalize,
             state::state_migrated,
         ])
+        .setup(|_app| {
+            // Préchauffe le cache : le premier sidecar ne paie pas la latence du shell.
+            std::thread::spawn(|| {
+                login_path::login_path();
+            });
+            Ok(())
+        })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

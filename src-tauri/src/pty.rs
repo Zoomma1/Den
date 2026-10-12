@@ -62,6 +62,8 @@ pub fn pty_spawn(cols: u16, rows: u16, cwd: String, on_data: Channel<Vec<u8>>) -
         .map_err(|err| format!("ouverture du PTY impossible: {err}"))?;
 
     let mut cmd = CommandBuilder::new(resolve_shell());
+    // Login shell : lit .zprofile (PATH Homebrew) que Finder ne fournit pas.
+    cmd.arg("-l");
     cmd.cwd(&cwd);
     // xterm.js (addon webgl) rend le 256-couleurs et le truecolor : sans ces
     // deux variables, vim & co retombent sur la palette 8/16 couleurs.
