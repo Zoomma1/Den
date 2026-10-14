@@ -1,6 +1,6 @@
 import { MOD_EVENTS, type CreateAboveBand } from "./contracts";
 import { isRenderNode } from "./tree";
-import { replaceKeepingFocus } from "./render";
+import { pressHotkey, replaceKeepingFocus } from "./render";
 
 const DEBOUNCE_MS = 100;
 const MAX_ROWS = 8;
@@ -66,7 +66,8 @@ export const createAboveBand: CreateAboveBand = ({
       ) {
         return hide();
       }
-      replaceKeepingFocus(band, renderTree(tree, options?.(requested, { component: "AbovePrompt", instanceId: "above-prompt" })));
+      const wasHidden = band.hidden === true;
+      replaceKeepingFocus(band, renderTree(tree, options?.(requested, { component: "AbovePrompt", instanceId: "above-prompt" })), wasHidden);
       band.hidden = false;
     } catch {
       if (!disposed && tabId === requested) hide();
@@ -106,6 +107,9 @@ export const createAboveBand: CreateAboveBand = ({
     if (detail.instances.some((i) => i.component === "AbovePrompt")) schedule();
   };
 
+  const onKeydown = (e: KeyboardEvent): void => void pressHotkey(band, e);
+  band.addEventListener("keydown", onKeydown);
+
   insert();
   window.addEventListener("den:active-tab-changed", onTabChanged);
   window.addEventListener("den:tab-state-changed", onStateChanged);
@@ -118,6 +122,7 @@ export const createAboveBand: CreateAboveBand = ({
       window.removeEventListener("den:active-tab-changed", onTabChanged);
       window.removeEventListener("den:tab-state-changed", onStateChanged);
       window.removeEventListener(MOD_EVENTS.invalidate, onInvalidate);
+      band.removeEventListener("keydown", onKeydown);
       band.remove();
     },
   };

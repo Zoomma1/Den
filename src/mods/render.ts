@@ -1,6 +1,13 @@
 import { createMarkdownEngine } from "../markdown/renderer";
+import { openableUrl, openExternal } from "../markdown/links";
 import type { RenderOptions, RenderTreeFn } from "./contracts";
 import { isSupportedElement, type ElementNode, type RenderNode } from "./tree";
+
+/** Lien de mod sans action `press` : on l'ouvre dans le navigateur (jamais dans la WebView). */
+function openLink(href: string | undefined): void {
+  const url = href ? openableUrl(href) : null;
+  if (url) openExternal(url);
+}
 
 // Le moteur Marked échappe déjà le HTML brut (cf. createMarkdownEngine).
 const md = createMarkdownEngine(false);
@@ -187,7 +194,9 @@ function build(node: RenderNode, opts: RenderOptions): Node {
         const a = (e.target as Element).closest?.("a");
         if (!a) return;
         e.preventDefault();
-        if (el.press) opts.onPress?.(el.press, key, a.getAttribute("href") ?? undefined);
+        const href = a.getAttribute("href") ?? undefined;
+        if (el.press) opts.onPress?.(el.press, key, href);
+        else openLink(href);
       });
       return div;
     }
@@ -200,6 +209,7 @@ function build(node: RenderNode, opts: RenderOptions): Node {
       a.addEventListener("click", (e) => {
         e.preventDefault();
         if (el.press) opts.onPress?.(el.press, key, href);
+        else openLink(href);
       });
       return a;
     }
@@ -209,7 +219,9 @@ function build(node: RenderNode, opts: RenderOptions): Node {
       const pre = document.createElement("pre");
       pre.className = "den-mod-code";
       const code = document.createElement("code");
-      code.textContent = str(p.text) || textOf(el.children);
+      const text = str(p.source) || str(p.text) || textOf(el.children);
+      if (p.format === "diff") appendDiffLines(code, text);
+      else code.textContent = text;
       pre.appendChild(code);
       return pre;
     }
@@ -220,6 +232,8 @@ function build(node: RenderNode, opts: RenderOptions): Node {
       if (typeof p.variant === "string") btn.dataset.variant = p.variant;
       if (typeof p.role === "string") btn.dataset.role = p.role;
       btn.textContent = str(p.label) || textOf(el.children);
+      if (typeof p.hotkey === "string" && p.hotkey) btn.dataset.hotkey = p.hotkey.toLowerCase();
+      if (p.autoFocus === true) btn.dataset.autofocus = "";
       btn.addEventListener("click", () => {
         if (el.press) opts.onPress?.(el.press, key);
       });
@@ -286,8 +300,39 @@ export const renderTree: RenderTreeFn = (node, opts = {}) => {
   return root;
 };
 
-/** Remplace le contenu d'un conteneur en gardant le focus, le caret et la saisie en cours d'un champ de mod : sans ça, chaque invalidation (une par frappe) recrée l'<input> et fait perdre le focus. */
-export function replaceKeepingFocus(container: HTMLElement, next: Node): void {
+function appendDiffLines(code: HTMLElement, text: string): void {
+  const lines = text.split("\n");
+  lines.forEach((line, i) => {
+    const span = document.createElement("span");
+    if (line.startsWith("@@")) span.className = "den-mod-code__hunk";
+    else if (line.startsWith("+") && !line.startsWith("+++")) span.className = "den-mod-code__add";
+    else if (line.startsWith("-") && !line.startsWith("---")) span.className = "den-mod-code__del";
+    // Le \n reste dans le texte pour que la copie garde les sauts de ligne.
+    span.textContent = i < lines.length - 1 ? `${line}\n` : line;
+    code.appendChild(span);
+  });
+}
+
+/** Presse le bouton [data-hotkey] correspondant a la touche, hors champ de saisie et sans modificateur. */
+export function pressHotkey(container: HTMLElement, e: KeyboardEvent): boolean {
+  // Une touche maintenue ne doit pas re-cliquer un bouton (ex. « Autoriser »).
+  if (e.repeat || e.isComposing || e.ctrlKey || e.metaKey || e.altKey || e.key.length !== 1) return false;
+  const t = e.target;
+  if (
+    t instanceof HTMLElement &&
+    (t.closest("input, textarea, select") || t.isContentEditable || t.getAttribute("contenteditable") === "true")
+  ) {
+    return false;
+  }
+  const btn = container.querySelector<HTMLButtonElement>(`button[data-hotkey="${CSS.escape(e.key.toLowerCase())}"]`);
+  if (!btn || btn.disabled) return false;
+  e.preventDefault();
+  btn.click();
+  return true;
+}
+
+/** Remplace le contenu d'un conteneur en gardant le focus, le caret et la saisie en cours d'un champ de mod : sans ça, chaque invalidation (une par frappe) recrée l'<input> et fait perdre le focus. autoFocus donne le focus au bouton [data-autofocus] si rien du conteneur n'a le focus. */
+export function replaceKeepingFocus(container: HTMLElement, next: Node, autoFocus = false): void {
   const active = document.activeElement;
   const field =
     active instanceof HTMLInputElement || active instanceof HTMLSelectElement
@@ -299,8 +344,17 @@ export function replaceKeepingFocus(container: HTMLElement, next: Node): void {
       ? { value: field.value, start: field.selectionStart, end: field.selectionEnd }
       : null;
 
+  // Évalué avant le remplacement (l'ancien actif en sort) ; le conteneur lui-même (tabIndex) ne compte pas.
+  const innerFocused = active instanceof HTMLElement && active !== container && container.contains(active);
+  const hadAutofocus = innerFocused && (active as HTMLElement).hasAttribute("data-autofocus");
+
   container.replaceChildren(next);
-  if (key === undefined) return;
+  if (key === undefined) {
+    if ((autoFocus && !innerFocused) || hadAutofocus) {
+      container.querySelector<HTMLElement>("[data-autofocus]")?.focus({ preventScroll: true });
+    }
+    return;
+  }
 
   const fresh = container.querySelector<HTMLInputElement | HTMLSelectElement>(
     `[data-mod-key="${CSS.escape(key)}"]`,

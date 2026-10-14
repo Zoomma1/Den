@@ -44,6 +44,18 @@
   white-space: pre;
 }
 
+.den-mod-code__add {
+  color: var(--den-ansi-green);
+}
+
+.den-mod-code__del {
+  color: var(--den-ansi-red);
+}
+
+.den-mod-code__hunk {
+  opacity: 0.6;
+}
+
 .den-mod-btn {
   font: inherit;
   color: var(--den-fg);
