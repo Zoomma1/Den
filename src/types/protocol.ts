@@ -95,7 +95,19 @@ export type ModComponent =
   | "AssistantMessage"
   | "ToolResult"
   | "AbovePrompt"
-  | "Pane";
+  | "Pane"
+  | "UserMessage"
+  | "ToolUse"
+  | "ToolGroup"
+  | "CommandOutput"
+  | "TurnDuration";
+
+/** Taille de la surface en cellules mono (RenderViewport du moteur) ; `rows` = hauteur de toute la surface. */
+export interface ModViewport {
+  columns: number;
+  rows: number;
+  isFullscreen?: boolean;
+}
 
 /** L'UI demande l'arbre de rendu d'un composant ; réponse `mod_tree`. */
 export interface ModRender {
@@ -104,6 +116,7 @@ export interface ModRender {
   component: ModComponent;
   instanceId: string;
   props: Record<string, unknown>;
+  viewport?: ModViewport;
 }
 
 /** Clic sur un noeud interactif ; réponse `mod_result`. */
@@ -306,6 +319,8 @@ export interface SessionInfo {
 export interface Done {
   type: "done";
   sessionId?: string;
+  /** Durée du tour en ms (pied de tour natif, TurnDuration). */
+  durationMs?: number;
 }
 
 /** Erreur côté sidecar (agent SDK, process, parsing...). */
@@ -390,6 +405,16 @@ export interface ModPanes {
   focusRequestedId?: string | null;
 }
 
+/** Sortie texte d'une commande slash (locale ou de mod), affichée sous son écho. */
+export interface CommandOutput {
+  type: "command_output";
+  id: string;
+  command: string;
+  args: string;
+  text: string;
+  isError?: boolean;
+}
+
 /** Instances à re-demander via `mod_render`. */
 export interface ModInvalidate {
   type: "mod_invalidate";
@@ -403,6 +428,8 @@ export interface ModTree {
   tree: RenderNode | null;
   hooked: boolean;
   rewritten: boolean;
+  /** Props renvoyées par le moteur ; avec `tree: {type:"engine", ref:N}` ce sont les props à redessiner. */
+  props?: Record<string, unknown>;
   /** plugin -> hash des bundles Client référencés (client_modules de ui_render). */
   clientModules?: Record<string, string>;
   error?: string;
@@ -481,7 +508,8 @@ export type SidecarToUIMessage =
   | ModClientModuleResult
   | ModMessageResult
   | ModClientPressResult
-  | ModsUnavailable;
+  | ModsUnavailable
+  | CommandOutput;
 
 /**
  * Messages affichables dans le fil de conversation : le wire sidecar -> UI
@@ -623,6 +651,10 @@ export function isModCopyResult(
   return msg.type === "mod_copy_result";
 }
 
+export function isCommandOutput(msg: DenProtocolMessage): msg is CommandOutput {
+  return msg.type === "command_output";
+}
+
 export function isModsUnavailable(
   msg: DenProtocolMessage,
 ): msg is ModsUnavailable {
@@ -645,7 +677,17 @@ export function isModSelect(msg: DenProtocolMessage): msg is ModSelect {
   return msg.type === "mod_select";
 }
 
-const MOD_COMPONENT_NAMES: readonly string[] = ["AssistantMessage", "ToolResult", "AbovePrompt", "Pane"];
+const MOD_COMPONENT_NAMES: readonly string[] = [
+  "AssistantMessage",
+  "ToolResult",
+  "AbovePrompt",
+  "Pane",
+  "UserMessage",
+  "ToolUse",
+  "ToolGroup",
+  "CommandOutput",
+  "TurnDuration",
+];
 const CLIENT_PHASES: readonly string[] = ["load", "render", "run"];
 
 const isStr = (v: unknown): v is string => typeof v === "string";

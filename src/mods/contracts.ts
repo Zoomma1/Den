@@ -4,6 +4,7 @@ import type {
   ModClientPress,
   ModComponent,
   ModPanes,
+  ModViewport,
 } from "../types/protocol";
 import type { ElementNode, RenderNode } from "./tree";
 
@@ -46,8 +47,9 @@ export interface ModRenderClient {
       component: ModComponent;
       instanceId: string;
       props: Record<string, unknown>;
+      viewport?: ModViewport;
     },
-  ): Promise<{ tree: RenderNode | null; hooked: boolean; rewritten: boolean }>;
+  ): Promise<{ tree: RenderNode | null; hooked: boolean; rewritten: boolean; props?: Record<string, unknown> }>;
 }
 
 /** Implémenté par le lot "intégration" (src/mods/index.ts), consommé par le pane host. */
@@ -120,6 +122,7 @@ export type OpenClaudeShell = (target: {
 export const MOD_EVENTS = {
   panes: "den:mod-panes",
   invalidate: "den:mod-invalidate",
+  viewport: "den:mod-viewport",
 } as const;
 
 export type ModPanesEventDetail = { tabId: string } & PaneRoster;
@@ -127,4 +130,10 @@ export type ModPanesEventDetail = { tabId: string } & PaneRoster;
 export interface ModInvalidateEventDetail {
   tabId: string;
   instances: { component: string; instanceId: string }[];
+}
+
+/** Détail de `den:mod-viewport` : la largeur du fil de conversation a changé (colonnes mono). */
+export interface ModViewportEventDetail {
+  tabId: string;
+  viewport: ModViewport;
 }

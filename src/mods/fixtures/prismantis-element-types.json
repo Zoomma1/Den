@@ -1,0 +1,250 @@
+{
+  "source": "prismantis-render-matrix.ndjson",
+  "panesPushes": 2,
+  "census": {
+    "Box": {
+      "count": 822,
+      "props": {
+        "flexDirection": {
+          "count": 477,
+          "samples": [
+            "\"row\"",
+            "\"column\""
+          ]
+        },
+        "width": {
+          "count": 275,
+          "samples": [
+            "2",
+            "6",
+            "7",
+            "5"
+          ]
+        },
+        "flexShrink": {
+          "count": 262,
+          "samples": [
+            "0",
+            "1"
+          ]
+        },
+        "rowGap": {
+          "count": 45,
+          "samples": [
+            "1"
+          ]
+        },
+        "flexGrow": {
+          "count": 35,
+          "samples": [
+            "1"
+          ]
+        },
+        "key": {
+          "count": 573,
+          "samples": [
+            "\"c1\"",
+            "\"copies1\"",
+            "\"b1\"",
+            "\"b1.h.0\""
+          ]
+        },
+        "alignSelf": {
+          "count": 105,
+          "samples": [
+            "\"flex-start\"",
+            "\"flex-end\""
+          ]
+        },
+        "justifyContent": {
+          "count": 295,
+          "samples": [
+            "\"flex-end\"",
+            "\"flex-start\"",
+            "\"center\"",
+            "\"space-between\""
+          ]
+        },
+        "columnGap": {
+          "count": 124,
+          "samples": [
+            "1",
+            "0",
+            "4",
+            "2"
+          ]
+        },
+        "alignItems": {
+          "count": 54,
+          "samples": [
+            "\"stretch\""
+          ]
+        },
+        "paddingLeft": {
+          "count": 75,
+          "samples": [
+            "2",
+            "0"
+          ]
+        },
+        "borderStyle": {
+          "count": 17,
+          "samples": [
+            "\"round\""
+          ]
+        },
+        "borderColor": {
+          "count": 17,
+          "samples": [
+            "\"yellow\"",
+            "\"#414868\"",
+            "\"#bb9af7\""
+          ]
+        },
+        "paddingX": {
+          "count": 17,
+          "samples": [
+            "1"
+          ]
+        },
+        "flexWrap": {
+          "count": 5,
+          "samples": [
+            "\"wrap\""
+          ]
+        },
+        "backgroundColor": {
+          "count": 14,
+          "samples": [
+            "\"#595885\"",
+            "\"#675967\""
+          ]
+        }
+      },
+      "hasPress": 0,
+      "hasClient": 0,
+      "childKinds": {
+        "Box": 755,
+        "Text": 1185,
+        "Button": 145
+      }
+    },
+    "Button": {
+      "count": 145,
+      "props": {
+        "key": {
+          "count": 145,
+          "samples": [
+            "\"copy1\"",
+            "\"art1\"",
+            "\"reply\"",
+            "\"copy3\""
+          ]
+        },
+        "label": {
+          "count": 145,
+          "samples": [
+            "\"⧉ md\"",
+            "\"⧉ art\"",
+            "\"⧉ copy reply\"",
+            "\"⧉ copy\""
+          ]
+        },
+        "variant": {
+          "count": 145,
+          "samples": [
+            "\"primary\""
+          ]
+        }
+      },
+      "hasPress": 145,
+      "hasClient": 0,
+      "childKinds": {}
+    },
+    "engine": {
+      "count": 5,
+      "props": {},
+      "hasPress": 0,
+      "hasClient": 0,
+      "childKinds": {}
+    },
+    "Link": {
+      "count": 10,
+      "props": {
+        "href": {
+          "count": 10,
+          "samples": [
+            "\"https://example.com/a\"",
+            "\"https://example.com/b\""
+          ]
+        }
+      },
+      "hasPress": 0,
+      "hasClient": 0,
+      "childKinds": {
+        "Text": 5
+      }
+    },
+    "Text": {
+      "count": 2987,
+      "props": {
+        "color": {
+          "count": 1881,
+          "samples": [
+            "\"#bb9af7\"",
+            "\"#565f89\"",
+            "\"#e0af68\"",
+            "\"#ff9e64\""
+          ]
+        },
+        "dimColor": {
+          "count": 588,
+          "samples": [
+            "false",
+            "true"
+          ]
+        },
+        "bold": {
+          "count": 115,
+          "samples": [
+            "true",
+            "false"
+          ]
+        },
+        "italic": {
+          "count": 205,
+          "samples": [
+            "false",
+            "true"
+          ]
+        },
+        "strikethrough": {
+          "count": 35,
+          "samples": [
+            "true",
+            "false"
+          ]
+        },
+        "underline": {
+          "count": 5,
+          "samples": [
+            "true"
+          ]
+        },
+        "wrap": {
+          "count": 15,
+          "samples": [
+            "\"truncate-end\""
+          ]
+        }
+      },
+      "hasPress": 0,
+      "hasClient": 0,
+      "childKinds": {
+        "string": 2455,
+        "Text": 1791,
+        "Link": 10
+      }
+    }
+  }
+}
