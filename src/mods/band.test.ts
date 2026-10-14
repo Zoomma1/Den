@@ -72,6 +72,41 @@ describe("createAboveBand", () => {
     expect(band()?.nextElementSibling?.className).toBe("den-prompt-bar");
   });
 
+  it("raccourci : la touche clique le bouton data-hotkey de la bande, pas dans un input", async () => {
+    const { renderTree } = setup();
+    renderTree.mockImplementation(() => {
+      const el = document.createElement("div");
+      el.innerHTML = '<button data-hotkey="n">non</button><input />';
+      return el;
+    });
+    emit("den:active-tab-changed", { tabId: "t1" });
+    await tick();
+    const btn = band()!.querySelector("button")!;
+    const onClick = vi.fn();
+    btn.addEventListener("click", onClick);
+    btn.dispatchEvent(new KeyboardEvent("keydown", { key: "n", bubbles: true, cancelable: true }));
+    expect(onClick).toHaveBeenCalledTimes(1);
+    band()!.querySelector("input")!.dispatchEvent(new KeyboardEvent("keydown", { key: "n", bubbles: true }));
+    expect(onClick).toHaveBeenCalledTimes(1);
+  });
+
+  it("autoFocus : focus a l'apparition de la bande seulement", async () => {
+    const { renderTree } = setup();
+    renderTree.mockImplementation(() => {
+      const el = document.createElement("div");
+      el.innerHTML = "<button data-autofocus>ok</button><button>autre</button>";
+      return el;
+    });
+    emit("den:active-tab-changed", { tabId: "t1" });
+    await tick();
+    expect(document.activeElement).toBe(band()!.querySelector("button"));
+    (band()!.querySelectorAll("button")[1] as HTMLElement).focus();
+    emit(MOD_EVENTS.invalidate, invalidateAbove);
+    await tick();
+    expect(band()!.querySelector("[data-autofocus]")).not.toBeNull();
+    expect(document.activeElement?.hasAttribute("data-autofocus")).toBe(false);
+  });
+
   it("rend l'arbre de la fixture pour le tab actif", async () => {
     const { requestRender, renderTree } = setup();
     emit("den:active-tab-changed", { tabId: "t1" });

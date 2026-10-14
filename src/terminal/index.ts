@@ -125,6 +125,23 @@ interface TerminalGroup {
 // Posée par `init` : les helpers de groupe sont des fermetures privées de ce module.
 let openClaudeShellImpl: OpenClaudeShell | null = null;
 
+type KeyLike = Pick<KeyboardEvent, "key" | "metaKey" | "altKey" | "ctrlKey">;
+
+/** Séquence PTY des raccourcis macOS que xterm ignore ou avale ; null sinon. */
+export function keyToPtySequence(ev: KeyLike): string | null {
+  if (ev.metaKey && !ev.altKey && !ev.ctrlKey) {
+    if (ev.key === "Backspace") return "\x15";
+    if (ev.key === "ArrowLeft") return "\x01";
+    if (ev.key === "ArrowRight") return "\x05";
+  }
+  if (ev.altKey && !ev.ctrlKey && !ev.metaKey) {
+    if (ev.key === "Backspace") return "\x1b\x7f";
+    if (ev.key === "ArrowLeft") return "\x1bb";
+    if (ev.key === "ArrowRight") return "\x1bf";
+  }
+  return null;
+}
+
 export const openClaudeShell: OpenClaudeShell = (target) => {
   if (!openClaudeShellImpl) {
     return Promise.reject(new Error("Den/terminal: module non initialisé, impossible d'ouvrir claude"));
@@ -309,6 +326,14 @@ export function init(ctx: DenContext): void {
     const fitAddon = new FitAddon();
     term.loadAddon(fitAddon);
     term.open(viewportEl);
+    term.attachCustomKeyEventHandler((ev) => {
+      const seq = keyToPtySequence(ev);
+      if (seq === null) return true;
+      // Tous les types d'événement de la combo sont avalés pour que xterm ne la retraite pas.
+      ev.preventDefault();
+      if (ev.type === "keydown") term.input(seq);
+      return false;
+    });
 
     const shell: TerminalShell = {
       term,

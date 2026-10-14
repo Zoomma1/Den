@@ -128,3 +128,6 @@
 @media (prefers-reduced-motion: reduce) {
   .den-session-tab__status { animation: none !important; }
 }
+
+.den-session-tab--drop-before { box-shadow: inset 2px 0 0 var(--den-accent); }
+.den-session-tab--drop-after { box-shadow: inset -2px 0 0 var(--den-accent); }

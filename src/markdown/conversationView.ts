@@ -29,6 +29,7 @@ import type {
   RenderTreeFn,
 } from "../mods/contracts";
 import { isRenderNode } from "../mods/tree";
+import { handleLinkClick } from "./links";
 
 interface ModBridge {
   client: ModRenderClient;
@@ -200,7 +201,9 @@ export class ConversationView {
     this.el.addEventListener("click", (event) => {
       this.onCopyClick(event);
       this.onEditClick(event);
+      handleLinkClick(event);
     });
+    this.el.addEventListener("auxclick", (event) => handleLinkClick(event));
 
     // Spinner de lifecycle : la vue ne COMPTE rien elle-même (seule source
     // de vérité : `src/tabs/lifecycle.ts`, cf. DEN-10 D6) — elle ne fait que
@@ -646,6 +649,12 @@ export class ConversationView {
     textEl.className = "den-msg-user__text";
     textEl.textContent = text;
     el.appendChild(textEl);
+    const timeEl = document.createElement("time");
+    timeEl.className = "den-msg-user__time";
+    const now = new Date();
+    timeEl.dateTime = now.toISOString();
+    timeEl.textContent = now.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit", hour12: false });
+    el.appendChild(timeEl);
     // Bouton éditer (D5) APRÈS le span de texte — la convention copier
     // (`.den-copy` immédiatement avant `.den-msg-user__text`) reste intacte.
     el.appendChild(createEditButton());

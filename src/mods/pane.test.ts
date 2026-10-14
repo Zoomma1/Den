@@ -161,6 +161,82 @@ describe("createPaneHost", () => {
     expect(client.paneAction).toHaveBeenCalledWith("t1", { action: "close", id: "b" });
   });
 
+  describe("raccourcis de boutons", () => {
+    const setupButtons = async () => {
+      renderTree.mockImplementationOnce(() => {
+        const el = document.createElement("div");
+        el.innerHTML =
+          '<button data-hotkey="n">non</button><button data-hotkey="p">pret</button><button data-hotkey="d" disabled>x</button><input />';
+        return el;
+      });
+      activate("t1");
+      pushPanes({ tabId: "t1", panes: [A], shownId: "a", focusedId: "a" });
+      await flush();
+      const clicked: string[] = [];
+      mount.querySelectorAll<HTMLButtonElement>("button[data-hotkey]").forEach((b) =>
+        b.addEventListener("click", () => clicked.push(b.dataset.hotkey!)),
+      );
+      return clicked;
+    };
+    const key = (target: Element, init: KeyboardEventInit) =>
+      target.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, cancelable: true, ...init }));
+
+    it("la touche clique le bon bouton", async () => {
+      const clicked = await setupButtons();
+      key(mount.querySelector("button")!, { key: "P" });
+      expect(clicked).toEqual(["p"]);
+    });
+
+    it("ignoree dans un input, avec modificateur, ou sur bouton disabled", async () => {
+      const clicked = await setupButtons();
+      key(mount.querySelector("input")!, { key: "n" });
+      key(mount.querySelector("button")!, { key: "n", ctrlKey: true });
+      key(mount.querySelector("button")!, { key: "d" });
+      expect(clicked).toEqual([]);
+    });
+  });
+
+  it("autoFocus : focus le bouton au rendu initial d'un pane focus", async () => {
+    renderTree.mockImplementationOnce(() => {
+      const el = document.createElement("div");
+      el.innerHTML = "<button data-autofocus>ok</button>";
+      return el;
+    });
+    activate("t1");
+    pushPanes({ tabId: "t1", panes: [A], shownId: "a", focusedId: "a" });
+    await flush();
+    expect(document.activeElement).toBe(mount.querySelector("[data-autofocus]"));
+  });
+
+  it("autoFocus : flux focus-request, bodyEl focus avant la fin du rendu", async () => {
+    renderTree.mockImplementationOnce(() => {
+      const el = document.createElement("div");
+      el.innerHTML = "<button data-autofocus>ok</button>";
+      return el;
+    });
+    activate("t1");
+    pushPanes({ tabId: "t1", panes: [A], shownId: "a", focusRequestedId: "a" });
+    await flush();
+    await flush();
+    expect(document.activeElement).toBe(mount.querySelector("[data-autofocus]"));
+  });
+
+  it("autoFocus : ne vole pas le focus d'un champ de mod deja focus", async () => {
+    const withField = () => {
+      const el = document.createElement("div");
+      el.innerHTML = "<button data-autofocus>ok</button><input />";
+      return el;
+    };
+    renderTree.mockImplementationOnce(withField).mockImplementationOnce(withField);
+    activate("t1");
+    pushPanes({ tabId: "t1", panes: [A], shownId: "a" });
+    await flush();
+    mount.querySelector("input")!.focus();
+    pushPanes({ tabId: "t1", panes: [A], shownId: "a", focusedId: "a" });
+    await flush();
+    expect(document.activeElement).not.toBe(mount.querySelector("[data-autofocus]"));
+  });
+
   it("invalidate d'un Pane affiche -> re-rendu anti-rebond ; autre instance ignoree", async () => {
     activate("t1");
     pushPanes({ tabId: "t1", panes: [A, B], shownId: "a" });

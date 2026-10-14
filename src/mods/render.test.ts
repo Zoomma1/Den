@@ -1,8 +1,10 @@
 // @vitest-environment happy-dom
 import { readFileSync } from "node:fs";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { parseThemeCSS } from "../theme/theme";
-import { renderTree, replaceKeepingFocus } from "./render";
+const invokeMock = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
+vi.mock("@tauri-apps/api/core", () => ({ invoke: invokeMock }));
+import { pressHotkey, renderTree, replaceKeepingFocus } from "./render";
 import { isRenderNode, type RenderNode } from "./tree";
 
 function fixtureTree(file: string, id: string): RenderNode {
@@ -16,6 +18,8 @@ function fixtureTree(file: string, id: string): RenderNode {
 }
 
 describe("renderTree", () => {
+  beforeEach(() => invokeMock.mockClear());
+
   it("rend le badge RISQUE en rouge via le token ANSI, sans HTML parasite", () => {
     const root = renderTree(fixtureTree("responses-render.ndjson", "den-ui-assistant"));
     expect(root.className).toBe("den-mod-tree");
@@ -109,6 +113,30 @@ describe("renderTree", () => {
     a.dispatchEvent(ev);
     expect(ev.defaultPrevented).toBe(true);
     expect(onPress).toHaveBeenCalledWith(press, undefined, "https://x.test");
+  });
+
+  it("ouvre dans le navigateur un Link sans press, jamais dans la WebView", () => {
+    const root = renderTree({ type: "Link", props: { href: "https://x.test/p", label: "x" } });
+    const ev = new MouseEvent("click", { bubbles: true, cancelable: true });
+    root.querySelector("a")!.dispatchEvent(ev);
+    expect(ev.defaultPrevented).toBe(true);
+    expect(invokeMock).toHaveBeenCalledWith("plugin:opener|open_url", { url: "https://x.test/p" });
+  });
+
+  it("n'ouvre pas un Link dont le schéma n'est pas http(s)/mailto, ni quand press existe", () => {
+    const bad = renderTree({ type: "Link", props: { href: "javascript:alert(1)", label: "x" } });
+    bad.querySelector("a")!.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+    const pressed = renderTree({ type: "Link", props: { href: "https://x.test", label: "x" }, press: { plugin: "p", handle: 1 } }, { onPress: vi.fn() });
+    pressed.querySelector("a")!.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+    expect(invokeMock).not.toHaveBeenCalled();
+  });
+
+  it("ouvre dans le navigateur un lien d'un Markdown de mod sans press", () => {
+    const root = renderTree({ type: "Markdown", props: { text: "[doc](https://example.com/d)" } });
+    const ev = new MouseEvent("click", { bubbles: true, cancelable: true });
+    root.querySelector("a")!.dispatchEvent(ev);
+    expect(ev.defaultPrevented).toBe(true);
+    expect(invokeMock).toHaveBeenCalledWith("plugin:opener|open_url", { url: "https://example.com/d" });
   });
 
   it("n'injecte aucune balise depuis un texte, un Code ou un Markdown", () => {
@@ -287,5 +315,63 @@ describe("renderTree Svg, Client et types inchangés", () => {
       expect(root.querySelector(".den-mod-unsupported button")).not.toBeNull();
       expect(onUnsupported).toHaveBeenLastCalledWith(type);
     }
+  });
+});
+
+describe("Code et Button", () => {
+  const code = (props: Record<string, unknown>, children?: string[]) =>
+    renderTree({ type: "Code", props, children } as RenderNode).querySelector("code")!;
+
+  it("Code lit source en priorite, puis text, puis children", () => {
+    expect(code({ source: "a", text: "b" }, ["c"]).textContent).toBe("a");
+    expect(code({ text: "b" }, ["c"]).textContent).toBe("b");
+    expect(code({}, ["c"]).textContent).toBe("c");
+  });
+
+  it("Code format diff -> un span type par ligne, texte intact", () => {
+    const src = "@@ -1 +1 @@\n-old\n+new\n+++ b\n--- a\n ctx";
+    const c = code({ source: src, format: "diff" });
+    const cls = [...c.querySelectorAll("span")].map((s) => s.className);
+    expect(cls).toEqual(["den-mod-code__hunk", "den-mod-code__del", "den-mod-code__add", "", "", ""]);
+    expect(c.textContent).toBe(src);
+  });
+
+  it("Button pose data-hotkey en minuscule et data-autofocus", () => {
+    const b = renderTree({ type: "Button", props: { label: "x", hotkey: "N", autoFocus: true } } as RenderNode).querySelector("button")!;
+    expect(b.dataset.hotkey).toBe("n");
+    expect(b.hasAttribute("data-autofocus")).toBe(true);
+    const plain = renderTree({ type: "Button", props: { label: "x" } } as RenderNode).querySelector("button")!;
+    expect(plain.dataset.hotkey).toBeUndefined();
+  });
+});
+
+describe("pressHotkey — auto-repeat", () => {
+  it("ne re-clique pas le bouton quand la touche est maintenue", () => {
+    const container = document.createElement("div");
+    const btn = document.createElement("button");
+    btn.dataset.hotkey = "y";
+    const onClick = vi.fn();
+    btn.addEventListener("click", onClick);
+    container.appendChild(btn);
+    document.body.appendChild(container);
+    expect(pressHotkey(container, new KeyboardEvent("keydown", { key: "y", cancelable: true }))).toBe(true);
+    expect(pressHotkey(container, new KeyboardEvent("keydown", { key: "y", repeat: true, cancelable: true }))).toBe(false);
+    expect(onClick).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("replaceKeepingFocus — autoFocus", () => {
+  it("rend le focus au bouton [data-autofocus] qui l'avait avant le re-rendu", () => {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const tree: RenderNode = { type: "Button", props: { label: "ok", autoFocus: true } } as RenderNode;
+    container.appendChild(renderTree(tree));
+    const first = container.querySelector("button")!;
+    first.focus();
+    expect(document.activeElement).toBe(first);
+    replaceKeepingFocus(container, renderTree(tree), true);
+    const fresh = container.querySelector("button")!;
+    expect(fresh).not.toBe(first);
+    expect(document.activeElement).toBe(fresh);
   });
 });

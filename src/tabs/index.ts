@@ -140,6 +140,8 @@ import {
 } from "./sessionTabs";
 import { createSessionsPanel, type SessionsPanel } from "./sessionsPanel";
 import { createSidebar, type Sidebar } from "./sidebar";
+import { promptKeyAction } from "./promptKeys";
+import { resolveJump } from "./jump";
 import { rollupStatus, sessionStatus } from "./status";
 
 interface Tab {
@@ -485,6 +487,8 @@ export async function init(ctx: DenContext): Promise<void> {
   }
 
   function setActiveTab(tabId: string | null): void {
+    // Pas de brouillon par tab : le texte tapé ne suit pas le changement de tab.
+    if (tabId !== activeTabId && promptInputEl) promptInputEl.value = "";
     activeTabId = tabId;
     const active = tabId ? tabs.get(tabId) : undefined;
     if (active) {
@@ -509,6 +513,8 @@ export async function init(ctx: DenContext): Promise<void> {
     }
     renderPanel();
     dispatchActiveTabChanged(active ?? null);
+    // Après updateEmptyState, qui peut désactiver le textarea.
+    if (promptInputEl && !promptInputEl.disabled) promptInputEl.focus();
   }
 
   /** Titre de l'onglet : `sessionId` court (dès `session_info`), ou
@@ -568,7 +574,7 @@ export async function init(ctx: DenContext): Promise<void> {
     });
     buttonEl.addEventListener("click", () => setActiveTab(id));
 
-    sessionTabs.addTab(owner.id, buttonEl);
+    sessionTabs.addTab(owner.id, buttonEl, id);
 
     const tab: Tab = {
       id,
@@ -690,7 +696,7 @@ export async function init(ctx: DenContext): Promise<void> {
     const textarea = document.createElement("textarea");
     textarea.className = "den-prompt-bar__input";
     textarea.rows = 2;
-    textarea.placeholder = "Message Claude… (⌘⏎ to send)";
+    textarea.placeholder = "Message Claude… (Enter to send · ⌘⏎ for a new line)";
     const slash = attachSlashAutocomplete(
       textarea,
       () => (activeTabId ? tabs.get(activeTabId)?.commands : undefined) ?? [],
@@ -736,18 +742,21 @@ export async function init(ctx: DenContext): Promise<void> {
       });
     });
 
-    // Entrée seule : comportement natif (saut de ligne, on ne fait rien) —
-    // Entrée + Ctrl/Cmd/Maj envoie (D3, retour grill : des messages
-    // partaient par accident sur un simple Entrée). `requestSubmit()` marche
-    // même quand le bouton est en `type="button"` (mode Stop) : le submit du
-    // form ne dépend pas du bouton qui le déclenche.
+    // Entrée envoie, Cmd/Ctrl+Entrée insère un saut de ligne, Shift+Entrée reste natif (cf. promptKeyAction).
+    // `requestSubmit()` marche même en mode Stop (bouton `type="button"`).
     // Enregistré après le keydown du contrôleur : il passe avant et avale (stopImmediatePropagation) les touches du menu.
     textarea.addEventListener("keydown", (event) => {
       if (event.key === "Escape" && slash.isOpen()) return;
       if (event.key === "Enter") {
-        if (event.ctrlKey || event.metaKey || event.shiftKey) {
+        const action = promptKeyAction(event);
+        if (action === "send") {
           event.preventDefault();
           form.requestSubmit();
+        } else if (action === "newline") {
+          event.preventDefault();
+          textarea.setRangeText("\n", textarea.selectionStart, textarea.selectionEnd, "end");
+          // Le backdrop slash se re-rend sur `input`.
+          textarea.dispatchEvent(new Event("input", { bubbles: true }));
         }
         return;
       }
@@ -960,6 +969,8 @@ export async function init(ctx: DenContext): Promise<void> {
     onJump: (tabId) => {
       setActiveTab(tabId);
       panel.close();
+      // close() restaure le focus précédent : on le reprend pour le textarea.
+      if (promptInputEl && !promptInputEl.disabled) promptInputEl.focus();
     },
   });
   ctx.mounts.sidebar.prepend(panel.triggerEl);
@@ -1006,6 +1017,26 @@ export async function init(ctx: DenContext): Promise<void> {
     active.unseenDone = false;
     refreshStatus(active);
   });
+
+  // Capture sur window : fonctionne aussi quand xterm a le focus.
+  const isMac = /Mac/i.test(navigator.userAgent) || /Mac/i.test(navigator.platform);
+  window.addEventListener(
+    "keydown",
+    (e) => {
+      const jump = resolveJump(e, isMac);
+      if (!jump) return;
+      e.preventDefault();
+      e.stopPropagation();
+      if (jump.kind === "tab") {
+        const id = selectedProjectId ? sessionTabs.orderedTabIds(selectedProjectId)[jump.index] : undefined;
+        if (id) setActiveTab(id);
+      } else {
+        const id = sidebar.orderedProjectIds()[jump.index];
+        if (id) selectProject(id);
+      }
+    },
+    { capture: true },
+  );
 
   // Aucun tab au démarrage (DEN-04 A1) — état vide affiché jusqu'au premier
   // « Launch Claude in… ».

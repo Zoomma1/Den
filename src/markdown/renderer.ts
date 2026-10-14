@@ -60,7 +60,7 @@ function escapeHtml(text: string): string {
  * `textContent` est copié.
  */
 function wrapCode(innerHtml: string, codeClass: string): string {
-  return `<pre class="den-code"><button class="den-copy" type="button" aria-label="Copy" title="Copy">⧉</button><code class="${codeClass}">${innerHtml}</code></pre>`;
+  return `<div class="den-code-block"><button class="den-copy" type="button" aria-label="Copy" title="Copy">⧉</button><pre class="den-code"><code class="${codeClass}">${innerHtml}</code></pre></div>`;
 }
 
 function highlightCode(text: string, lang: string | undefined): string {

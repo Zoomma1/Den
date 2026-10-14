@@ -15,7 +15,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const termInstances = vi.hoisted(() => [] as Array<{ options: Record<string, unknown> }>);
+const termInstances = vi.hoisted(() => [] as Array<{ options: Record<string, unknown>; keyHandler?: (ev: KeyboardEvent) => boolean; input: ReturnType<typeof vi.fn> }>);
 const invokeMock = vi.fn().mockResolvedValue(1);
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: (...args: unknown[]) => invokeMock(...args),
@@ -37,6 +37,11 @@ vi.mock("@xterm/xterm", () => ({
     loadAddon(): void {}
     open(): void {}
     onData(): void {}
+    attachCustomKeyEventHandler(h: (ev: KeyboardEvent) => boolean): void {
+      this.keyHandler = h;
+    }
+    keyHandler: ((ev: KeyboardEvent) => boolean) | undefined;
+    input = vi.fn();
     write(): void {}
     writeln(): void {}
     dispose(): void {
@@ -81,7 +86,7 @@ vi.mock("../workspace", () => ({
 }));
 
 import type { DenContext } from "../core/registry";
-import { init, openClaudeShell } from "./index";
+import { init, keyToPtySequence, openClaudeShell } from "./index";
 
 const fakeCtx = (root: HTMLElement): DenContext =>
   ({ mounts: { terminal: root } }) as unknown as DenContext;
@@ -175,6 +180,24 @@ describe("terminal/index — groupes par owner", () => {
     expect(root.querySelectorAll(".den-terminal__viewport")).toHaveLength(1);
     expect(root.querySelectorAll(".den-terminal__tab")).toHaveLength(1);
     expect(root.querySelector(".den-terminal__label")?.hasAttribute("hidden")).toBe(true);
+  });
+
+  it("attache un handler clavier qui route les combos macOS vers term.input", () => {
+    initIsolated(root);
+    dispatchActiveTabChanged("tab-1", "/test/root-a", { kind: "project", id: "p-1" });
+    const term = termInstances[termInstances.length - 1];
+    expect(term.keyHandler).toBeTypeOf("function");
+
+    const down = new KeyboardEvent("keydown", { key: "ArrowLeft", metaKey: true, cancelable: true });
+    expect(term.keyHandler!(down)).toBe(false);
+    expect(down.defaultPrevented).toBe(true);
+    expect(term.input).toHaveBeenCalledWith("\x01");
+
+    term.input.mockClear();
+    expect(term.keyHandler!(new KeyboardEvent("keyup", { key: "ArrowLeft", metaKey: true }))).toBe(false);
+    expect(term.input).not.toHaveBeenCalled();
+
+    expect(term.keyHandler!(new KeyboardEvent("keydown", { key: "a" }))).toBe(true);
   });
 
   it("bascule vers un autre owner : masque le premier groupe, en montre/crée un second", () => {
@@ -465,5 +488,33 @@ describe("terminal/index — openClaudeShell", () => {
       invokeMock.mockReset();
       invokeMock.mockResolvedValue(1);
     }
+  });
+});
+
+describe("terminal/index — keyToPtySequence", () => {
+  const k = (key: string, mods: Partial<Record<"metaKey" | "altKey" | "ctrlKey", boolean>>) => ({
+    key,
+    metaKey: false,
+    altKey: false,
+    ctrlKey: false,
+    ...mods,
+  });
+
+  it.each([
+    ["Backspace", { metaKey: true }, "\x15"],
+    ["ArrowLeft", { metaKey: true }, "\x01"],
+    ["ArrowRight", { metaKey: true }, "\x05"],
+    ["Backspace", { altKey: true }, "\x1b\x7f"],
+    ["ArrowLeft", { altKey: true }, "\x1bb"],
+    ["ArrowRight", { altKey: true }, "\x1bf"],
+  ])("%s avec %o -> séquence attendue", (key, mods, seq) => {
+    expect(keyToPtySequence(k(key, mods))).toBe(seq);
+  });
+
+  it("ignore les autres touches et les combos Alt+Ctrl / Alt+Cmd / Ctrl+C", () => {
+    expect(keyToPtySequence(k("a", {}))).toBeNull();
+    expect(keyToPtySequence(k("c", { ctrlKey: true }))).toBeNull();
+    expect(keyToPtySequence(k("ArrowLeft", { altKey: true, ctrlKey: true }))).toBeNull();
+    expect(keyToPtySequence(k("ArrowLeft", { altKey: true, metaKey: true }))).toBeNull();
   });
 });

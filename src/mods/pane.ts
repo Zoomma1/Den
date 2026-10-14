@@ -13,7 +13,7 @@ import {
   type ModPanesEventDetail,
   type PaneRoster,
 } from "./contracts";
-import { replaceKeepingFocus } from "./render";
+import { pressHotkey, replaceKeepingFocus } from "./render";
 
 const INVALIDATE_DEBOUNCE_MS = 100;
 // Estimation grossière d'une cellule de grille de texte, le moteur ne rend pas en pixels.
@@ -138,7 +138,7 @@ export const createPaneHost: CreatePaneHost = ({ mount, client, renderTree, opti
       emptyBody();
       return;
     }
-    replaceKeepingFocus(bodyEl, renderTree(tree, options?.(tabId, { component: "Pane", instanceId: pane.id })));
+    replaceKeepingFocus(bodyEl, renderTree(tree, options?.(tabId, { component: "Pane", instanceId: pane.id })), isFocused && !force);
   }
 
   function syncVisibility(roster: PaneRoster | null): void {
@@ -210,6 +210,7 @@ export const createPaneHost: CreatePaneHost = ({ mount, client, renderTree, opti
   }
 
   function onKeydown(e: KeyboardEvent): void {
+    if (pressHotkey(bodyEl, e)) return;
     if (e.key !== "Escape") return;
     const roster = activeRoster();
     const pane = roster?.panes.find((p) => p.id === roster.focusedId);
