@@ -364,6 +364,7 @@ export class ModSurface {
         tree: error ? null : (r.tree ?? null),
         hooked: !error && r.hooked === true,
         rewritten: !error && r.rewritten === true,
+        ...(!error && r.props !== undefined ? { props: r.props } : {}),
         ...(!error && r.client_modules ? { clientModules: r.client_modules } : {}),
         ...(error ? { error } : {}),
       });
@@ -455,6 +456,8 @@ function toEngineRequest(msg: UiRequest, clientId: string): Record<string, unkno
         component: msg.component,
         instance_id: msg.instanceId,
         props: msg.props,
+        // Change réellement la sortie du mod (tableaux, groupes d'outils, seuil du diff).
+        ...(msg.viewport ? { viewport: msg.viewport } : {}),
       };
     case "mod_press":
       return { subtype: "ui_press", plugin: msg.plugin, handle: msg.handle, key: msg.key, href: msg.href };
