@@ -43,6 +43,7 @@ import {
   type SidecarToUIMessage,
   type UserMessage,
 } from "../../src/types/protocol";
+import { mergeCommands } from "./commands";
 import { resolveClaudeBinary } from "./claudeBinary";
 import { ModSurface } from "./modSurface";
 import { PermissionBroker } from "./permissions";
@@ -196,26 +197,31 @@ const queryHandle = query({
   },
 });
 
-let commandsSent = false;
-let commandsVersion = 0;
+let supported: SlashCommand[] = [];
+let supportedLoaded = false;
+let supportedVersion = 0;
+let initNames: string[] = [];
+let terminalOnly: string[] = [];
 
 // La liste REMPLACE la précédente côté UI : l'émettre plusieurs fois est sans risque.
-function sendCommands(list: SlashCommand[]): void {
-  commandsSent = true;
-  commandsVersion++;
-  send({
-    type: "commands",
-    commands: list.map(({ name, description }) => ({ name, description })),
-  });
+function publishCommands(): void {
+  send({ type: "commands", commands: mergeCommands(supported, initNames, terminalOnly) });
+}
+
+function setSupported(list: SlashCommand[]): void {
+  supported = list;
+  supportedLoaded = true;
+  supportedVersion++;
+  publishCommands();
 }
 
 function fetchCommands(): void {
   // Un push plus frais (commands_changed) pendant le fetch rend ce résultat périmé.
-  const version = commandsVersion;
+  const version = supportedVersion;
   queryHandle
     .supportedCommands()
     .then((list) => {
-      if (commandsVersion === version) sendCommands(list);
+      if (supportedVersion === version) setSupported(list);
     })
     .catch(() => {
       // Best-effort : l'autocomplete est un confort, jamais une raison de planter le sidecar.
@@ -236,10 +242,13 @@ async function pump(): Promise<void> {
           apiKeySource: sdkMessage.apiKeySource,
         });
         send({ type: "mode_changed", mode: sdkMessage.permissionMode });
+        initNames = sdkMessage.slash_commands ?? [];
+        terminalOnly = sdkMessage.terminal_slash_commands ?? [];
+        publishCommands();
         // Repli si la requête émise à la création n'a rien donné.
-        if (!commandsSent) fetchCommands();
+        if (!supportedLoaded) fetchCommands();
       } else if (sdkMessage.type === "system" && sdkMessage.subtype === "commands_changed") {
-        sendCommands(sdkMessage.commands);
+        setSupported(sdkMessage.commands);
       } else if (sdkMessage.type === "system" && sdkMessage.subtype === "status") {
         // Le CLI pousse un status avec permissionMode après une sortie de
         // plan mode gérée par lui-même (cf. sonde runtime : ExitPlanMode
