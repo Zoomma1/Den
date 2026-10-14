@@ -157,4 +157,44 @@ describe("createSessionsPanel", () => {
     fire({ ...mod, shiftKey: true });
     expect(panel.isOpen()).toBe(false);
   });
+
+  describe("navigation clavier", () => {
+    const key = (k: string) => document.dispatchEvent(new KeyboardEvent("keydown", { key: k }));
+
+    it("open focus la card active, repli sur la première", () => {
+      const { panel, cards } = setup();
+      panel.setCards([card("a"), card("b", { active: true }), card("c")]);
+      panel.open();
+      expect(document.activeElement).toBe(cards()[1]);
+      panel.close();
+      panel.setCards([card("a"), card("b"), card("c")]);
+      panel.open();
+      expect(document.activeElement).toBe(cards()[0]);
+    });
+
+    it("ArrowDown/ArrowUp déplacent le focus avec wrap", () => {
+      const { panel, cards } = setup();
+      panel.setCards([card("a"), card("b"), card("c")]);
+      panel.open();
+      key("ArrowDown");
+      expect(document.activeElement).toBe(cards()[1]);
+      key("ArrowDown");
+      key("ArrowDown");
+      expect(document.activeElement).toBe(cards()[0]);
+      key("ArrowUp");
+      expect(document.activeElement).toBe(cards()[2]);
+    });
+
+    it("Home/End, et rien quand le panneau est fermé", () => {
+      const { panel, cards } = setup();
+      panel.setCards([card("a"), card("b"), card("c")]);
+      key("End");
+      expect(document.activeElement).not.toBe(cards()[2]);
+      panel.open();
+      key("End");
+      expect(document.activeElement).toBe(cards()[2]);
+      key("Home");
+      expect(document.activeElement).toBe(cards()[0]);
+    });
+  });
 });

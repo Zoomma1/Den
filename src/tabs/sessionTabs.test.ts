@@ -98,4 +98,88 @@ describe("createSessionTabs", () => {
     ctx.tabs.removeTab(a.buttonEl);
     expect(ctx.mount.contains(a.buttonEl)).toBe(false);
   });
+
+  describe("drag & drop", () => {
+    function addId(projectId: string, id: string) {
+      const t = createSessionTabButton();
+      ctx.tabs.addTab(projectId, t.buttonEl, id);
+      return t.buttonEl;
+    }
+    function fire(el: HTMLElement, type: string, clientX = 0) {
+      const e = new Event(type, { bubbles: true, cancelable: true });
+      Object.defineProperty(e, "clientX", { value: clientX });
+      el.dispatchEvent(e);
+      return e;
+    }
+    function drag(from: HTMLElement, to: HTMLElement, clientX: number) {
+      fire(from, "dragstart");
+      fire(to, "dragover", clientX);
+      fire(to, "drop", clientX);
+      fire(from, "dragend");
+    }
+
+    it("l'indicateur de drop disparaît quand le pointeur quitte la barre", () => {
+      const a = addId("p1", "a");
+      const b = addId("p1", "b");
+      fire(a, "dragstart");
+      fire(b, "dragover", 1);
+      expect(b.className).toMatch(/drop-(before|after)/);
+      fire(b, "dragleave");
+      expect(b.className).not.toMatch(/drop-/);
+    });
+
+    it("orderedTabIds suit l'ordre d'ajout et filtre par projet", () => {
+      addId("p1", "a");
+      addId("p2", "x");
+      addId("p1", "b");
+      expect(ctx.tabs.orderedTabIds("p1")).toEqual(["a", "b"]);
+      expect(ctx.tabs.orderedTabIds("p2")).toEqual(["x"]);
+    });
+
+    it("réordonne : déposer après la cible", () => {
+      const a = addId("p1", "a");
+      const b = addId("p1", "b");
+      addId("p1", "c");
+      drag(a, b, 1);
+      expect(ctx.tabs.orderedTabIds("p1")).toEqual(["b", "a", "c"]);
+    });
+
+    it("réordonne : déposer avant la cible", () => {
+      addId("p1", "a");
+      addId("p1", "b");
+      const c = addId("p1", "c");
+      drag(c, ctx.mount.querySelector<HTMLElement>(".den-session-tab")!, -1);
+      expect(ctx.tabs.orderedTabIds("p1")).toEqual(["c", "a", "b"]);
+    });
+
+    it("refuse le drop inter-projets", () => {
+      const a = addId("p1", "a");
+      const x = addId("p2", "x");
+      const over = (fire(a, "dragstart"), fire(x, "dragover", 1));
+      expect(over.defaultPrevented).toBe(false);
+      fire(x, "drop", 1);
+      fire(a, "dragend");
+      expect(ctx.tabs.orderedTabIds("p1")).toEqual(["a"]);
+      expect(ctx.tabs.orderedTabIds("p2")).toEqual(["x"]);
+      expect(ctx.mount.querySelector(".den-session-tabs__scroller")!.children[0]).toBe(a);
+    });
+
+    it("un drag n'émet pas de click vers l'onglet", () => {
+      const a = addId("p1", "a");
+      const b = addId("p1", "b");
+      const onClick = vi.fn();
+      a.addEventListener("click", onClick);
+      drag(a, b, 1);
+      a.click();
+      expect(onClick).not.toHaveBeenCalled();
+    });
+
+    it("un click normal passe", () => {
+      const a = addId("p1", "a");
+      const onClick = vi.fn();
+      a.addEventListener("click", onClick);
+      a.click();
+      expect(onClick).toHaveBeenCalledTimes(1);
+    });
+  });
 });

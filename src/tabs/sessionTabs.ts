@@ -7,7 +7,8 @@ export interface SessionTabsHandlers {
 
 export interface SessionTabs {
   setProject(projectId: string | null, pathText: string | null): void;
-  addTab(projectId: string, buttonEl: HTMLElement): void;
+  addTab(projectId: string, buttonEl: HTMLElement, tabId?: string): void;
+  orderedTabIds(projectId: string): string[];
   removeTab(buttonEl: HTMLElement): void;
   setActive(buttonEl: HTMLElement | null): void;
 }
@@ -66,6 +67,73 @@ export function createSessionTabs(mount: HTMLElement, handlers: SessionTabsHandl
   mount.prepend(container);
 
   const tabs = new Map<HTMLElement, string>();
+  const ids = new Map<HTMLElement, string>();
+  let dragged: HTMLElement | null = null;
+  let dropTarget: HTMLElement | null = null;
+  let suppressClick = false;
+
+  function tabOf(target: EventTarget | null): HTMLElement | null {
+    const el = (target as HTMLElement | null)?.closest?.<HTMLElement>(".den-session-tab") ?? null;
+    return el && tabs.has(el) ? el : null;
+  }
+
+  function clearIndicator(): void {
+    dropTarget?.classList.remove("den-session-tab--drop-before", "den-session-tab--drop-after");
+    dropTarget = null;
+  }
+
+  function isAfter(target: HTMLElement, e: DragEvent): boolean {
+    const r = target.getBoundingClientRect();
+    return e.clientX >= r.left + r.width / 2;
+  }
+
+  scroller.addEventListener("dragstart", (e) => {
+    const tab = tabOf(e.target);
+    if (!tab) return;
+    dragged = tab;
+    if (e.dataTransfer) {
+      e.dataTransfer.effectAllowed = "move";
+      // WebKit n'amorce pas un drag sans donnée associée.
+      e.dataTransfer.setData("text/plain", ids.get(tab) ?? "");
+    }
+  });
+  scroller.addEventListener("dragover", (e) => {
+    const target = tabOf(e.target);
+    if (!dragged || !target || target === dragged || tabs.get(target) !== tabs.get(dragged)) {
+      clearIndicator();
+      return;
+    }
+    e.preventDefault();
+    clearIndicator();
+    dropTarget = target;
+    target.classList.add(isAfter(target, e) ? "den-session-tab--drop-after" : "den-session-tab--drop-before");
+  });
+  scroller.addEventListener("dragleave", (e) => {
+    if (!scroller.contains(e.relatedTarget as Node | null)) clearIndicator();
+  });
+  scroller.addEventListener("drop", (e) => {
+    const target = tabOf(e.target);
+    if (!dragged || !target || target === dragged || tabs.get(target) !== tabs.get(dragged)) return;
+    e.preventDefault();
+    target.insertAdjacentElement(isAfter(target, e) ? "afterend" : "beforebegin", dragged);
+    clearIndicator();
+  });
+  scroller.addEventListener("dragend", () => {
+    dragged = null;
+    clearIndicator();
+    // Certains navigateurs émettent un click après le drag : on l'avale une fois.
+    suppressClick = true;
+    setTimeout(() => (suppressClick = false), 0);
+  });
+  scroller.addEventListener(
+    "click",
+    (e) => {
+      if (!suppressClick) return;
+      e.stopPropagation();
+      e.preventDefault();
+    },
+    { capture: true },
+  );
   let currentProject: string | null = null;
 
   addBtn.addEventListener("click", () => handlers.onNew());
@@ -79,14 +147,26 @@ export function createSessionTabs(mount: HTMLElement, handlers: SessionTabsHandl
       else pathEl.removeAttribute("title");
       for (const [tab, pid] of tabs) tab.hidden = pid !== currentProject;
     },
-    addTab(projectId, buttonEl) {
+    addTab(projectId, buttonEl, tabId) {
       tabs.set(buttonEl, projectId);
+      const id = tabId ?? buttonEl.dataset.tabId;
+      if (id !== undefined) ids.set(buttonEl, id);
+      buttonEl.draggable = true;
       buttonEl.hidden = projectId !== currentProject;
       scroller.appendChild(buttonEl);
     },
     removeTab(buttonEl) {
       if (!tabs.delete(buttonEl)) return;
+      ids.delete(buttonEl);
       buttonEl.remove();
+    },
+    orderedTabIds(projectId) {
+      const out: string[] = [];
+      for (const el of scroller.children) {
+        const id = ids.get(el as HTMLElement);
+        if (tabs.get(el as HTMLElement) === projectId && id !== undefined) out.push(id);
+      }
+      return out;
     },
     setActive(buttonEl) {
       for (const tab of tabs.keys()) {

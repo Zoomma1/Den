@@ -66,6 +66,8 @@
 }
 .den-sessions-card:hover { background: var(--den-accent-soft, var(--den-bg-surface)); }
 .den-sessions-card--active { border-color: var(--den-accent); }
+/* :focus et non :focus-visible : WebKit n'affiche pas l'anneau par défaut sur un focus posé par script. */
+.den-sessions-card:focus { outline: 2px solid var(--den-accent); outline-offset: -2px; background: var(--den-accent-soft, var(--den-bg-surface)); }
 .den-sessions-card__head { display: flex; align-items: center; gap: 8px; }
 .den-sessions-card__name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
 .den-sessions-card__status { color: var(--den-fg-muted); }

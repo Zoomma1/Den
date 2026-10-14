@@ -68,7 +68,8 @@ export function createSessionsPanel(host: HTMLElement, handlers: SessionsPanelHa
     opened = true;
     previousFocus = document.activeElement as HTMLElement | null;
     backdrop.hidden = false;
-    (listEl.querySelector("button") as HTMLElement | null)?.focus();
+    const target = listEl.querySelector<HTMLElement>("button[aria-current]") ?? listEl.querySelector<HTMLElement>("button");
+    target?.focus();
   }
 
   function close(): void {
@@ -158,7 +159,19 @@ export function createSessionsPanel(host: HTMLElement, handlers: SessionsPanelHa
     if (opened && e.key === "Escape") {
       e.preventDefault();
       close();
+      return;
     }
+    if (!opened || !["ArrowUp", "ArrowDown", "Home", "End"].includes(e.key)) return;
+    const buttons = [...listEl.querySelectorAll<HTMLElement>("button")];
+    if (buttons.length === 0) return;
+    e.preventDefault();
+    const cur = buttons.indexOf(document.activeElement as HTMLElement);
+    let next: number;
+    if (e.key === "Home") next = 0;
+    else if (e.key === "End") next = buttons.length - 1;
+    else if (e.key === "ArrowDown") next = (cur + 1) % buttons.length;
+    else next = cur <= 0 ? buttons.length - 1 : cur - 1;
+    buttons[next].focus();
   });
 
   const isMac = /Mac/i.test(navigator.userAgent) || /Mac/i.test(navigator.platform);
