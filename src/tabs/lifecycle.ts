@@ -19,6 +19,7 @@ import {
   isQuestionRequest,
   isSessionInfo,
   isSubagentReport,
+  isSubagentStep,
   isSubagentUpdate,
   type SidecarToUIMessage,
 } from "../types/protocol";
@@ -175,6 +176,7 @@ function reduceSidecarMessage(
     // Un sous-agent en arrière-plan pousse ses updates hors progression du tour.
     !isSubagentUpdate(message) &&
     !isSubagentReport(message) &&
+    !isSubagentStep(message) &&
     !isModPushedMessage(message)
   ) {
     return { ...lifecycle, state: "running" };

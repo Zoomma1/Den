@@ -21,6 +21,7 @@ import {
   isQuestionRequest,
   isSessionInfo,
   isSubagentReport,
+  isSubagentStep,
   isSubagentUpdate,
   isToolResult,
   isToolUse,
@@ -138,6 +139,7 @@ function parseSidecarMessage(line: string): SidecarToUIMessage | null {
     isToolResult(candidate) ||
     isSubagentUpdate(candidate) ||
     isSubagentReport(candidate) ||
+    isSubagentStep(candidate) ||
     isPermissionRequest(candidate) ||
     isQuestionRequest(candidate) ||
     isSessionInfo(candidate) ||
