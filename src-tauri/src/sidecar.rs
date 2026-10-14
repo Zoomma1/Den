@@ -25,6 +25,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use tauri::ipc::Channel;
+use tauri::Manager;
 
 use crate::login_path;
 
@@ -166,6 +167,7 @@ fn enumerate_descendants(root: u32) -> Vec<u32> {
 
 #[tauri::command]
 pub async fn sidecar_spawn(
+    app: tauri::AppHandle,
     tab_id: String,
     cwd: String,
     on_message: Channel<String>,
@@ -200,6 +202,14 @@ pub async fn sidecar_spawn(
     // l'app laisserait le tsx orphelin vivant et le ppid du node inchangé.
     // Le sidecar sonde donc directement la vie de CE pid (`kill(pid, 0)`).
     command.env("DEN_PARENT_PID", std::process::id().to_string());
+
+    // Dossier de config lu par le sidecar (mode initial) ; non résolu => le sidecar retombe sur default.
+    match app.path().app_config_dir() {
+        Ok(dir) => {
+            command.env("DEN_CONFIG_DIR", dir);
+        }
+        Err(err) => eprintln!("[sidecar:{tab_id}] app_config_dir introuvable, mode initial par défaut: {err}"),
+    }
 
     let mut child: Child = command
         .spawn()

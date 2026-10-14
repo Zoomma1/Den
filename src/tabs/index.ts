@@ -187,6 +187,7 @@ const MODE_OPTIONS: Array<{ value: PermissionModeId; label: string }> = [
   { value: "default", label: "Default" },
   { value: "acceptEdits", label: "Accept edits" },
   { value: "plan", label: "Plan" },
+  { value: "auto", label: "Auto" },
 ];
 
 /** Ajoute une option pour `mode` si le select ne la connaît pas déjà.

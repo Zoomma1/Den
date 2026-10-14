@@ -45,6 +45,7 @@ import {
 } from "../../src/types/protocol";
 import { mergeCommands } from "./commands";
 import { resolveClaudeBinary } from "./claudeBinary";
+import { resolveInitialMode } from "./initialMode";
 import { ModSurface } from "./modSurface";
 import { commandOutputOf, durationMsOf, toolResultsOf } from "./sdkMessages";
 import { PermissionBroker } from "./permissions";
@@ -191,6 +192,7 @@ const queryHandle = query({
   options: {
     canUseTool: permissionBroker.canUseTool,
     includePartialMessages: true,
+    permissionMode: resolveInitialMode(process.env),
     ...(claude.ok && {
       pathToClaudeCodeExecutable: claude.path,
       spawnClaudeCodeProcess: (o) => modSurface.spawn(o),
