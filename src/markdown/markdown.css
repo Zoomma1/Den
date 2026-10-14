@@ -40,6 +40,21 @@
   overflow-wrap: anywhere;
 }
 
+.den-msg-user__images {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--den-space-2);
+  margin-top: var(--den-space-2);
+}
+
+.den-msg-user__image {
+  max-width: 120px;
+  max-height: 120px;
+  border-radius: var(--den-radius);
+  border: 1px solid var(--den-edge, var(--den-border));
+  object-fit: cover;
+}
+
 .den-conversation-tab[hidden] {
   display: none;
 }

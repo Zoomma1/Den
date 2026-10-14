@@ -327,6 +327,36 @@ describe("ConversationView", () => {
     );
   });
 
+  it("user_echo sans images : pas de .den-msg-user__images", () => {
+    const view = new ConversationView("tab-1");
+    view.handleMessage({ type: "user_echo", id: "u1", text: "salut" } as UserEcho);
+    expect(view.el.querySelector(".den-msg-user__images")).toBeNull();
+  });
+
+  it("user_echo avec 2 images rend 2 <img> data: et ✎ restitue le texte seul", () => {
+    const view = new ConversationView("tab-1");
+    view.handleMessage({
+      type: "user_echo",
+      id: "u1",
+      text: "regarde",
+      images: [
+        { mediaType: "image/png", data: "AAA" },
+        { mediaType: "image/jpeg", data: "BBB" },
+      ],
+    } as UserEcho);
+
+    const imgs = view.el.querySelectorAll<HTMLImageElement>(".den-msg-user__images img");
+    expect(imgs).toHaveLength(2);
+    expect(imgs[0].getAttribute("src")).toBe("data:image/png;base64,AAA");
+    expect(imgs[1].getAttribute("src")).toBe("data:image/jpeg;base64,BBB");
+    expect(imgs[0].alt).toBe("Pasted image");
+
+    const edits: string[] = [];
+    window.addEventListener("den:edit-prompt", (e) => edits.push((e as CustomEvent).detail.text), { once: true });
+    (view.el.querySelector(".den-edit") as HTMLElement).click();
+    expect(edits).toEqual(["regarde"]);
+  });
+
   // --- Éditer (D5) ---
 
   it("user_echo rend aussi un .den-edit, sans polluer le texte de .den-msg-user__text", () => {
