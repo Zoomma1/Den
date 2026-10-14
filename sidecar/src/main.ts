@@ -382,8 +382,8 @@ async function pump(): Promise<void> {
         // (et de même pour "aborted_tools") — ce n'est pas une erreur, c'est
         // l'utilisateur qui a stoppé le tour (ex. Escap côté UI). Émettre
         // `error` ici rendrait le tab "error" sticky (cf. lifecycle.ts) pour
-        // un Stop normal. Les autres `is_error` (règle générale recoverable,
-        // hors scope DEN-09) restent inchangés.
+        // un Stop normal. Les autres `is_error` partent en `error` recoverable :
+        // le tab reste utilisable et le `done` qui suit clôt le tour.
         const isUserInterrupt =
           sdkMessage.is_error &&
           (sdkMessage.terminal_reason === "aborted_streaming" ||

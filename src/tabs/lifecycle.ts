@@ -70,17 +70,15 @@ export type TabLifecycleEvent =
  * - `error` est sticky face à `done`/`conversation_reset` : un tour qui se
  *   termine normalement après un crash sidecar ne doit pas effacer l'état
  *   d'erreur affiché à l'utilisateur (Done visé : "kill du sidecar d'un tab
- *   -> le tab touché affiche l'erreur, les autres continuent"). La règle
- *   générale de récupération (`recoverable`) est DEN-09, hors scope ici —
- *   seul le cas `recoverable !== true` (conserver `pendingTurns` sinon) est
- *   traité, pour ne pas perdre le compte des tours en file sur une erreur
- *   dont on sait déjà qu'elle n'interrompt pas la conversation.
+ *   -> le tab touché affiche l'erreur, les autres continuent"). Une erreur
+ *   `recoverable` (tour en échec, quota…) ne change rien à l'état : le sidecar
+ *   est vivant, le `done` qui suit clôt le tour et le tab reste utilisable.
  * - `waiting` : un `permission_request`/`question_request` reçu pendant un
  *   tour en cours (`running` ou déjà `waiting`) fait basculer le tab en
  *   attente de réponse utilisateur et incrémente `pendingRequests`. Un
  *   message de progression ne repasse le tab en `running` que si ce compteur
  *   est à 0 (outils parallèles déjà autorisés) ; `request_resolved` le
- *   décrémente, `done`/`error`/`conversation_reset` le remettent à 0.
+ *   décrémente, `done`/`error` non récupérable/`conversation_reset` le remettent à 0.
  */
 const isModPushedMessage = (message: SidecarToUIMessage): boolean =>
   isModStatus(message) ||
@@ -126,12 +124,9 @@ function reduceSidecarMessage(
   message: SidecarToUIMessage,
 ): TabLifecycle {
   if (isErrorMessage(message)) {
-    const recoverable = message.recoverable === true;
-    return {
-      state: "error",
-      pendingTurns: recoverable ? lifecycle.pendingTurns : 0,
-      pendingRequests: 0,
-    };
+    // Le sidecar vit encore : un tour en échec (quota, 529…) est clos par le `done` qui suit, pas ici.
+    if (message.recoverable === true) return lifecycle;
+    return { state: "error", pendingTurns: 0, pendingRequests: 0 };
   }
 
   if (isDone(message)) {

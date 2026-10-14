@@ -212,6 +212,42 @@ describe("reduceTabLifecycle", () => {
     expect(lc).toEqual({ state: "error", pendingTurns: 0, pendingRequests: 0 });
   });
 
+  describe("error recoverable", () => {
+    const recoverableErr = { type: "error" as const, message: "limit", recoverable: true };
+
+    it("running -> inchangé, le done rend la main et un nouveau prompt repart (quota)", () => {
+      const afterError = reduceTabLifecycle(lifecycle("running", 1), {
+        kind: "sidecar_message",
+        message: recoverableErr,
+      });
+      expect(afterError).toEqual({ state: "running", pendingTurns: 1, pendingRequests: 0 });
+      const afterDone = reduceTabLifecycle(afterError, { kind: "sidecar_message", message: doneMsg });
+      expect(afterDone.state).toBe("idle");
+      expect(reduceTabLifecycle(afterDone, { kind: "prompt_submitted" }).state).toBe("running");
+    });
+
+    it("waiting -> inchangé : la demande de permission en attente reste comptée (set-mode raté)", () => {
+      const waiting: TabLifecycle = { state: "waiting", pendingTurns: 1, pendingRequests: 1 };
+      expect(
+        reduceTabLifecycle(waiting, { kind: "sidecar_message", message: recoverableErr }),
+      ).toEqual(waiting);
+    });
+
+    it("idle -> reste idle (erreur hors tour)", () => {
+      expect(
+        reduceTabLifecycle(lifecycle("idle", 0), { kind: "sidecar_message", message: recoverableErr })
+          .state,
+      ).toBe("idle");
+    });
+
+    it("error -> reste error (un crash sidecar n'est pas effacé)", () => {
+      expect(
+        reduceTabLifecycle(lifecycle("error", 0), { kind: "sidecar_message", message: recoverableErr })
+          .state,
+      ).toBe("error");
+    });
+  });
+
   it("closed terminal sur tous les événements y compris conversation_reset/permission_request", () => {
     const events: Array<Parameters<typeof reduceTabLifecycle>[1]> = [
       { kind: "sidecar_message", message: conversationResetMsg },
