@@ -19,6 +19,7 @@ import {
   type ModMessageResult,
   type ModResult,
   type ModTree,
+  type ModViewport,
 } from "../types/protocol";
 import {
   MOD_EVENTS,
@@ -27,6 +28,7 @@ import {
   type ModInvalidateEventDetail,
   type ModPaneClient,
   type ModPanesEventDetail,
+  type ModViewportEventDetail,
   type OpenClaudeShell,
   type RenderOptions,
   type RenderTreeFn,
@@ -39,6 +41,7 @@ const ACTION_TIMEOUT_MS = 10_000;
 // La réponse d'un press n'arrive qu'à la fin du handler du mod (ex. Copier = model.fork, plusieurs secondes).
 const PRESS_TIMEOUT_MS = 120_000;
 const MESSAGE_TIMEOUT_MS = 120_000;
+const VIEWPORT_DEBOUNCE_MS = 200;
 const NOT_HOOKED = { tree: null, hooked: false, rewritten: false } as const;
 
 type RenderResult = Awaited<ReturnType<ModPaneClient["requestRender"]>>;
@@ -90,6 +93,7 @@ export function createModsModule(deps: {
       const { signal } = listeners;
       const pending = new Map<string, (r: RenderResult) => void>();
       const pendingResults = new Map<string, (r: DenProtocolMessage) => void>();
+      const renderComponents = new Map<string, string>();
       let nextId = 0;
 
       const client: ModClient = {
@@ -99,11 +103,17 @@ export function createModsModule(deps: {
             const settle = (r: RenderResult) => {
               clearTimeout(timer);
               pending.delete(requestId);
+              renderComponents.delete(requestId);
               resolve(r);
             };
             const timer = setTimeout(() => settle({ ...NOT_HOOKED }), RENDER_TIMEOUT_MS);
             pending.set(requestId, settle);
-            send(tabId, { type: "mod_render", requestId, ...req }).catch(() =>
+            renderComponents.set(requestId, req.component);
+            observeFlow(tabId);
+            const viewport = measureViewport(tabId);
+            if (!viewport) lastColumns.set(tabId, null);
+            else if (!lastColumns.has(tabId)) lastColumns.set(tabId, viewport.columns);
+            send(tabId, { type: "mod_render", requestId, ...req, ...(viewport && { viewport }) }).catch(() =>
               settle({ ...NOT_HOOKED }),
             );
           });
@@ -197,14 +207,100 @@ export function createModsModule(deps: {
       function onTree(tabId: string, msg: ModTree): void {
         // Fusion : un rendu qui ne cite que certains plugins ne doit pas effacer le hash des autres.
         if (msg.clientModules) clientModulesByTab.set(tabId, { ...clientModulesByTab.get(tabId), ...msg.clientModules });
+        const component = renderComponents.get(msg.requestId);
+        if (msg.error) reportEngineError(tabId, component, msg.error);
         const settle = pending.get(msg.requestId);
         if (!settle) return;
         // Un arbre invalide ne doit jamais atteindre le rendu : on retombe sur le rendu Den.
         if (msg.hooked && !isRenderNode(msg.tree)) settle({ ...NOT_HOOKED });
-        else settle({ tree: msg.tree, hooked: msg.hooked, rewritten: msg.rewritten });
+        else {
+          settle({
+            tree: msg.tree,
+            hooked: msg.hooked,
+            rewritten: msg.rewritten,
+            ...(msg.props !== undefined && { props: msg.props }),
+          });
+        }
       }
 
       const toasts = createToastHost(document.body);
+
+      // Le moteur re-rend souvent : un même échec ne doit produire qu'un toast par onglet.
+      const errorsSeen = new Set<string>();
+      function reportEngineError(tabId: string, component: string | undefined, error: string): void {
+        const name = component ?? "composant inconnu";
+        const k = `${tabId}\0${name}\0${error}`;
+        if (errorsSeen.has(k)) return;
+        errorsSeen.add(k);
+        toasts.show(`Erreur du mod (${name}) : ${error}`, 6000);
+      }
+
+      const flowOf = (tabId: string): HTMLElement | null =>
+        ctx.mounts.conversation.querySelector<HTMLElement>(
+          `.den-conversation-tab[data-tab-id="${CSS.escape(tabId)}"] .den-conversation-flow`,
+        );
+      // Dernière largeur dont l'événement a été émis (null = rendu sans viewport) ; un rendu ne l'écrase pas.
+      const lastColumns = new Map<string, number | null>();
+
+      // Colonnes = largeur du fil / largeur d'un caractère mono ; null si non mesurable (jamais 0 colonne).
+      // Cellule mono mesurée une fois par police : le témoin force un reflow, trop cher à chaque rendu.
+      const cellCache = new Map<string, { charWidth: number; height: number }>();
+      function monoCell(flow: HTMLElement): { charWidth: number; height: number } {
+        const style = getComputedStyle(flow);
+        const key = `${style.getPropertyValue("--den-font-mono")}|${style.fontSize}`;
+        const hit = cellCache.get(key);
+        if (hit) return hit;
+        const probe = document.createElement("span");
+        probe.textContent = "0".repeat(10);
+        probe.style.cssText = "position:absolute;visibility:hidden;white-space:pre;font-family:var(--den-font-mono)";
+        flow.appendChild(probe);
+        const { width, height } = probe.getBoundingClientRect();
+        probe.remove();
+        const cell = { charWidth: width / 10, height };
+        // Une mesure nulle (onglet masqué) ne se met pas en cache.
+        if (cell.charWidth > 0 && cell.height > 0) cellCache.set(key, cell);
+        return cell;
+      }
+
+      function measureViewport(tabId: string): ModViewport | null {
+        const flow = flowOf(tabId);
+        if (!flow) return null;
+        const { charWidth, height } = monoCell(flow);
+        const columns = Math.floor(flow.getBoundingClientRect().width / charWidth);
+        const rows = Math.floor(window.innerHeight / height);
+        if (!(charWidth > 0) || !(columns > 0) || !(rows > 0)) return null;
+        return { columns, rows, isFullscreen: true };
+      }
+
+      const observers = new Map<string, { observer: ResizeObserver; timer?: ReturnType<typeof setTimeout> }>();
+      function unobserve(tabId: string): void {
+        const o = observers.get(tabId);
+        if (!o) return;
+        clearTimeout(o.timer);
+        o.observer.disconnect();
+        observers.delete(tabId);
+      }
+      function observeFlow(tabId: string): void {
+        if (observers.has(tabId) || typeof ResizeObserver === "undefined") return;
+        const flow = flowOf(tabId);
+        if (!flow) return;
+        const entry: { observer: ResizeObserver; timer?: ReturnType<typeof setTimeout> } = {
+          observer: new ResizeObserver(() => {
+            clearTimeout(entry.timer);
+            entry.timer = setTimeout(() => {
+              const before = lastColumns.get(tabId);
+              const viewport = measureViewport(tabId);
+              if (!viewport || viewport.columns === before) return;
+              lastColumns.set(tabId, viewport.columns);
+              const detail: ModViewportEventDetail = { tabId, viewport };
+              window.dispatchEvent(new CustomEvent(MOD_EVENTS.viewport, { detail }));
+            }, VIEWPORT_DEBOUNCE_MS);
+          }),
+        };
+        entry.observer.observe(flow);
+        observers.set(tabId, entry);
+      }
+      signal.addEventListener("abort", () => [...observers.keys()].forEach(unobserve));
 
       // Sans attendre : l'UI reste libre, l'échec se signale par un toast.
       const interact = (tabId: string, message: object, timeoutMs: number): void => {
@@ -314,6 +410,7 @@ export function createModsModule(deps: {
         activeTab = detail?.tabId ?? null;
         if (activeTab) {
           tabInfo.set(activeTab, { cwd: detail?.cwd ?? null, owner: detail?.owner ?? null });
+          observeFlow(activeTab);
         }
         renderStatus();
       }, { signal });
@@ -324,6 +421,9 @@ export function createModsModule(deps: {
         statusByTab.delete(tabId);
         tabInfo.delete(tabId);
         clientModulesByTab.delete(tabId);
+        unobserve(tabId);
+        lastColumns.delete(tabId);
+        for (const k of errorsSeen) if (k.startsWith(`${tabId}\0`)) errorsSeen.delete(k);
         for (const k of unsupportedSeen) if (k.startsWith(`${tabId}\0`)) unsupportedSeen.delete(k);
         if (tabId === activeTab) renderStatus();
       }, { signal });

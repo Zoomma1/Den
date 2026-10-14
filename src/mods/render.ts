@@ -14,10 +14,27 @@ const md = createMarkdownEngine(false);
 
 const ANSI_NAMES = ["black", "red", "green", "yellow", "blue", "magenta", "cyan", "white"];
 
+/** Palette xterm 256 : 0-15 = tokens du thème, 16-231 = cube 6x6x6, 232-255 = niveaux de gris. */
+function ansi256(n: number): string | undefined {
+  if (n > 255) return undefined;
+  if (n < 8) return `var(--den-ansi-${ANSI_NAMES[n]})`;
+  if (n === 8) return "var(--den-ansi-gray)"; // pas de token bright-black dans les thèmes
+  if (n < 16) return `var(--den-ansi-bright-${ANSI_NAMES[n - 8]})`;
+  if (n >= 232) {
+    const g = 8 + (n - 232) * 10;
+    return `rgb(${g}, ${g}, ${g})`;
+  }
+  const c = n - 16;
+  const level = (x: number) => (x === 0 ? 0 : 55 + x * 40);
+  return `rgb(${level(Math.floor(c / 36))}, ${level(Math.floor(c / 6) % 6)}, ${level(c % 6)})`;
+}
+
 /** Nom ANSI du moteur (red, redBright, gray, ansi:red) -> token --den-ansi-*, sinon #hex/rgb() tel quel. */
 function resolveColor(value: unknown): string | undefined {
   if (typeof value !== "string") return undefined;
   const v = value.trim().replace(/^ansi:/, "");
+  const idx = /^ansi256\((\d{1,3})\)$/.exec(v);
+  if (idx) return ansi256(Number(idx[1]));
   if (/^#[0-9a-fA-F]{3,8}$/.test(v) || /^rgba?\([\d\s.,%/]+\)$/.test(v)) return v;
   if (v === "gray" || v === "grey" || v === "blackBright") return "var(--den-ansi-gray)";
   const bright = /^(\w+)Bright$/.exec(v);
@@ -34,10 +51,36 @@ function setStyle(el: HTMLElement, prop: string, value: string | undefined): voi
   if (value !== undefined) el.style.setProperty(prop, value);
 }
 
+const BORDER_STYLES: Record<string, { style: string; width: string; radius?: string }> = {
+  single: { style: "solid", width: "1px" },
+  round: { style: "solid", width: "1px", radius: "var(--den-radius)" },
+  bold: { style: "solid", width: "2px" },
+  double: { style: "double", width: "3px" },
+};
+
+function applyBorder(el: HTMLElement, p: Record<string, unknown>): void {
+  const b = typeof p.borderStyle === "string" ? BORDER_STYLES[p.borderStyle] : undefined;
+  if (!b) return;
+  el.style.borderStyle = b.style;
+  el.style.borderWidth = b.width;
+  el.style.borderColor = resolveColor(p.borderColor) ?? "var(--den-border)";
+  setStyle(el, "border-radius", b.radius);
+}
+
+// Plafond comme pixels() pour Svg : un width démesuré ne doit pas casser la mise en page.
+function boundedWidth(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? Math.min(400, Math.max(1, value)) : undefined;
+}
+
 function applyBoxStyle(el: HTMLElement, p: Record<string, unknown>): void {
   const dir = typeof p.flexDirection === "string" ? p.flexDirection : "row";
   el.style.flexDirection = dir;
   setStyle(el, "gap", cells(p.gap, dir.startsWith("column") ? "em" : "ch"));
+  setStyle(el, "row-gap", cells(p.rowGap, "em"));
+  setStyle(el, "column-gap", cells(p.columnGap, "ch"));
+  setStyle(el, "width", p.width === "100%" ? "100%" : cells(boundedWidth(p.width), "ch"));
+  if (typeof p.alignSelf === "string") el.style.alignSelf = p.alignSelf;
+  applyBorder(el, p);
   for (const kind of ["padding", "margin"] as const) {
     setStyle(el, `${kind}-left`, cells(p[`${kind}Left`] ?? p[`${kind}X`] ?? p[kind], "ch"));
     setStyle(el, `${kind}-right`, cells(p[`${kind}Right`] ?? p[`${kind}X`] ?? p[kind], "ch"));
@@ -65,6 +108,13 @@ function applyTextStyle(el: HTMLElement, p: Record<string, unknown>): void {
   const deco = [p.underline === true && "underline", p.strikethrough === true && "line-through"].filter(Boolean);
   if (deco.length) el.style.textDecoration = deco.join(" ");
   if (p.dimColor === true) el.style.opacity = "0.6";
+  if (p.wrap === "truncate-end") {
+    el.style.whiteSpace = "nowrap";
+    el.style.overflow = "hidden";
+    el.style.textOverflow = "ellipsis";
+    el.style.display = "inline-block";
+    el.style.maxWidth = "100%";
+  }
 }
 
 function str(v: unknown): string {
@@ -73,7 +123,13 @@ function str(v: unknown): string {
 
 function textOf(children: RenderNode[] | undefined): string {
   return (children ?? [])
-    .map((c) => (typeof c === "string" || typeof c === "number" ? String(c) : ""))
+    .map((c) =>
+      typeof c === "string" || typeof c === "number"
+        ? String(c)
+        : c.type === "engine"
+          ? ""
+          : textOf((c as ElementNode).children),
+    )
     .join("");
 }
 
@@ -232,6 +288,7 @@ function build(node: RenderNode, opts: RenderOptions): Node {
       if (typeof p.variant === "string") btn.dataset.variant = p.variant;
       if (typeof p.role === "string") btn.dataset.role = p.role;
       btn.textContent = str(p.label) || textOf(el.children);
+      if (p.dimColor === true) btn.style.opacity = "0.6";
       if (typeof p.hotkey === "string" && p.hotkey) btn.dataset.hotkey = p.hotkey.toLowerCase();
       if (p.autoFocus === true) btn.dataset.autofocus = "";
       btn.addEventListener("click", () => {
