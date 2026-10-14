@@ -107,6 +107,7 @@ import {
   isErrorMessage,
   isModeChanged,
   isSessionInfo,
+  isSubagentStep,
   type CommandInfo,
   type ConversationMessage,
   type ImageAttachment,
@@ -148,6 +149,7 @@ import {
   setSessionTabStatus,
   type SessionTabs,
 } from "./sessionTabs";
+import { createAgentsOverlay, type AgentsOverlay } from "./agentsOverlay";
 import { createSessionsPanel, type SessionsPanel } from "./sessionsPanel";
 import { createSidebar, type Sidebar } from "./sidebar";
 import { promptKeyAction } from "./promptKeys";
@@ -265,6 +267,7 @@ export async function init(ctx: DenContext): Promise<void> {
   let sidebar: Sidebar;
   let sessionTabs: SessionTabs;
   let panel: SessionsPanel;
+  let agentsOverlay: AgentsOverlay;
   let selectedProjectId: string | null = null;
   // Ordre d'activation (le plus récent en dernier) : fermer un onglet retombe sur le dernier utilisé du projet.
   const recentTabIds: string[] = [];
@@ -395,6 +398,12 @@ export async function init(ctx: DenContext): Promise<void> {
         };
       }),
     );
+    syncAgentsOverlay();
+  }
+
+  // Une étape de sous-agent ne concerne que l'overlay : pas besoin de reconstruire le panneau Sessions.
+  function syncAgentsOverlay(): void {
+    agentsOverlay.setAgents((activeTabId ? tabs.get(activeTabId)?.subagents : undefined) ?? EMPTY_SUBAGENTS);
   }
 
   function refreshProjectStatus(projectId: string): void {
@@ -627,7 +636,8 @@ export async function init(ctx: DenContext): Promise<void> {
         const subagents = nextSubagents(tab.subagents, message);
         if (subagents !== tab.subagents) {
           tab.subagents = subagents;
-          renderPanel();
+          if (isSubagentStep(message)) syncAgentsOverlay();
+          else renderPanel();
         }
         if (isSessionInfo(message)) {
           tab.sessionId = message.sessionId;
@@ -1048,6 +1058,8 @@ export async function init(ctx: DenContext): Promise<void> {
     },
   });
   ctx.mounts.sidebar.prepend(panel.triggerEl);
+  agentsOverlay = createAgentsOverlay(document.body);
+  panel.triggerEl.after(agentsOverlay.triggerEl);
 
   // La barre se monte elle-même en premier enfant, au-dessus de `.den-views` (déjà inséré par `markdown`).
   sessionTabs = createSessionTabs(ctx.mounts.conversation, { onNew: onNewSession });
