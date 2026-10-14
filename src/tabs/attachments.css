@@ -1,0 +1,70 @@
+/* Pièces jointes de l'input (DEN-35) — mêmes tokens que .den-prompt-bar. */
+.den-prompt-bar__main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--den-space-1);
+}
+
+.den-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--den-space-1);
+}
+
+.den-attachments__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--den-space-1);
+  max-width: 14rem;
+  padding: 2px var(--den-space-2);
+  border: 1px solid var(--den-edge, var(--den-border));
+  border-radius: var(--den-radius);
+  background: var(--den-glass-2, var(--den-bg-surface));
+  color: var(--den-fg);
+  font-family: var(--den-font-sans);
+}
+
+.den-attachments__thumb {
+  width: 1.75rem;
+  height: 1.75rem;
+  object-fit: cover;
+  border-radius: var(--den-radius);
+}
+
+.den-attachments__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.den-attachments__remove,
+.den-attachments__button {
+  border: 0;
+  background: transparent;
+  color: var(--den-fg);
+  font-family: var(--den-font-sans);
+  cursor: pointer;
+}
+
+.den-attachments__remove:hover,
+.den-attachments__button:hover {
+  color: var(--den-accent);
+}
+
+.den-attachments__button {
+  padding: var(--den-space-1);
+  border: 1px solid var(--den-edge, var(--den-border));
+  border-radius: var(--den-radius);
+}
+
+.den-attachments__button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.den-attachments__error {
+  color: var(--den-status-error);
+}
