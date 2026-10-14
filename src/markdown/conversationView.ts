@@ -10,9 +10,9 @@
  * et le point d'insertion des blocs custom (surface interactive, lot dédié).
  *
  * Éditer (D5) : chaque bulle user porte aussi un bouton `.den-edit` — un
- * clic dessus émet `den:edit-prompt` (`detail: { tabId, text }`) sur
- * `window`, consommé par `src/tabs/index.ts` pour reprendre `text` dans la
- * textarea du prompt du tab actif. Cette vue n'interrompt rien elle-même :
+ * clic dessus émet `den:edit-prompt` (`detail: { tabId, text, images }`) sur
+ * `window`, consommé par `src/tabs/index.ts` pour reprendre `text` et `images`
+ * dans l'input du tab actif. Cette vue n'interrompt rien elle-même :
  * si un tour tourne, l'utilisateur fait Stop d'abord (cf. `src/tabs/index.ts`).
  */
 import type {
@@ -216,6 +216,8 @@ export class ConversationView {
   private run: ToolRun | null = null;
   private readonly runByToolUseId = new Map<string, ToolRun>();
   private surfaceSeq = 0;
+  // Images d'origine par bulle user : ✎ doit les restituer, pas les revenir chercher dans le DOM.
+  private readonly echoImages = new WeakMap<Element, ImageAttachment[]>();
 
   constructor(tabId: string) {
     this.tabId = tabId;
@@ -458,8 +460,9 @@ export class ConversationView {
     if (!(button instanceof HTMLButtonElement)) return;
 
     const text = button.parentElement?.querySelector(".den-msg-user__text")?.textContent ?? "";
+    const images = (button.parentElement && this.echoImages.get(button.parentElement)) || [];
     window.dispatchEvent(
-      new CustomEvent("den:edit-prompt", { detail: { tabId: this.tabId, text } }),
+      new CustomEvent("den:edit-prompt", { detail: { tabId: this.tabId, text, images } }),
     );
   }
 
@@ -878,6 +881,7 @@ export class ConversationView {
         imagesEl.appendChild(img);
       }
       el.appendChild(imagesEl);
+      this.echoImages.set(el, images);
     }
     // Bouton éditer (D5) APRÈS le span de texte — la convention copier
     // (`.den-copy` immédiatement avant `.den-msg-user__text`) reste intacte.
