@@ -18,6 +18,7 @@
 import type {
   ConversationMessage,
   CustomBlock,
+  ImageAttachment,
 } from "../types/protocol";
 import { IncrementalMarkdownRenderer } from "./renderer";
 import { MOD_EVENTS } from "../mods/contracts";
@@ -316,7 +317,7 @@ export class ConversationView {
         // pendant un streaming s'insère sous le bloc actif, qui continue de
         // streamer avec son renderer intact (finaliser ici couperait le
         // message en deux et casserait tout construct markdown ouvert).
-        this.onUserEcho(msg.text);
+        this.onUserEcho(msg.text, msg.images);
         return;
       default:
         // session_info / permission_request / question_request : hors
@@ -842,7 +843,7 @@ export class ConversationView {
     this.scrollToBottomIfStuck();
   }
 
-  private onUserEcho(text: string): void {
+  private onUserEcho(text: string, images?: ImageAttachment[]): void {
     this.assistantSinceUser = false;
     const el = document.createElement("div");
     el.className = "den-msg den-msg-user";
@@ -865,6 +866,19 @@ export class ConversationView {
     const surfaceEl = document.createElement("div");
     surfaceEl.className = "den-msg-user__surface";
     el.appendChild(surfaceEl);
+    if (images && images.length > 0) {
+      // Hors .den-msg-user__text : le texte repris par ✎ reste le texte seul.
+      const imagesEl = document.createElement("div");
+      imagesEl.className = "den-msg-user__images";
+      for (const image of images) {
+        const img = document.createElement("img");
+        img.className = "den-msg-user__image";
+        img.src = `data:${image.mediaType};base64,${image.data}`;
+        img.alt = "Pasted image";
+        imagesEl.appendChild(img);
+      }
+      el.appendChild(imagesEl);
+    }
     // Bouton éditer (D5) APRÈS le span de texte — la convention copier
     // (`.den-copy` immédiatement avant `.den-msg-user__text`) reste intacte.
     el.appendChild(createEditButton());

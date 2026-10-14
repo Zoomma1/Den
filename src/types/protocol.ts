@@ -18,12 +18,19 @@ import type { RenderNode } from "../mods/tree";
 // UI -> sidecar
 // ---------------------------------------------------------------------------
 
+/** Image collée depuis le presse-papier, transportée en base64 (sans préfixe `data:`). */
+export interface ImageAttachment {
+  mediaType: "image/png" | "image/jpeg" | "image/gif" | "image/webp";
+  data: string;
+}
+
 /** L'utilisateur envoie un tour de conversation au sidecar. */
 export interface UserMessage {
   type: "user_message";
   /** Identifiant de corrélation, choisi côté UI. */
   id: string;
   text: string;
+  images?: ImageAttachment[];
 }
 
 /** Portée d'une règle de permission "always allow" côté SDK. */
@@ -341,6 +348,7 @@ export interface UserEcho {
   /** Même id de corrélation que le `user_message` envoyé au sidecar. */
   id: string;
   text: string;
+  images?: ImageAttachment[];
 }
 
 /** Le sidecar confirme le changement de mode de permission. */

@@ -91,6 +91,7 @@ import { Channel, invoke } from "@tauri-apps/api/core";
 import { homeDir } from "@tauri-apps/api/path";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import "./tabs.css";
+import { composeText, mountAttachments, type AttachmentSnapshot, type AttachmentsUi } from "./attachments";
 import type { DenContext } from "../core/registry";
 import { attachSlashAutocomplete } from "../autocomplete/controller";
 import {
@@ -259,6 +260,7 @@ export async function init(ctx: DenContext): Promise<void> {
   // Renseignés par buildPromptBar — désactivés tant qu'aucune session n'est
   // active (cf. updateEmptyState).
   let promptInputEl: HTMLTextAreaElement | null = null;
+  let attachmentsUi: AttachmentsUi | null = null;
   let promptSubmitEl: HTMLButtonElement | null = null;
   let slashAutocomplete: ReturnType<typeof attachSlashAutocomplete> | null = null;
 
@@ -483,6 +485,7 @@ export async function init(ctx: DenContext): Promise<void> {
     emptyLaunchEl.hidden = !noProject;
     modeSelect.disabled = idle;
     if (promptInputEl) promptInputEl.disabled = idle;
+    if (attachmentsUi) attachmentsUi.buttonEl.disabled = idle;
     if (promptSubmitEl) promptSubmitEl.disabled = idle;
     syncSubmitButton();
   }
@@ -490,6 +493,10 @@ export async function init(ctx: DenContext): Promise<void> {
   function setActiveTab(tabId: string | null): void {
     // Pas de brouillon par tab : le texte tapé ne suit pas le changement de tab.
     if (tabId !== activeTabId && promptInputEl) promptInputEl.value = "";
+    if (tabId !== activeTabId && attachmentsUi) {
+      attachmentsUi.state.clear();
+      attachmentsUi.render();
+    }
     activeTabId = tabId;
     const active = tabId ? tabs.get(tabId) : undefined;
     if (active) {
@@ -647,9 +654,14 @@ export async function init(ctx: DenContext): Promise<void> {
 
   /** Retourne false si le prompt n'a pas pu partir (l'appelant peut alors
    * restituer le texte tapé au lieu de le perdre). */
-  async function sendPrompt(tabId: string, text: string): Promise<boolean> {
-    const trimmed = text.trim();
-    if (trimmed.length === 0) return true;
+  async function sendPrompt(
+    tabId: string,
+    text: string,
+    attachments?: AttachmentSnapshot,
+  ): Promise<boolean> {
+    const trimmed = composeText(text, attachments?.files.map((f) => f.path) ?? []);
+    const images = (attachments?.images ?? []).map(({ mediaType, data }) => ({ mediaType, data }));
+    if (trimmed.length === 0 && images.length === 0) return true;
     const previousState = router.getState(tabId);
     if (previousState === "error") return false;
 
@@ -663,6 +675,7 @@ export async function init(ctx: DenContext): Promise<void> {
       type: "user_message" as const,
       id: crypto.randomUUID(),
       text: trimmed,
+      ...(images.length > 0 ? { images } : {}),
     };
     try {
       await invoke("sidecar_send", {
@@ -686,6 +699,7 @@ export async function init(ctx: DenContext): Promise<void> {
       type: "user_echo",
       id: payload.id,
       text: trimmed,
+      ...(images.length > 0 ? { images } : {}),
     });
     return true;
   }
@@ -726,21 +740,51 @@ export async function init(ctx: DenContext): Promise<void> {
 
     promptInputEl = textarea;
     promptSubmitEl = submitEl;
-    form.append(slash.rootEl, side);
+    const attachments = mountAttachments(textarea);
+    attachmentsUi = attachments;
+    side.prepend(attachments.buttonEl);
+    const main = document.createElement("div");
+    main.className = "den-prompt-bar__main";
+    main.append(attachments.barEl, slash.rootEl);
+    form.append(main, side);
     form.addEventListener("submit", (event) => {
       event.preventDefault();
-      if (!activeTabId) return;
-      const text = textarea.value;
-      textarea.value = "";
-      slash.refresh();
-      void sendPrompt(activeTabId, text).then((sent) => {
-        // Envoi en échec : restituer le texte tapé (sauf si l'utilisateur a
-        // déjà commencé autre chose) plutôt que de le perdre.
-        if (!sent && textarea.value.length === 0) {
+      const tabId = activeTabId;
+      if (!tabId) return;
+      // Capturé avant l'await : un changement d'onglet vide le textarea, le message partirait sinon à vide.
+      const typed = textarea.value;
+      const epoch = attachments.state.epoch();
+      void (async () => {
+        // Une image collée encore en lecture doit partir avec ce message, pas le suivant.
+        await attachments.pending.idle();
+        const sameTab = attachments.state.epoch() === epoch;
+        const text = sameTab ? textarea.value : typed;
+        // Onglet changé : les pièces jointes ont été vidées avec lui, le texte part quand même vers son onglet d'origine.
+        const snapshot = sameTab ? attachments.state.take() : { files: [], images: [] };
+        if (sameTab) {
+          textarea.value = "";
+          attachments.render();
+          slash.refresh();
+        }
+        const sent = await sendPrompt(tabId, text, snapshot);
+        if (sent) {
+          attachments.state.release(snapshot);
+          return;
+        }
+        // Onglet changé pendant l'envoi : restaurer dans l'onglet courant polluerait une autre session.
+        if (attachments.state.epoch() !== epoch) {
+          attachments.state.release(snapshot);
+          return;
+        }
+        // Envoi en échec : restituer texte et pièces jointes (sauf si
+        // l'utilisateur a déjà commencé autre chose) plutôt que de les perdre.
+        attachments.state.restore(snapshot);
+        attachments.render();
+        if (textarea.value.length === 0) {
           textarea.value = text;
           slash.refresh();
         }
-      });
+      })();
     });
 
     // Entrée envoie, Cmd/Ctrl+Entrée insère un saut de ligne, Shift+Entrée reste natif (cf. promptKeyAction).
