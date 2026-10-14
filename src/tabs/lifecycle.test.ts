@@ -174,6 +174,7 @@ describe("reduceTabLifecycle", () => {
     { type: "mod_client_press_result", requestId: "m2", handled: true },
     { type: "subagent_update", taskId: "t1", status: "running" },
     { type: "subagent_report", toolUseId: "toolu-A", text: "rapport" },
+    { type: "subagent_step", parentToolUseId: "toolu-A", kind: "text", text: "étape", truncated: false },
   ])("waiting sans requête en attente + $type -> reste waiting (poussé hors progression du tour)", (message) => {
     const lc = reduceTabLifecycle(lifecycle("waiting", 0), { kind: "sidecar_message", message });
     expect(lc.state).toBe("waiting");

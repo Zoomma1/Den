@@ -506,6 +506,23 @@ export interface SubagentUpdate {
   lastToolName?: string;
   isBackgrounded?: boolean;
   usage?: { totalTokens: number; toolUses: number; durationMs: number };
+  /** Tâche donnée au sous-agent (task_started.prompt). */
+  prompt?: string;
+  /** Rang d'imbrication : 1 = lancé par la session, N+1 = lancé par un agent de rang N. */
+  spawnDepth?: number;
+}
+
+/** Étape interne d'un sous-agent (texte, appel d'outil ou résultat), tronquée côté sidecar. */
+export interface SubagentStep {
+  type: "subagent_step";
+  /** Id du tool_use Agent qui a lancé ce sous-agent. */
+  parentToolUseId: string;
+  kind: "text" | "tool_use" | "tool_result";
+  toolUseId?: string;
+  name?: string;
+  text: string;
+  truncated: boolean;
+  isError?: boolean;
 }
 
 /** Rapport final d'un sous-agent, à afficher sur le bloc Agent du parent. */
@@ -522,6 +539,7 @@ export type SidecarToUIMessage =
   | ToolResult
   | SubagentUpdate
   | SubagentReport
+  | SubagentStep
   | PermissionRequest
   | QuestionRequest
   | SessionInfo
@@ -605,6 +623,10 @@ export function isSubagentUpdate(
   msg: DenProtocolMessage,
 ): msg is SubagentUpdate {
   return msg.type === "subagent_update";
+}
+
+export function isSubagentStep(msg: DenProtocolMessage): msg is SubagentStep {
+  return msg.type === "subagent_step";
 }
 
 export function isSubagentReport(

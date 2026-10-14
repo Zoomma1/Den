@@ -161,6 +161,7 @@ describe("TabRouter", () => {
   it.each([
     '{"type":"subagent_update","taskId":"k1","toolUseId":"toolu_1","status":"running"}',
     '{"type":"subagent_report","toolUseId":"toolu_1","text":"rapport"}',
+    '{"type":"subagent_step","parentToolUseId":"toolu_1","kind":"text","text":"étape","truncated":false}',
   ])("route le message sous-agent : %s", (line) => {
     const router = new TabRouter();
     router.registerTab("tab-a");

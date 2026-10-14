@@ -1,6 +1,6 @@
 // Fonctions pures extraites de main.ts : lecture des messages du SDK.
 
-import type { SubagentReport, SubagentUpdate } from "../../src/types/protocol";
+import type { SubagentReport, SubagentStep, SubagentUpdate } from "../../src/types/protocol";
 
 export interface ToolResultOf {
   toolUseId: string;
@@ -99,6 +99,8 @@ export function subagentUpdateOf(msg: any, known: Set<string>): SubagentUpdate |
         ...opt("description", msg.description),
         ...opt("subagentType", msg.subagent_type),
         ...opt("isBackgrounded", msg.is_backgrounded),
+        ...opt("prompt", msg.prompt),
+        ...opt("spawnDepth", msg.spawn_depth),
       };
     case "task_progress":
       if (!known.has(taskId)) return null;
@@ -142,4 +144,52 @@ export function subagentReportOf(msg: any): SubagentReport | null {
   const block = content.find((b: any) => b?.type === "tool_use" && b.name === "SubagentHandback");
   if (typeof block?.input?.message !== "string") return null;
   return { type: "subagent_report", toolUseId: msg.parent_tool_use_id, text: block.input.message };
+}
+
+const TEXT_LIMIT = 4000;
+const INPUT_LIMIT = 2000;
+
+const clip = (text: string, limit: number) =>
+  text.length > limit ? { text: text.slice(0, limit), truncated: true } : { text, truncated: false };
+
+const renderOutput = (c: unknown): string => {
+  if (typeof c === "string") return c;
+  if (Array.isArray(c) && c.every((b: any) => b?.type === "text" && typeof b.text === "string"))
+    return c.map((b: any) => b.text).join("");
+  return JSON.stringify(c) ?? "";
+};
+
+/** Étapes internes d'un sous-agent (texte, tool_use, tool_result), tronquées ; le SubagentHandback (tool_use + son tool_result) part déjà dans le rapport. `handbackIds` mémorise ses ids d'un message à l'autre. */
+export function subagentStepsOf(msg: any, handbackIds: Set<string> = new Set()): SubagentStep[] {
+  if ((msg?.type !== "assistant" && msg?.type !== "user") || msg.parent_tool_use_id == null) return [];
+  const content = msg.message?.content;
+  if (!Array.isArray(content)) return [];
+  const parentToolUseId: string = msg.parent_tool_use_id;
+  const steps: SubagentStep[] = [];
+  for (const b of content) {
+    if (b?.type === "text" && typeof b.text === "string") {
+      steps.push({ type: "subagent_step", parentToolUseId, kind: "text", ...clip(b.text, TEXT_LIMIT) });
+    } else if (b?.type === "tool_use" && b.name === "SubagentHandback") {
+      if (typeof b.id === "string") handbackIds.add(b.id);
+    } else if (b?.type === "tool_use") {
+      steps.push({
+        type: "subagent_step",
+        parentToolUseId,
+        kind: "tool_use",
+        name: b.name,
+        toolUseId: b.id,
+        ...clip(JSON.stringify(b.input) ?? "", INPUT_LIMIT),
+      });
+    } else if (b?.type === "tool_result" && !handbackIds.has(b.tool_use_id)) {
+      steps.push({
+        type: "subagent_step",
+        parentToolUseId,
+        kind: "tool_result",
+        toolUseId: b.tool_use_id,
+        ...clip(renderOutput(b.content), TEXT_LIMIT),
+        isError: b.is_error === true,
+      });
+    }
+  }
+  return steps;
 }
