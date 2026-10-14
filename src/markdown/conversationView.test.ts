@@ -1,6 +1,9 @@
 // @vitest-environment happy-dom
 import { describe, expect, it, vi } from "vitest";
 import { ConversationView } from "./conversationView";
+
+const invokeMock = vi.hoisted(() => vi.fn());
+vi.mock("@tauri-apps/api/core", () => ({ invoke: invokeMock }));
 import type {
   AssistantDelta,
   ConversationReset,
@@ -267,12 +270,12 @@ describe("ConversationView", () => {
     await nextFrame();
 
     const codeBlocks = view.el.querySelectorAll(".den-code");
-    const copyButtons = view.el.querySelectorAll(".den-code > .den-copy");
+    const copyButtons = view.el.querySelectorAll(".den-code-block > .den-copy");
     expect(codeBlocks.length).toBeGreaterThanOrEqual(1);
     expect(copyButtons.length).toBe(codeBlocks.length);
   });
 
-  it("clic sur .den-copy d'un bloc de code copie le textContent du <code> qui le suit", async () => {
+  it("clic sur .den-copy d'un bloc de code copie le textContent du <pre> qui le suit", async () => {
     const view = new ConversationView("tab-1");
     view.handleMessage({
       type: "assistant_delta",
@@ -287,7 +290,7 @@ describe("ConversationView", () => {
       configurable: true,
     });
 
-    const button = view.el.querySelector(".den-code > .den-copy");
+    const button = view.el.querySelector(".den-code-block > .den-copy");
     expect(button).not.toBeNull();
     (button as HTMLButtonElement).click();
 
@@ -465,5 +468,50 @@ describe("ConversationView", () => {
     await nextFrame();
 
     expect(scrollTop).toBe(1000); // le MutationObserver a raccroché au bas réel
+  });
+
+  it("user_echo ajoute un <time> HH:MM après le texte, le bouton copier reste juste avant", () => {
+    const view = new ConversationView("tab-1");
+    view.handleMessage({ type: "user_echo", text: "salut" } as UserEcho);
+    const text = view.el.querySelector(".den-msg-user__text")!;
+    expect(text.previousElementSibling?.classList.contains("den-copy")).toBe(true);
+    const time = text.nextElementSibling!;
+    expect(time.tagName).toBe("TIME");
+    expect(time.textContent).toMatch(/^\d{2}:\d{2}$/);
+  });
+
+  function linkView(href: string): { a: HTMLAnchorElement; view: ConversationView } {
+    const view = new ConversationView("tab-1");
+    const a = document.createElement("a");
+    a.setAttribute("href", href);
+    view.el.appendChild(a);
+    return { a, view };
+  }
+
+  it("clic sur un lien http n'est pas navigué et appelle l'ouverture", () => {
+    invokeMock.mockReset().mockResolvedValue(undefined);
+    const { a } = linkView("https://example.com/");
+    const event = new MouseEvent("click", { bubbles: true, cancelable: true });
+    a.dispatchEvent(event);
+    expect(event.defaultPrevented).toBe(true);
+    expect(invokeMock).toHaveBeenCalledWith("plugin:opener|open_url", { url: "https://example.com/" });
+  });
+
+  it("clic milieu (auxclick) sur un lien est aussi intercepté", () => {
+    invokeMock.mockReset().mockResolvedValue(undefined);
+    const { a } = linkView("https://example.com/");
+    const event = new MouseEvent("auxclick", { bubbles: true, cancelable: true, button: 1 });
+    a.dispatchEvent(event);
+    expect(event.defaultPrevented).toBe(true);
+    expect(invokeMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("un lien javascript: est bloqué sans ouverture", () => {
+    invokeMock.mockReset();
+    const { a } = linkView("javascript:alert(1)");
+    const event = new MouseEvent("click", { bubbles: true, cancelable: true });
+    a.dispatchEvent(event);
+    expect(event.defaultPrevented).toBe(true);
+    expect(invokeMock).not.toHaveBeenCalled();
   });
 });

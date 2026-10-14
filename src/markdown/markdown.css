@@ -92,15 +92,22 @@
   color: var(--den-accent);
 }
 
-/* `position: relative` : ancre le bouton copier (D8, cf. .den-copy). */
-.den-code {
+/* Wrapper pleine largeur : ancre le bouton copier hors du <pre> scrollable. */
+.den-code-block {
   position: relative;
+  width: 100%;
+  margin: var(--den-space-2) 0;
+}
+
+.den-code {
+  width: 100%;
+  box-sizing: border-box;
   background: var(--den-code-bg, var(--den-bg-surface));
   border: 1px solid var(--den-edge, var(--den-border));
   border-radius: 10px;
   padding: var(--den-space-2) var(--den-space-3);
   overflow-x: auto;
-  margin: var(--den-space-2) 0;
+  margin: 0;
 }
 
 .den-code code {
@@ -200,12 +207,27 @@
   transition: opacity 0.15s;
 }
 
-.den-code:hover > .den-copy,
+.den-code-block:hover > .den-copy,
 .den-tool-input:hover > .den-copy,
 .den-tool-result pre:hover > .den-copy,
 .den-msg-user:hover > .den-copy,
 .den-copy:focus-visible {
   opacity: 1;
+}
+
+/* Rayon dérivé du bloc (10px) moins l'inset, pour épouser son coin. */
+.den-code-block > .den-copy {
+  top: 6px;
+  right: 6px;
+  border-radius: 4px;
+}
+
+.den-msg-user__time {
+  display: block;
+  margin-top: 2px;
+  font-size: 0.75em;
+  color: var(--den-fg-muted);
+  opacity: 0.7;
 }
 
 /* Bouton éditer (D5) — même look/comportement que .den-copy (caché par

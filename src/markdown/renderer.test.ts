@@ -75,14 +75,16 @@ describe("IncrementalMarkdownRenderer", () => {
       "```ts\nconst x: number = 1;\n```\n\nSuite du texte",
     );
     const html = finalizedHtml.join("") + renderer.finalize().join("");
-    expect(html).toContain('<pre class="den-code">');
+    expect(html).toContain('<div class="den-code-block">');
+    expect(html).toContain('<pre class="den-code"><code');
     expect(html).toContain("hljs");
   });
 
   it("ne colore pas le bloc de code COURANT (fence ouvert), seulement à la finalisation — mesure 1b.2", () => {
     const renderer = new IncrementalMarkdownRenderer();
     const { currentHtml } = renderer.feed("```ts\nconst x: number = 1;\n");
-    expect(currentHtml).toContain('<pre class="den-code">');
+    expect(currentHtml).toContain('<div class="den-code-block"><button class="den-copy"');
+    expect(currentHtml).toContain('<pre class="den-code"><code');
     expect(currentHtml).toContain('class="den-copy"');
     expect(currentHtml).not.toContain("hljs");
     expect(currentHtml).toContain("const x: number = 1;");
