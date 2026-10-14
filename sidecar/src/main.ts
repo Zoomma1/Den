@@ -49,6 +49,7 @@ import { resolveInitialMode } from "./initialMode";
 import { ModSurface } from "./modSurface";
 import { commandOutputOf, durationMsOf, toolResultsOf } from "./sdkMessages";
 import { PermissionBroker } from "./permissions";
+import { buildUserContent } from "./userContent";
 
 function send(message: SidecarToUIMessage): void {
   process.stdout.write(`${JSON.stringify(message)}\n`);
@@ -148,7 +149,7 @@ function handleUserMessage(msg: UserMessage): void {
   pendingTurnIds.push(msg.id);
   inputQueue.push({
     type: "user",
-    message: { role: "user", content: msg.text },
+    message: { role: "user", content: buildUserContent(msg) },
     parent_tool_use_id: null,
   });
 }
