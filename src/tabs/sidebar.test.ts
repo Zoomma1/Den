@@ -654,4 +654,24 @@ describe("createSidebar", () => {
       expect(label(".den-root-bar__add-workspace").getAttribute("aria-label")).toBe("New workspace");
     });
   });
+
+  describe("orderedProjectIds", () => {
+    it("rend les ids dans l'ordre affiché des workspaces, pas l'ordre du tableau projects", () => {
+      const sidebar = createSidebar(root, makeHandlers(), launchButtonFactory);
+      sidebar.setState(
+        makeState({
+          workspaces: [
+            { id: "ws-1", name: "A", rootPath: null },
+            { id: "ws-2", name: "B", rootPath: null },
+          ],
+          projects: [
+            { id: "p-b", workspaceId: "ws-2", path: "/b" },
+            { id: "p-a1", workspaceId: "ws-1", path: "/a1" },
+            { id: "p-a2", workspaceId: "ws-1", path: "/a2" },
+          ],
+        }),
+      );
+      expect(sidebar.orderedProjectIds()).toEqual(["p-a1", "p-a2", "p-b"]);
+    });
+  });
 });

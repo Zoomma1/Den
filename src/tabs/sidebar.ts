@@ -53,6 +53,8 @@ export interface Sidebar {
   /** Pose `status` (`null` = aucun) sur le badge du projet et recalcule le
    * badge de son workspace (roll-up). Survit aux `setState`. */
   setProjectStatus(projectId: string, status: SessionStatus | null): void;
+  /** Ids des projets dans l'ordre affiché (workspaces puis projets). */
+  orderedProjectIds(): string[];
 }
 
 interface WorkspaceRow {
@@ -389,5 +391,11 @@ export function createSidebar(
     applySelection();
   }
 
-  return { setState, setSelectedProject, beginRename, setProjectStatus };
+  function orderedProjectIds(): string[] {
+    return [...workspaceListEl.querySelectorAll<HTMLElement>(".den-project")].map(
+      (el) => el.dataset.projectId!,
+    );
+  }
+
+  return { setState, setSelectedProject, beginRename, setProjectStatus, orderedProjectIds };
 }
