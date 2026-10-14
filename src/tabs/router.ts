@@ -1,5 +1,6 @@
 import {
   isAssistantDelta,
+  isCommandOutput,
   isCommands,
   isConversationReset,
   isDone,
@@ -141,6 +142,7 @@ function parseSidecarMessage(line: string): SidecarToUIMessage | null {
     isModeChanged(candidate) ||
     isConversationReset(candidate) ||
     isCommands(candidate) ||
+    isCommandOutput(candidate) ||
     isModStatus(candidate) ||
     isModToast(candidate) ||
     isModPanes(candidate) ||

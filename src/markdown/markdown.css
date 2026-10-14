@@ -280,3 +280,74 @@
     opacity: 0.4;
   }
 }
+
+/* Surface UserMessage : remplie par un mod, elle remplace le texte et l'heure natifs (copier/éditer restent). */
+.den-msg-user:has(> .den-msg-user__surface:not(:empty)) > :is(.den-msg-user__text, .den-msg-user__time) {
+  display: none;
+}
+
+/* Surface ToolUse du moteur : si un mod la remplit, elle remplace le libellé natif du <summary>. */
+.den-tool-block > summary:has(.den-tool-use-surface:not(:empty)) > .den-tool-name {
+  display: none;
+}
+
+.den-tool-use-surface {
+  display: inline-block;
+  vertical-align: top;
+}
+
+/* Suite de lectures repliée (ToolGroup) : les <details> des appels restent à l'intérieur. */
+.den-tool-group {
+  border: 1px solid var(--den-edge, var(--den-border));
+  border-radius: 9px;
+  padding: var(--den-space-2) var(--den-space-3);
+}
+
+.den-tool-group > summary {
+  cursor: pointer;
+  font-family: var(--den-font-mono);
+  color: var(--den-fg-secondary);
+  user-select: none;
+}
+
+.den-tool-group:has(.den-tool-group__surface:not(:empty)) > summary > .den-tool-group__label {
+  display: none;
+}
+
+.den-tool-group__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--den-space-2);
+  margin-top: var(--den-space-2);
+}
+
+/* Sortie d'une commande slash (CommandOutput) — même schéma que le résultat d'outil. */
+.den-command-output pre {
+  position: relative;
+  margin: 0;
+  font-family: var(--den-font-mono);
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--den-fg-secondary);
+}
+
+.den-command-output pre code {
+  font: inherit;
+  white-space: inherit;
+  background: none;
+  padding: 0;
+}
+
+.den-command-output pre:hover > .den-copy {
+  opacity: 1;
+}
+
+.den-command-output-error pre {
+  color: var(--den-status-error);
+}
+
+/* Pied de tour (TurnDuration) */
+.den-turn-duration {
+  font-size: 0.8em;
+  color: var(--den-fg-muted);
+}
