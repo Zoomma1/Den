@@ -8,6 +8,13 @@ export interface SessionCard {
   status: SessionStatus | null;
   activity: string;
   active: boolean;
+  subagents: SubagentCard[];
+}
+
+export interface SubagentCard {
+  taskId: string;
+  line: string;
+  status: "running" | "completed" | "failed" | "stopped";
 }
 
 export interface SessionsPanelHandlers {
@@ -29,6 +36,11 @@ interface CardEls {
   sid: HTMLSpanElement;
   status: HTMLSpanElement;
   activity: HTMLSpanElement;
+}
+
+interface SubEls {
+  el: HTMLButtonElement;
+  line: HTMLSpanElement;
 }
 
 export function createSessionsPanel(host: HTMLElement, handlers: SessionsPanelHandlers): SessionsPanel {
@@ -60,6 +72,7 @@ export function createSessionsPanel(host: HTMLElement, handlers: SessionsPanelHa
   host.append(backdrop);
 
   const cards = new Map<string, CardEls>();
+  const subs = new Map<string, SubEls>();
   let opened = false;
   let previousFocus: HTMLElement | null = null;
 
@@ -102,6 +115,20 @@ export function createSessionsPanel(host: HTMLElement, handlers: SessionsPanelHa
     return { el, name, sid, status, activity };
   }
 
+  // Bouton frère de la card (jamais imbriqué dans le bouton parent) ; clic = saut vers l'onglet parent.
+  function makeSub(tabId: string): SubEls {
+    const el = document.createElement("button");
+    el.type = "button";
+    el.className = "den-sessions-sub";
+    const dot = document.createElement("span");
+    dot.className = "den-sessions-sub__dot";
+    const line = document.createElement("span");
+    line.className = "den-sessions-sub__line";
+    el.append(dot, line);
+    el.addEventListener("click", () => handlers.onJump(tabId));
+    return { el, line };
+  }
+
   // Écrire seulement si la valeur change : préserve une sélection de texte en cours.
   function setText(node: HTMLElement, value: string): void {
     if (node.textContent !== value) node.textContent = value;
@@ -115,6 +142,8 @@ export function createSessionsPanel(host: HTMLElement, handlers: SessionsPanelHa
 
   function setCards(next: SessionCard[]): void {
     const seen = new Set<string>();
+    const seenSubs = new Set<string>();
+    const order: HTMLElement[] = [];
     let needsInput = 0;
     for (const card of next) {
       seen.add(card.tabId);
@@ -133,15 +162,32 @@ export function createSessionsPanel(host: HTMLElement, handlers: SessionsPanelHa
       }
       setAttr(els.el, "aria-current", card.active ? "true" : null);
       if (card.status === "needs_input") needsInput++;
+      order.push(els.el);
+      for (const sub of card.subagents) {
+        const key = `${card.tabId}:${sub.taskId}`;
+        seenSubs.add(key);
+        let subEls = subs.get(key);
+        if (!subEls) {
+          subEls = makeSub(card.tabId);
+          subs.set(key, subEls);
+        }
+        setAttr(subEls.el, "data-status", sub.status);
+        setText(subEls.line, sub.line);
+        order.push(subEls.el);
+      }
     }
     for (const [tabId, els] of cards) {
       if (seen.has(tabId)) continue;
       els.el.remove();
       cards.delete(tabId);
     }
+    for (const [key, els] of subs) {
+      if (seenSubs.has(key)) continue;
+      els.el.remove();
+      subs.delete(key);
+    }
     // appendChild déplace un nœud déjà présent : l'ordre suit `next` sans recréer les cards.
-    next.forEach((card, i) => {
-      const el = cards.get(card.tabId)!.el;
+    order.forEach((el, i) => {
       if (listEl.children[i] !== el) listEl.appendChild(el);
     });
     const showEmpty = next.length === 0;

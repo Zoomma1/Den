@@ -139,6 +139,7 @@ import {
 } from "./owner";
 import type { TabLifecycleState } from "./lifecycle";
 import { EMPTY_ACTIVITY, displayActivity, nextActivity, type Activity } from "./activity";
+import { EMPTY_SUBAGENTS, nextSubagents, subagentLine, type Subagents } from "./subagents";
 import { notificationFor, sendSystemNotification } from "./notify";
 import { TabRouter } from "./router";
 import {
@@ -177,6 +178,8 @@ interface Tab {
   userEnded: boolean;
   /** Dernière activité lisible, affichée dans le panneau Sessions (DEN-16). */
   activity: Activity;
+  /** Sous-agents lancés par la session (DEN-37), affichés sous sa card. */
+  subagents: Subagents;
 }
 
 /** Hors Tauri (ou échec IPC) : repli sur le focus DOM plutôt que de notifier à tort. */
@@ -387,6 +390,7 @@ export async function init(ctx: DenContext): Promise<void> {
           sessionId: t.sessionId ?? null,
           status,
           activity: displayActivity(t.activity, status),
+          subagents: t.subagents.map((s) => ({ taskId: s.taskId, line: subagentLine(s), status: s.status })),
           active: t.id === activeTabId,
         };
       }),
@@ -604,6 +608,7 @@ export async function init(ctx: DenContext): Promise<void> {
       unseenDone: false,
       userEnded: false,
       activity: EMPTY_ACTIVITY,
+      subagents: EMPTY_SUBAGENTS,
     };
     tabs.set(id, tab);
     renderPanel();
@@ -617,6 +622,11 @@ export async function init(ctx: DenContext): Promise<void> {
         const activity = nextActivity(tab.activity, message);
         if (activity !== tab.activity) {
           tab.activity = activity;
+          renderPanel();
+        }
+        const subagents = nextSubagents(tab.subagents, message);
+        if (subagents !== tab.subagents) {
+          tab.subagents = subagents;
           renderPanel();
         }
         if (isSessionInfo(message)) {
@@ -703,12 +713,18 @@ export async function init(ctx: DenContext): Promise<void> {
     // sidecar ne renvoie jamais les prompts, sans ça le fil est illisible.
     // Émis seulement une fois l'envoi confirmé : un écho dispatché avant
     // l'invoke afficherait comme livré un message qui ne l'est pas.
-    dispatchSessionMessage(tabId, {
+    const echo: ConversationMessage = {
       type: "user_echo",
       id: payload.id,
       text: trimmed,
       ...(images.length > 0 ? { images } : {}),
-    });
+    };
+    // L'écho ne passe pas par channel.onmessage : le tri des sous-agents terminés se fait ici.
+    if (tab) {
+      tab.subagents = nextSubagents(tab.subagents, echo);
+      renderPanel();
+    }
+    dispatchSessionMessage(tabId, echo);
     return true;
   }
 

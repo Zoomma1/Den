@@ -20,6 +20,8 @@ import {
   isPermissionRequest,
   isQuestionRequest,
   isSessionInfo,
+  isSubagentReport,
+  isSubagentUpdate,
   isToolResult,
   isToolUse,
   type DenProtocolMessage,
@@ -134,6 +136,8 @@ function parseSidecarMessage(line: string): SidecarToUIMessage | null {
     isAssistantDelta(candidate) ||
     isToolUse(candidate) ||
     isToolResult(candidate) ||
+    isSubagentUpdate(candidate) ||
+    isSubagentReport(candidate) ||
     isPermissionRequest(candidate) ||
     isQuestionRequest(candidate) ||
     isSessionInfo(candidate) ||

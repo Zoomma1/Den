@@ -47,7 +47,7 @@ import { mergeCommands } from "./commands";
 import { resolveClaudeBinary } from "./claudeBinary";
 import { resolveInitialMode } from "./initialMode";
 import { ModSurface } from "./modSurface";
-import { commandOutputOf, durationMsOf, toolResultsOf } from "./sdkMessages";
+import { commandOutputOf, durationMsOf, subagentReportOf, subagentUpdateOf, toolResultsOf } from "./sdkMessages";
 import { PermissionBroker } from "./permissions";
 import { buildUserContent } from "./userContent";
 
@@ -235,6 +235,9 @@ function fetchCommands(): void {
 // Non bloquant : la liste part dès l'ouverture du tab, avant tout prompt.
 fetchCommands();
 
+// Tâches sous-agents retenues (task_started accepté) : filtre les task_* des autres types de tâches.
+const knownTasks = new Set<string>();
+
 async function pump(): Promise<void> {
   try {
     for await (const sdkMessage of queryHandle) {
@@ -262,13 +265,23 @@ async function pump(): Promise<void> {
         if (sdkMessage.permissionMode) {
           send({ type: "mode_changed", mode: sdkMessage.permissionMode });
         }
+      } else if (
+        sdkMessage.type === "system" &&
+        ["task_started", "task_progress", "task_updated", "task_notification"].includes(sdkMessage.subtype)
+      ) {
+        const u = subagentUpdateOf(sdkMessage, knownTasks);
+        if (u) send(u);
+      } else if (
+        (sdkMessage.type === "assistant" || sdkMessage.type === "user") &&
+        sdkMessage.parent_tool_use_id != null
+      ) {
+        // Messages internes d'un sous-agent : seul son rapport remonte, jamais ses tool_use/tool_result bruts.
+        const r = subagentReportOf(sdkMessage);
+        if (r) send(r);
+        continue;
       } else if (sdkMessage.type === "stream_event") {
-        // Sous-agents (DEN-10 lot 1b) : `parent_tool_use_id` non nul signale
-        // un event émis par un sous-agent. Le rendu des sous-agents est hors
-        // scope (pas de `forwardSubagentText`, cf. Options.forwardSubagentText
-        // dans sdk.d.ts) — on ignore silencieusement ces events ; le
-        // tool_use/tool_result du sous-agent reste relayé par ailleurs (cas
-        // "assistant"/"user" ci-dessous, jamais affecté par ce filtre).
+        // Sous-agents : `parent_tool_use_id` non nul = event d'un sous-agent, ignoré
+        // (pas de `forwardSubagentText`) ; ses assistant/user sont filtrés plus haut.
         if (sdkMessage.parent_tool_use_id !== null) {
           continue;
         }
@@ -347,6 +360,7 @@ async function pump(): Promise<void> {
         // /clear, sortie de plan mode ou fresh-session flow (cf. sdk.d.ts
         // `SDKConversationResetMessage`) : jamais de string-matching sur
         // "/clear" ici, le SDK nous le dit explicitement par ce type.
+        knownTasks.clear();
         send({
           type: "conversation_reset",
           sessionId: sdkMessage.session_id,

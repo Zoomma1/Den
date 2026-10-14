@@ -16,6 +16,7 @@ import type {
   ConversationReset,
   Done,
   ErrorMessage,
+  SubagentReport,
   ToolResult,
   ToolUse,
   UserEcho,
@@ -843,5 +844,66 @@ describe("ConversationView — surfaces du moteur", () => {
     window.dispatchEvent(new CustomEvent(MOD_EVENTS.viewport, { detail: { tabId: "tab-vp", viewport: { columns: 80, rows: 40 } } }));
     await tick();
     expect(requests).toHaveLength(2);
+  });
+
+  describe("rapport de sous-agent", () => {
+    const agentUse = { type: "tool_use", id: "t1", toolUseId: "toolu-A", name: "Agent", input: {} } as ToolUse;
+    const stub = { type: "tool_result", id: "t1", toolUseId: "toolu-A", output: "report delivered", isError: false } as ToolResult;
+    const report = { type: "subagent_report", toolUseId: "toolu-A", text: "# Titre\n\n**gras**\n\n- un\n- deux" } as SubagentReport;
+
+    it("rend le rapport en markdown sur le bloc Agent, stub masqué (rapport avant stub)", () => {
+      const view = new ConversationView("tab-1");
+      view.handleMessage(agentUse);
+      view.handleMessage(report);
+      view.handleMessage(stub);
+      const block = view.el.querySelector('.den-tool-block[data-tool-use-id="toolu-A"]') as HTMLElement;
+      expect(block.querySelector(".den-subagent-report h1")?.textContent).toBe("Titre");
+      expect(block.querySelector(".den-subagent-report .den-msg-finalized strong")?.textContent).toContain("gras");
+      expect(block.querySelectorAll(".den-subagent-report li")).toHaveLength(2);
+      expect(block.querySelector(".den-subagent-report pre")).toBeNull();
+      expect(block.textContent).not.toContain("report delivered");
+    });
+
+    it("retire le stub déjà posé quand le rapport arrive après", () => {
+      const view = new ConversationView("tab-1");
+      view.handleMessage(agentUse);
+      view.handleMessage(stub);
+      expect(view.el.textContent).toContain("report delivered");
+      view.handleMessage(report);
+      expect(view.el.textContent).not.toContain("report delivered");
+      expect(view.el.querySelectorAll(".den-subagent-report")).toHaveLength(1);
+    });
+
+    it("isole le rapport sans bloc parent, et son stub n'apparaît pas", () => {
+      const view = new ConversationView("tab-1");
+      view.handleMessage(report);
+      view.handleMessage(stub);
+      const orphan = view.el.querySelector(".den-tool-block-orphan") as HTMLElement;
+      expect(orphan.querySelector("h1")?.textContent).toBe("Titre");
+      expect(view.el.textContent).not.toContain("report delivered");
+    });
+
+    it("garde lisible un tool_result en erreur arrivé après le rapport (et un rapport tardif ne l'efface pas)", () => {
+      const err = { ...stub, output: "agent killed", isError: true } as ToolResult;
+      const afterReport = new ConversationView("tab-1");
+      afterReport.handleMessage(agentUse);
+      afterReport.handleMessage(report);
+      afterReport.handleMessage(err);
+      expect(afterReport.el.textContent).toContain("agent killed");
+      const beforeReport = new ConversationView("tab-2");
+      beforeReport.handleMessage(agentUse);
+      beforeReport.handleMessage(err);
+      beforeReport.handleMessage(report);
+      expect(beforeReport.el.textContent).toContain("agent killed");
+    });
+
+    it("laisse le tool_result d'un autre outil inchangé", () => {
+      const view = new ConversationView("tab-1");
+      view.handleMessage({ type: "tool_use", id: "t2", toolUseId: "toolu-B", name: "Bash", input: {} } as ToolUse);
+      view.handleMessage(report);
+      view.handleMessage({ type: "tool_result", id: "t2", toolUseId: "toolu-B", output: "ok-bash", isError: false } as ToolResult);
+      const block = view.el.querySelector('.den-tool-block[data-tool-use-id="toolu-B"]') as HTMLElement;
+      expect(block.querySelector(".den-tool-result pre")?.textContent).toContain("ok-bash");
+    });
   });
 });

@@ -9,6 +9,7 @@ const card = (tabId: string, over: Partial<SessionCard> = {}): SessionCard => ({
   status: null,
   activity: "",
   active: false,
+  subagents: [],
   ...over,
 });
 
@@ -196,5 +197,57 @@ describe("createSessionsPanel", () => {
       key("Home");
       expect(document.activeElement).toBe(cards()[0]);
     });
+  });
+});
+
+describe("sous-agents", () => {
+  const sub = (taskId: string, line = `line-${taskId}`, status: "running" | "completed" = "running") => ({
+    taskId,
+    line,
+    status,
+  });
+  const subs = (host: HTMLElement) => [...host.querySelectorAll<HTMLButtonElement>(".den-sessions-sub")];
+
+  it("rend les sous-agents comme boutons frères juste après leur card", () => {
+    const { host, panel } = setup();
+    panel.setCards([card("a", { subagents: [sub("t1"), sub("t2")] }), card("b")]);
+    const list = host.querySelector(".den-sessions-panel__list")!;
+    expect([...list.children].map((c) => c.className)).toEqual([
+      "den-sessions-card",
+      "den-sessions-sub",
+      "den-sessions-sub",
+      "den-sessions-card",
+    ]);
+    expect(subs(host)[0].parentElement).toBe(list);
+    expect(subs(host)[0].textContent).toBe("line-t1");
+  });
+
+  it("met à jour en place, sans recréer le bouton", () => {
+    const { host, panel } = setup();
+    panel.setCards([card("a", { subagents: [sub("t1")] })]);
+    const el = subs(host)[0];
+    panel.setCards([card("a", { subagents: [sub("t1", "new line", "completed")] })]);
+    expect(subs(host)[0]).toBe(el);
+    expect(el.textContent).toBe("new line");
+    expect(el.getAttribute("data-status")).toBe("completed");
+  });
+
+  it("retire les sous-agents disparus et ceux d'une card supprimée", () => {
+    const { host, panel } = setup();
+    panel.setCards([card("a", { subagents: [sub("t1"), sub("t2")] }), card("b", { subagents: [sub("t1")] })]);
+    panel.setCards([card("a", { subagents: [sub("t2")] }), card("b", { subagents: [sub("t1")] })]);
+    expect(subs(host).map((e) => e.textContent)).toEqual(["line-t2", "line-t1"]);
+    panel.setCards([card("a")]);
+    expect(subs(host)).toHaveLength(0);
+  });
+
+  it("le clic saute vers l'onglet parent et la navigation clavier les inclut", () => {
+    const { host, panel, onJump } = setup();
+    panel.setCards([card("a", { subagents: [sub("t1")] }), card("b")]);
+    subs(host)[0].click();
+    expect(onJump).toHaveBeenCalledWith("a");
+    panel.open();
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }));
+    expect(document.activeElement).toBe(subs(host)[0]);
   });
 });

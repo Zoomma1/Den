@@ -159,6 +159,25 @@ describe("TabRouter", () => {
   });
 
   it.each([
+    '{"type":"subagent_update","taskId":"k1","toolUseId":"toolu_1","status":"running"}',
+    '{"type":"subagent_report","toolUseId":"toolu_1","text":"rapport"}',
+  ])("route le message sous-agent : %s", (line) => {
+    const router = new TabRouter();
+    router.registerTab("tab-a");
+    expect(router.handleChunk("tab-a", line + "\n")).toEqual([
+      { tabId: "tab-a", message: JSON.parse(line) },
+    ]);
+  });
+
+  it("rejette un type voisin de subagent_update inconnu", () => {
+    const router = new TabRouter();
+    router.registerTab("tab-a");
+    expect(
+      router.handleChunk("tab-a", '{"type":"subagent_updated","taskId":"k1"}\n'),
+    ).toEqual([]);
+  });
+
+  it.each([
     '{"type":"mod_status","plugin":"p","text":"ok"}',
     '{"type":"mod_toast","plugin":"p","text":"hi","timeoutMs":3000}',
     '{"type":"mod_panes","panes":[],"shownId":null,"focusedId":null}',

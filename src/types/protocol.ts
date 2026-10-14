@@ -494,10 +494,34 @@ export interface ModsUnavailable {
   reason: string;
 }
 
+/** Cycle de vie d'un sous-agent (task_started/progress/updated/notification du SDK). */
+export interface SubagentUpdate {
+  type: "subagent_update";
+  taskId: string;
+  /** Id du tool_use Agent du parent (absent sur task_updated). */
+  toolUseId?: string;
+  description?: string;
+  subagentType?: string;
+  status?: "running" | "completed" | "failed" | "stopped";
+  lastToolName?: string;
+  isBackgrounded?: boolean;
+  usage?: { totalTokens: number; toolUses: number; durationMs: number };
+}
+
+/** Rapport final d'un sous-agent, à afficher sur le bloc Agent du parent. */
+export interface SubagentReport {
+  type: "subagent_report";
+  /** Id du tool_use Agent parent. */
+  toolUseId: string;
+  text: string;
+}
+
 export type SidecarToUIMessage =
   | AssistantDelta
   | ToolUse
   | ToolResult
+  | SubagentUpdate
+  | SubagentReport
   | PermissionRequest
   | QuestionRequest
   | SessionInfo
@@ -575,6 +599,18 @@ export function isToolUse(msg: DenProtocolMessage): msg is ToolUse {
 
 export function isToolResult(msg: DenProtocolMessage): msg is ToolResult {
   return msg.type === "tool_result";
+}
+
+export function isSubagentUpdate(
+  msg: DenProtocolMessage,
+): msg is SubagentUpdate {
+  return msg.type === "subagent_update";
+}
+
+export function isSubagentReport(
+  msg: DenProtocolMessage,
+): msg is SubagentReport {
+  return msg.type === "subagent_report";
 }
 
 export function isPermissionRequest(

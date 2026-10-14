@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { commandOutputOf, durationMsOf, toolResultsOf } from "./sdkMessages";
+import { commandOutputOf, durationMsOf, subagentReportOf, subagentUpdateOf, toolResultsOf } from "./sdkMessages";
 
 const user = (blocks: any[], tool_use_result?: unknown) => ({
   message: { content: blocks },
@@ -70,5 +70,101 @@ describe("durationMsOf", () => {
 
   it("pas de durée si duration_ms est absent", () => {
     expect(durationMsOf({ num_turns: 1 })).toBeUndefined();
+  });
+});
+
+describe("subagentUpdateOf", () => {
+  const started = {
+    type: "system",
+    subtype: "task_started",
+    task_id: "t1",
+    tool_use_id: "toolu_A",
+    description: "Lire package.json",
+    subagent_type: "Explore",
+    is_backgrounded: false,
+    task_type: "local_agent",
+  };
+
+  it("task_started : running, mémorisé", () => {
+    const known = new Set<string>();
+    expect(subagentUpdateOf(started, known)).toEqual({
+      type: "subagent_update",
+      taskId: "t1",
+      status: "running",
+      toolUseId: "toolu_A",
+      description: "Lire package.json",
+      subagentType: "Explore",
+      isBackgrounded: false,
+    });
+    expect(known.has("t1")).toBe(true);
+  });
+  it("task_started ambient, skip_transcript ou task_type étranger : ignoré et non mémorisé", () => {
+    for (const extra of [{ ambient: true }, { skip_transcript: true }, { task_type: "local_bash" }]) {
+      const known = new Set<string>();
+      expect(subagentUpdateOf({ ...started, ...extra }, known)).toBeNull();
+      expect(known.size).toBe(0);
+    }
+  });
+  it("task_progress : sa description (« Running cat ») n'est jamais relayée", () => {
+    const msg = {
+      type: "system",
+      subtype: "task_progress",
+      task_id: "t1",
+      description: "Running cat",
+      usage: { total_tokens: 22066, tool_uses: 1, duration_ms: 2704 },
+      last_tool_name: "Bash",
+    };
+    expect(subagentUpdateOf(msg, new Set(["t1"]))).toEqual({
+      type: "subagent_update",
+      taskId: "t1",
+      status: "running",
+      lastToolName: "Bash",
+      usage: { totalTokens: 22066, toolUses: 1, durationMs: 2704 },
+    });
+  });
+  it("task_progress de task_id inconnu : ignoré", () => {
+    expect(subagentUpdateOf({ type: "system", subtype: "task_progress", task_id: "zz" }, new Set())).toBeNull();
+  });
+  it("task_updated : patch.status mappé, clés absentes omises", () => {
+    const known = new Set(["t1"]);
+    const upd = (status: string) =>
+      subagentUpdateOf({ type: "system", subtype: "task_updated", task_id: "t1", patch: { status } }, known);
+    expect(upd("completed")).toEqual({ type: "subagent_update", taskId: "t1", status: "completed" });
+    expect(upd("killed")?.status).toBe("stopped");
+    expect(upd("paused")?.status).toBe("running");
+    expect(upd("failed")?.status).toBe("failed");
+  });
+  it("task_notification : status tel quel", () => {
+    const msg = { type: "system", subtype: "task_notification", task_id: "t1", tool_use_id: "toolu_A", status: "failed" };
+    expect(subagentUpdateOf(msg, new Set(["t1"]))).toEqual({
+      type: "subagent_update",
+      taskId: "t1",
+      status: "failed",
+      toolUseId: "toolu_A",
+    });
+  });
+  it("task_notification : statut hors table (ou « constructor ») -> clé status omise", () => {
+    for (const status of ["killed-ish", "constructor"]) {
+      const msg = { type: "system", subtype: "task_notification", task_id: "t1", status };
+      expect(subagentUpdateOf(msg, new Set(["t1"]))).toEqual({ type: "subagent_update", taskId: "t1" });
+    }
+  });
+});
+
+describe("subagentReportOf", () => {
+  const handback = (extra: any = {}) => ({
+    type: "assistant",
+    parent_tool_use_id: "toolu_A",
+    message: { content: [{ type: "tool_use", id: "x", name: "SubagentHandback", input: { message: "# Rapport" } }] },
+    ...extra,
+  });
+  it("extrait le rapport rattaché au tool_use Agent parent", () => {
+    expect(subagentReportOf(handback())).toEqual({ type: "subagent_report", toolUseId: "toolu_A", text: "# Rapport" });
+  });
+  it("null sans parent ou sans SubagentHandback", () => {
+    expect(subagentReportOf(handback({ parent_tool_use_id: null }))).toBeNull();
+    expect(
+      subagentReportOf(handback({ message: { content: [{ type: "tool_use", id: "x", name: "Bash", input: {} }] } })),
+    ).toBeNull();
   });
 });
