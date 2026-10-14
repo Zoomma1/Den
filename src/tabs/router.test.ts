@@ -194,6 +194,15 @@ describe("TabRouter", () => {
     expect(router.handleChunk("tab-a", line)).toEqual([]);
   });
 
+  it("laisse passer un command_output (liste positive)", () => {
+    const router = new TabRouter();
+    router.registerTab("tab-a");
+    const line = '{"type":"command_output","id":"c1","command":"cost","args":"","text":"ok"}';
+    expect(router.handleChunk("tab-a", `${line}\n`)).toEqual([
+      { tabId: "tab-a", message: JSON.parse(line) },
+    ]);
+  });
+
   it("jette un message mod UI->sidecar reçu côté sidecar->UI", () => {
     const router = new TabRouter();
     router.registerTab("tab-a");

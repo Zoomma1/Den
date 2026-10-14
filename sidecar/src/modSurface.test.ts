@@ -127,6 +127,37 @@ describe("requêtes UI -> moteur", () => {
     expect(JSON.stringify((sent[0] as any).tree)).toContain("RISQUE");
   });
 
+  it("viewport transmis à ui_render, props du moteur relayées dans mod_tree", () => {
+    const { surface, sent, written } = setup();
+    const viewport = { columns: 96, rows: 40, isFullscreen: false };
+    surface.handleUiMessage({ type: "mod_render", requestId: "v", component: "ToolResult", instanceId: "t", props: { a: 1 }, viewport });
+    expect(written[1].request.viewport).toEqual(viewport);
+    surface.handleLine(
+      JSON.stringify({
+        type: "control_response",
+        response: {
+          subtype: "success",
+          request_id: written[1].request_id,
+          response: { tree: { type: "engine", ref: 1 }, props: { a: 2 }, rewritten: true, hooked: true },
+        },
+      }),
+    );
+    expect(sent[0]).toEqual({
+      type: "mod_tree",
+      requestId: "v",
+      tree: { type: "engine", ref: 1 },
+      hooked: true,
+      rewritten: true,
+      props: { a: 2 },
+    });
+  });
+
+  it("sans viewport, la requête n'en porte pas", () => {
+    const { surface, written } = setup();
+    surface.handleUiMessage({ type: "mod_render", requestId: "n", component: "ToolResult", instanceId: "t", props: {} });
+    expect(written[1].request).not.toHaveProperty("viewport");
+  });
+
   it("arbre moteur (ref) relayé tel quel, hooked absent -> false", () => {
     const { surface, sent, written } = setup();
     surface.handleUiMessage({ type: "mod_render", requestId: "a", component: "ToolResult", instanceId: "t", props: {} });

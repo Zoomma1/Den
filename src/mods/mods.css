@@ -1,9 +1,13 @@
 /* Rendu des arbres de mods (src/mods/render.ts). */
 .den-mod-tree {
-  font-family: var(--den-font-sans);
+  font-family: var(--den-font-mono);
   font-size: var(--den-font-size-base);
   color: var(--den-fg);
   line-height: 1.4;
+}
+
+.den-mod-markdown {
+  font-family: var(--den-font-sans);
 }
 
 .den-mod-box {

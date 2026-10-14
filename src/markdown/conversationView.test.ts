@@ -1,6 +1,13 @@
 // @vitest-environment happy-dom
-import { describe, expect, it, vi } from "vitest";
-import { ConversationView } from "./conversationView";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { ConversationView, setModBridge } from "./conversationView";
+import { MOD_EVENTS } from "../mods/contracts";
+
+// toolGroup.ts est écrit par un autre lot : on ne teste ici que le câblage de la vue.
+vi.mock("./toolGroup", () => ({
+  isReadOnlyTool: (name: string) => ["Read", "Grep", "Glob"].includes(name),
+  summarizeToolRun: (calls: readonly unknown[]) => `${calls.length} reads`,
+}));
 
 const invokeMock = vi.hoisted(() => vi.fn());
 vi.mock("@tauri-apps/api/core", () => ({ invoke: invokeMock }));
@@ -513,5 +520,293 @@ describe("ConversationView", () => {
     a.dispatchEvent(event);
     expect(event.defaultPrevented).toBe(true);
     expect(invokeMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("ConversationView — surfaces du moteur", () => {
+  type Req = { component: string; instanceId: string; props: Record<string, unknown> };
+  type Resp = { tree: unknown; hooked: boolean; rewritten: boolean; props?: Record<string, unknown> };
+
+  /** Pont simulé : consigne les requêtes, répond par `respond` ; un arbre string devient un <span class="mod">. */
+  function installBridge(respond: (req: Req) => Resp | null = () => null) {
+    const requests: Req[] = [];
+    const requestRender = vi.fn(async (_tab: string, req: Req) => {
+      requests.push(req);
+      return respond(req) ?? { tree: null, hooked: false, rewritten: false };
+    });
+    setModBridge({
+      client: { requestRender } as never,
+      renderTree: ((tree: unknown) => {
+        const span = document.createElement("span");
+        span.className = "mod";
+        span.textContent = String(tree);
+        return span;
+      }) as never,
+    });
+    return requests;
+  }
+  const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
+  const hook = (tree: unknown): Resp => ({ tree, hooked: true, rewritten: true });
+  const use = (view: ConversationView, id: string, name = "Read", input: unknown = { file_path: `/${id}` }) =>
+    view.handleMessage({ type: "tool_use", id: "t1", toolUseId: id, name, input } as ToolUse);
+  const result = (view: ConversationView, id: string, extra: object = {}) =>
+    view.handleMessage({ type: "tool_result", id: "t1", toolUseId: id, output: "ok", ...extra } as ToolResult);
+
+  afterEach(() => setModBridge(null));
+
+  it("UserMessage : cible = surface de la bulle (texte+heure masqués en CSS), boutons copier/éditer intacts", async () => {
+    const requests = installBridge((r) => (r.component === "UserMessage" ? hook("MOD") : null));
+    const view = new ConversationView("tab-1");
+    view.handleMessage({ type: "user_echo", id: "u1", text: "salut" } as UserEcho);
+    await tick();
+
+    expect(requests[0]).toMatchObject({
+      component: "UserMessage",
+      props: { text: "salut", origin: { kind: "composer" }, isExpanded: true },
+    });
+    const bubble = view.el.querySelector(".den-msg-user") as HTMLElement;
+    expect(bubble.querySelector(":scope > .den-msg-user__surface")?.textContent).toBe("MOD");
+    expect(bubble.querySelector(".den-msg-user__text")?.previousElementSibling?.classList.contains("den-copy")).toBe(true);
+    expect(bubble.querySelector(":scope > .den-copy")).not.toBeNull();
+    expect(bubble.querySelector(":scope > .den-edit")).not.toBeNull();
+  });
+
+  it("UserMessage : éditer garde le texte exact même après réécriture par un mod", async () => {
+    installBridge(() => hook("MOD"));
+    const view = new ConversationView("tab-1");
+    const edits: string[] = [];
+    window.addEventListener("den:edit-prompt", (e) => edits.push((e as CustomEvent).detail.text), { once: true });
+    view.handleMessage({ type: "user_echo", id: "u1", text: "salut" } as UserEcho);
+    await tick();
+    (view.el.querySelector(".den-edit") as HTMLElement).click();
+    expect(edits).toEqual(["salut"]);
+  });
+
+  it("ToolUse : demandé à tool_use puis redemandé avec le résultat, dans le <summary>", async () => {
+    const requests = installBridge((r) => (r.component === "ToolUse" ? hook("USE") : null));
+    const view = new ConversationView("tab-1");
+    use(view, "tu1", "Bash", { command: "ls" });
+    await tick();
+    result(view, "tu1", { structured: { stdout: "x" } });
+    await tick();
+
+    const toolUse = requests.filter((r) => r.component === "ToolUse");
+    expect(toolUse).toHaveLength(2);
+    expect(toolUse[0].props).toEqual({
+      tool_use_id: "tu1", tool: "Bash", input: { command: "ls" },
+      isRunning: true, isErrored: false, isInterrupted: false,
+    });
+    expect(toolUse[1].props).toMatchObject({ isRunning: false, isErrored: false, output: { stdout: "x" } });
+    const details = view.el.querySelector("details.den-tool-block") as HTMLDetailsElement;
+    expect(details.querySelector("summary > .den-tool-use-surface")?.textContent).toBe("USE");
+    expect(details.querySelector(".den-tool-result")).not.toBeNull();
+  });
+
+  /** Pont à réponses manuelles : chaque requête reste en vol jusqu'à `answer(i, resp)`. */
+  function installDeferredBridge() {
+    const pending: Array<(r: Resp) => void> = [];
+    const components: string[] = [];
+    const requestRender = vi.fn(
+      (_tab: string, req: Req) =>
+        new Promise<Resp>((resolve) => {
+          if (req.component === "ToolUse" || req.component === "ToolGroup") {
+            pending.push(resolve);
+            components.push(req.component);
+          }
+          else resolve({ tree: null, hooked: false, rewritten: false });
+        }),
+    );
+    setModBridge({
+      client: { requestRender } as never,
+      renderTree: ((tree: unknown, opts: { renderEngineDefault?: (ref: number) => Node | null }) => {
+        const span = document.createElement("span");
+        span.className = "mod";
+        if (tree === "WRAP") span.append(opts.renderEngineDefault?.(0) ?? "");
+        else span.textContent = String(tree);
+        return span;
+      }) as never,
+    });
+    const answer = async (i: number, resp: Resp) => {
+      pending[i](resp);
+      await tick();
+    };
+    return Object.assign(answer, { components });
+  }
+  const engineDefault: Resp = { tree: { type: "engine", ref: 0 }, hooked: true, rewritten: false };
+
+  it("ToolUse : réponse 1 encore en vol quand la 2 part, la 2 = engine ref 0 -> surface vide", async () => {
+    const answer = installDeferredBridge();
+    const view = new ConversationView("tab-1");
+    use(view, "tu1", "Bash", { command: "ls" });
+    result(view, "tu1");
+    await answer(0, hook("RUNNING"));
+    await answer(1, engineDefault);
+
+    const surface = view.el.querySelector(".den-tool-use-surface") as HTMLElement;
+    expect(surface.textContent).toBe("");
+    expect(surface.querySelector(".mod")).toBeNull();
+  });
+
+  it("ToolUse : réponses hors ordre, la dernière requête gagne", async () => {
+    const answer = installDeferredBridge();
+    const view = new ConversationView("tab-1");
+    use(view, "tu1", "Bash", { command: "ls" });
+    result(view, "tu1");
+    await answer(1, hook("SECOND"));
+    await answer(0, hook("FIRST"));
+
+    expect(view.el.querySelector(".den-tool-use-surface")?.textContent).toBe("SECOND");
+  });
+
+  it("ToolGroup : 3 requêtes en vol, renderEngineDefault(0) rend le natif et non un arbre de mod", async () => {
+    const answer = installDeferredBridge();
+    const view = new ConversationView("tab-1");
+    use(view, "r1");
+    use(view, "r2");
+    use(view, "r3");
+    const groups = answer.components.flatMap((c, i) => (c === "ToolGroup" ? [i] : []));
+    expect(groups.length).toBe(2);
+    // La dernière requête répond en premier avec un arbre simple, la précédente l'enveloppe ensuite : périmée, jetée.
+    await answer(groups[1], hook("WRAP"));
+    await answer(groups[0], hook("OTHER"));
+
+    const surface = view.el.querySelector(".den-tool-group__surface") as HTMLElement;
+    expect(surface.querySelector(".mod .mod")).toBeNull();
+    expect(surface.textContent).toBe("");
+  });
+
+  it("ToolResult vidé par un mod : le <details> et ses boutons restent", async () => {
+    installBridge((r) => (r.component === "ToolResult" ? hook("") : null));
+    const view = new ConversationView("tab-1");
+    use(view, "tu1", "Bash");
+    result(view, "tu1");
+    await tick();
+
+    const details = view.el.querySelector("details.den-tool-block");
+    expect(details?.querySelector("summary")).not.toBeNull();
+    expect(details?.querySelector(".den-tool-input .den-copy")).not.toBeNull();
+    expect(details?.querySelector(".den-tool-result")?.textContent).toBe("");
+  });
+
+  it("ToolGroup : 2 lectures consécutives sont enveloppées, un Bash ferme le groupe", async () => {
+    const requests = installBridge((r) => (r.component === "ToolGroup" ? hook("GROUP") : null));
+    const view = new ConversationView("tab-1");
+    use(view, "r1");
+    expect(view.el.querySelector(".den-tool-group")).toBeNull();
+    use(view, "r2");
+    use(view, "r3");
+    await tick();
+
+    const group = view.el.querySelector("details.den-tool-group") as HTMLElement;
+    expect(group.querySelectorAll(".den-tool-group__body > details.den-tool-block")).toHaveLength(3);
+    expect(group.querySelector(".den-tool-group__label")?.textContent).toBe("3 reads");
+    expect(group.querySelector(".den-tool-group__surface")?.textContent).toBe("GROUP");
+    const last = requests.filter((r) => r.component === "ToolGroup").at(-1)!;
+    expect(last.props).toMatchObject({ isActive: true, isExpanded: false });
+    expect((last.props.calls as unknown[]).length).toBe(3);
+
+    use(view, "b1", "Bash");
+    use(view, "r4");
+    use(view, "r5");
+    expect(view.el.querySelectorAll("details.den-tool-group")).toHaveLength(2);
+    expect(group.querySelectorAll("details.den-tool-block")).toHaveLength(3);
+  });
+
+  it("ToolGroup : le texte assistant et done ferment le groupe ; le résultat met à jour isActive", async () => {
+    const requests = installBridge((r) => (r.component === "ToolGroup" ? hook("G") : null));
+    const view = new ConversationView("tab-1");
+    use(view, "r1");
+    use(view, "r2");
+    result(view, "r1");
+    result(view, "r2", { isError: true });
+    await tick();
+    const last = requests.filter((r) => r.component === "ToolGroup").at(-1)!;
+    expect(last.props.isActive).toBe(false);
+    expect((last.props.calls as { isErrored: boolean }[]).map((c) => c.isErrored)).toEqual([false, true]);
+
+    view.handleMessage({ type: "assistant_delta", id: "m1", text: "ok" } as AssistantDelta);
+    use(view, "r3");
+    use(view, "r4");
+    view.handleMessage({ type: "done" } as Done);
+    use(view, "r5");
+    use(view, "r6");
+    expect(view.el.querySelectorAll("details.den-tool-group")).toHaveLength(3);
+  });
+
+  it("CommandOutput : ligne native avec copier, props demandées, texte réécrit par props", async () => {
+    const requests = installBridge(() => ({ tree: { type: "engine", ref: 1 }, hooked: true, rewritten: true, props: { text: "réécrit" } }));
+    const view = new ConversationView("tab-1");
+    view.handleMessage({ type: "command_output", id: "c1", command: "cost", args: "", text: "brut", isError: true } as never);
+    expect(view.el.querySelector(".den-command-output pre > .den-copy")).not.toBeNull();
+    await tick();
+
+    expect(requests.find((r) => r.component === "CommandOutput")).toMatchObject({
+      instanceId: expect.stringMatching(/^cmd-\d+$/),
+      props: { command: "cost", args: "", text: "brut", isErrored: true },
+    });
+    expect(view.el.querySelector(".den-command-output code")?.textContent).toBe("réécrit");
+  });
+
+  it("CommandOutput : deux sorties dans le même tour ont des instanceId distincts", async () => {
+    const requests = installBridge(() => ({ tree: null, hooked: false, rewritten: false }));
+    const view = new ConversationView("tab-1");
+    view.handleMessage({ type: "command_output", id: "same", command: "a", args: "", text: "1" } as never);
+    view.handleMessage({ type: "command_output", id: "same", command: "b", args: "", text: "2" } as never);
+    await tick();
+    const ids = requests.filter((r) => r.component === "CommandOutput").map((r) => r.instanceId);
+    expect(new Set(ids).size).toBe(2);
+  });
+
+  it("TurnDuration : pied natif sans mod, demande Baked, remplacé par l'arbre ; absent sans durationMs", async () => {
+    const requests = installBridge((r) => (r.component === "TurnDuration" ? hook("BAKED") : null));
+    const view = new ConversationView("tab-1");
+    view.handleMessage({ type: "done" } as Done);
+    expect(view.el.querySelector(".den-turn-duration")).toBeNull();
+    view.handleMessage({ type: "done", durationMs: 6340 } as Done);
+    expect(view.el.querySelector(".den-turn-duration")?.textContent).toBe("Worked for 6s");
+    await tick();
+
+    expect(requests.filter((r) => r.component === "TurnDuration")).toHaveLength(1);
+    expect(requests[0].props).toEqual({ word: "Baked", durationMs: 6340 });
+    expect(view.el.querySelector(".den-turn-duration")?.textContent).toBe("BAKED");
+  });
+
+  it("AssistantMessage : engine ref≠0 + props redessine le markdown de props.text", async () => {
+    installBridge((r) =>
+      r.component === "AssistantMessage"
+        ? { tree: { type: "engine", ref: 1 }, hooked: true, rewritten: true, props: { text: "**gras**" } }
+        : null,
+    );
+    const view = new ConversationView("tab-1");
+    view.handleMessage({ type: "assistant_delta", id: "m1", text: "original" } as AssistantDelta);
+    view.handleMessage({ type: "done" } as Done);
+    await tick();
+
+    expect(view.el.querySelector(".den-msg-assistant strong")?.textContent).toBe("gras");
+    expect(view.el.textContent).not.toContain("original");
+  });
+
+  it("engine ref≠0 sans redraw (ToolResult) est ignoré", async () => {
+    installBridge(() => ({ tree: { type: "engine", ref: 1 }, hooked: true, rewritten: true, props: { x: 1 } }));
+    const view = new ConversationView("tab-1");
+    use(view, "tu1", "Bash");
+    result(view, "tu1");
+    await tick();
+    expect(view.el.querySelector(".den-tool-result code")?.textContent).toBe("ok");
+  });
+
+  it("viewport : redemande tous les blocs du tab concerné seulement", async () => {
+    const requests = installBridge(() => hook("X"));
+    const view = new ConversationView("tab-vp");
+    view.handleMessage({ type: "user_echo", id: "u1", text: "a" } as UserEcho);
+    await tick();
+    expect(requests).toHaveLength(1);
+
+    window.dispatchEvent(new CustomEvent(MOD_EVENTS.viewport, { detail: { tabId: "autre", viewport: { columns: 80, rows: 40 } } }));
+    await tick();
+    expect(requests).toHaveLength(1);
+    window.dispatchEvent(new CustomEvent(MOD_EVENTS.viewport, { detail: { tabId: "tab-vp", viewport: { columns: 80, rows: 40 } } }));
+    await tick();
+    expect(requests).toHaveLength(2);
   });
 });

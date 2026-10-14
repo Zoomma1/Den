@@ -24,6 +24,7 @@ import { ConversationView, setModBridge } from "../markdown/conversationView";
 import type { ConversationMessage } from "../types/protocol";
 import type { ModRenderClient, RenderTreeFn } from "./contracts";
 import { createModsModule, getModRenderClient } from "./index";
+import { renderTree as realRenderTree } from "./render";
 import type { ModPaneClient, RenderOptions } from "./contracts";
 
 const fakeRenderTree: RenderTreeFn = (node) => {
@@ -58,7 +59,9 @@ function sentRenders(): { tabId: string; msg: Record<string, unknown> }[] {
     .filter((s) => s.msg.type === "mod_render");
 }
 
-const lastRender = () => sentRenders().at(-1)!;
+// Un tool_result envoie aussi une requête ToolUse (phase 2) : on cible le composant, pas « la dernière ».
+const lastRender = (component?: string) =>
+  sentRenders().filter((s) => !component || s.msg.component === component).at(-1)!;
 const flush = () => vi.advanceTimersByTimeAsync(0);
 
 const openShell = vi.fn().mockResolvedValue(undefined);
@@ -208,10 +211,10 @@ describe("mods/index — pont conversationView", () => {
     return view.el.querySelector(`.den-msg-assistant[data-msg-id="${id}"]`) as HTMLElement;
   }
 
-  function reply(tree: unknown, hooked: boolean, i = -1): void {
+  function reply(tree: unknown, hooked: boolean, i = -1, component?: string): void {
     dispatch("tab-1", {
       type: "mod_tree",
-      requestId: sentRenders().at(i)!.msg.requestId,
+      requestId: (component ? lastRender(component) : sentRenders().at(i)!).msg.requestId,
       tree,
       hooked,
       rewritten: hooked,
@@ -272,12 +275,12 @@ describe("mods/index — pont conversationView", () => {
     const view = new ConversationView("tab-1");
     view.handleMessage({ type: "tool_use", id: "t", toolUseId: "u1", name: "Bash", input: {} } as ConversationMessage);
     view.handleMessage({ type: "tool_result", id: "t", toolUseId: "u1", output: "ok", isError: false } as ConversationMessage);
-    expect(lastRender().msg).toMatchObject({
+    expect(lastRender("ToolResult").msg).toMatchObject({
       component: "ToolResult",
       instanceId: "u1",
       props: { tool_use_id: "u1", tool: "Bash", output: "ok", isErrored: false },
     });
-    reply(OK_TREE, true);
+    reply(OK_TREE, true, -1, "ToolResult");
     await flush();
     const res = view.el.querySelector(".den-tool-result") as HTMLElement;
     expect(res.querySelector(".fake-tree")).not.toBeNull();
@@ -483,7 +486,7 @@ describe("mods/index — cache, invalidate, renderEngineDefault", () => {
   function replyLast(tree: unknown, hooked = true): void {
     dispatch("tab-1", {
       type: "mod_tree",
-      requestId: sentRenders().at(-1)!.msg.requestId,
+      requestId: lastRender("ToolResult").msg.requestId,
       tree,
       hooked,
       rewritten: hooked,
@@ -517,7 +520,7 @@ describe("mods/index — cache, invalidate, renderEngineDefault", () => {
     const before = sentRenders().length;
     invalidate([{ component: "ToolResult", instanceId: "u1" }, { component: "ToolResult", instanceId: "inconnu" }]);
     expect(sentRenders()).toHaveLength(before + 1);
-    expect(lastRender().msg).toMatchObject({
+    expect(lastRender("ToolResult").msg).toMatchObject({
       component: "ToolResult", instanceId: "u1", props: { output: { s: 1 }, tool: "Read", isErrored: false },
     });
     replyLast({ type: "Box", children: ["v2"] });
@@ -715,5 +718,164 @@ describe("mods/index — hôte Client", () => {
     dispatch("t1", { type: "mod_tree", requestId: b.msg.requestId, tree: OK_TREE, hooked: true, rewritten: false, clientModules: { q: "h2" } });
     activate("t1");
     expect(getter!()).toEqual({ p: "h1", q: "h2" });
+  });
+});
+
+describe("mods/index — viewport, props, erreurs moteur", () => {
+  let observers: { cb: () => void; disconnect: ReturnType<typeof vi.fn> }[];
+  let flowWidth: number;
+  let charWidth: number;
+
+  beforeEach(() => {
+    observers = [];
+    flowWidth = 800;
+    charWidth = 8;
+    vi.stubGlobal(
+      "ResizeObserver",
+      class {
+        disconnect = vi.fn();
+        constructor(cb: () => void) {
+          observers.push({ cb, disconnect: this.disconnect });
+        }
+        observe() {}
+      },
+    );
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
+      const r = this.classList.contains("den-conversation-flow")
+        ? { width: flowWidth, height: 0 }
+        : { width: charWidth * 10, height: 20 };
+      return r as DOMRect;
+    });
+    window.innerHeight = 600;
+    const tab = document.createElement("div");
+    tab.className = "den-conversation-tab";
+    tab.dataset.tabId = "t1";
+    const flow = document.createElement("div");
+    flow.className = "den-conversation-flow";
+    tab.appendChild(flow);
+    ctx.mounts.conversation.appendChild(tab);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  const viewportEvents = () => {
+    const out: unknown[] = [];
+    window.addEventListener("den:mod-viewport", (e) => out.push((e as CustomEvent).detail), { once: false });
+    return out;
+  };
+
+  it("injecte viewport {columns, rows, isFullscreen} dans mod_render", () => {
+    void client.requestRender("t1", REQ);
+    expect(lastRender().msg.viewport).toEqual({ columns: 100, rows: 30, isFullscreen: true });
+  });
+
+  it("mesure la cellule mono une seule fois : le témoin ne force pas un reflow par rendu", () => {
+    const rect = HTMLElement.prototype.getBoundingClientRect as unknown as ReturnType<typeof vi.fn>;
+    void client.requestRender("t1", REQ);
+    const probeCalls = () => rect.mock.contexts.filter((el) => !(el as HTMLElement).classList.contains("den-conversation-flow")).length;
+    const first = probeCalls();
+    void client.requestRender("t1", { ...REQ, instanceId: "m2" });
+    expect(first).toBe(1);
+    expect(probeCalls()).toBe(1);
+  });
+
+  it("omet viewport si la mesure vaut 0", () => {
+    charWidth = 0;
+    void client.requestRender("t1", REQ);
+    expect(lastRender().msg).not.toHaveProperty("viewport");
+  });
+
+  it("omet viewport si le fil de l'onglet est introuvable", () => {
+    void client.requestRender("inconnu", REQ);
+    expect(lastRender().msg).not.toHaveProperty("viewport");
+  });
+
+  it("n'émet den:mod-viewport qu'au changement de columns, après 200 ms de debounce", () => {
+    const events = viewportEvents();
+    void client.requestRender("t1", REQ);
+    const { cb } = observers[0];
+    cb();
+    cb();
+    vi.advanceTimersByTime(199);
+    expect(events).toHaveLength(0);
+    vi.advanceTimersByTime(1);
+    expect(events).toHaveLength(0); // columns inchangé (100)
+    flowWidth = 400;
+    cb();
+    vi.advanceTimersByTime(200);
+    expect(events).toEqual([{ tabId: "t1", viewport: { columns: 50, rows: 30, isFullscreen: true } }]);
+    cb();
+    vi.advanceTimersByTime(200);
+    expect(events).toHaveLength(1);
+  });
+
+  it("émet malgré un requestRender passé pendant le debounce (resize -> rendu -> timer)", () => {
+    const events = viewportEvents();
+    void client.requestRender("t1", REQ);
+    flowWidth = 400;
+    observers[0].cb();
+    vi.advanceTimersByTime(100);
+    void client.requestRender("t1", REQ);
+    vi.advanceTimersByTime(100);
+    expect(events).toEqual([{ tabId: "t1", viewport: { columns: 50, rows: 30, isFullscreen: true } }]);
+  });
+
+  it("émet au retour d'une mesure valide après un rendu sans viewport (onglet masqué)", () => {
+    const events = viewportEvents();
+    void client.requestRender("t1", REQ);
+    flowWidth = 0;
+    void client.requestRender("t1", REQ);
+    expect(lastRender().msg).not.toHaveProperty("viewport");
+    flowWidth = 800;
+    observers[0].cb();
+    vi.advanceTimersByTime(200);
+    expect(events).toEqual([{ tabId: "t1", viewport: { columns: 100, rows: 30, isFullscreen: true } }]);
+  });
+
+  it("déconnecte l'observer à la fermeture de session", () => {
+    void client.requestRender("t1", REQ);
+    window.dispatchEvent(new CustomEvent("den:session-closed", { detail: { tabId: "t1" } }));
+    expect(observers[0].disconnect).toHaveBeenCalled();
+  });
+
+  it("relaie les props du mod_tree", async () => {
+    const p = client.requestRender("t1", REQ);
+    dispatch("t1", {
+      type: "mod_tree",
+      requestId: lastRender().msg.requestId,
+      tree: { type: "engine", ref: 0 },
+      hooked: true,
+      rewritten: true,
+      props: { text: "réécrit" },
+    });
+    await expect(p).resolves.toMatchObject({ props: { text: "réécrit" } });
+  });
+
+  it("toast d'erreur moteur nommant le composant, dédupliqué", async () => {
+    for (let i = 0; i < 3; i++) {
+      const p = client.requestRender("t1", REQ);
+      dispatch("t1", {
+        type: "mod_tree",
+        requestId: lastRender().msg.requestId,
+        tree: null,
+        hooked: false,
+        rewritten: false,
+        error: "boom",
+      });
+      await expect(p).resolves.toEqual({ tree: null, hooked: false, rewritten: false });
+    }
+    const toasts = document.querySelectorAll(".den-toast");
+    expect(toasts).toHaveLength(1);
+    expect(toasts[0].textContent).toContain("AssistantMessage");
+    expect(toasts[0].textContent).toContain("boom");
+  });
+
+  it("un noeud engine dans un Pane n'a rien à dessiner : fragment vide", () => {
+    const node = realRenderTree({ type: "engine", ref: 0 }, {});
+    expect(node.textContent).toBe("");
+    expect(node.querySelectorAll("*")).toHaveLength(0);
   });
 });

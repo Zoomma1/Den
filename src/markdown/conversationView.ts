@@ -25,11 +25,13 @@ import type {
   ModInvalidateEventDetail,
   ModOrigin,
   ModRenderClient,
+  ModViewportEventDetail,
   RenderOptions,
   RenderTreeFn,
 } from "../mods/contracts";
-import { isRenderNode } from "../mods/tree";
+import { isRenderNode, type EngineNode } from "../mods/tree";
 import { handleLinkClick } from "./links";
+import { isReadOnlyTool, summarizeToolRun, type ToolGroupCall } from "./toolGroup";
 
 interface ModBridge {
   client: ModRenderClient;
@@ -48,9 +50,45 @@ interface ModBlock {
   target: HTMLElement;
   req: ModRequest;
   original: DocumentFragment | null;
+  /** Dernière requête émise : une réponse d'une séquence antérieure est périmée et jetée. */
+  seq: number;
+  /** Défaut de Den redessiné avec les props réécrites par le moteur ; absent = pas de repli possible. */
+  redraw?: (props: Record<string, unknown>) => Node;
 }
 
+/** Appel d'une suite consécutive de lectures, tel qu'envoyé en props de ToolGroup. */
+interface RunCall extends ToolGroupCall {
+  toolUseId: string;
+  isErrored: boolean;
+  isRunning: boolean;
+  output?: unknown;
+  details: HTMLElement;
+}
+
+interface ToolRun {
+  calls: RunCall[];
+  group: { details: HTMLElement; body: HTMLElement; label: HTMLElement; target: HTMLElement; id: string } | null;
+}
+
+/** Messages qui coupent une suite de lectures (tool_use/tool_result la prolongent, le reste est neutre). */
+const RUN_CLOSERS: ReadonlySet<string> = new Set([
+  "assistant_delta",
+  "done",
+  "user_echo",
+  "conversation_reset",
+  "error",
+  "command_output",
+]);
+
 const MAX_MOD_BLOCKS = 200;
+
+/** Mot fixe du pied de tour demandé au moteur (le natif reste « Worked for »). */
+const TURN_DURATION_WORD = "Baked";
+
+function formatDuration(ms: number): string {
+  const total = Math.round(ms / 1000);
+  return total < 60 ? `${total}s` : `${Math.floor(total / 60)}m ${total % 60}s`;
+}
 
 let modBridge: ModBridge | null = null;
 
@@ -174,6 +212,9 @@ export class ConversationView {
   private assistantSinceUser = false;
   private readonly onTabStateChangedBound: (event: Event) => void;
   private readonly modBlocks = new Map<string, ModBlock>();
+  private run: ToolRun | null = null;
+  private readonly runByToolUseId = new Map<string, ToolRun>();
+  private surfaceSeq = 0;
 
   constructor(tabId: string) {
     this.tabId = tabId;
@@ -213,6 +254,7 @@ export class ConversationView {
     window.addEventListener(MOD_EVENTS.invalidate, (event) =>
       this.onModInvalidate((event as CustomEvent<ModInvalidateEventDetail>).detail),
     );
+    window.addEventListener(MOD_EVENTS.viewport, (event) => this.onModViewport(event as CustomEvent<ModViewportEventDetail>));
 
     // Onglet masqué (index.ts du module markdown fait `el.hidden = true`
     // sur les vues inactives) -> `scrollHeight` vaut 0 pendant que l'onglet
@@ -226,6 +268,7 @@ export class ConversationView {
   }
 
   handleMessage(msg: ConversationMessage): void {
+    if (RUN_CLOSERS.has(msg.type)) this.run = null;
     switch (msg.type) {
       case "assistant_delta":
         this.onAssistantDelta(msg.id, msg.text);
@@ -240,6 +283,11 @@ export class ConversationView {
         return;
       case "done":
         this.finalizeActiveAssistant();
+        this.onTurnDuration(msg.durationMs);
+        return;
+      case "command_output":
+        this.finalizeActiveAssistant();
+        this.onCommandOutput(msg.command, msg.args, msg.text, msg.isError === true);
         return;
       case "conversation_reset":
         // Le SDK a réinitialisé la conversation (/clear, sortie de plan
@@ -254,6 +302,7 @@ export class ConversationView {
         this.toolBlocksByToolUseId.clear();
         this.toolNamesByToolUseId.clear();
         this.modBlocks.clear();
+        this.runByToolUseId.clear();
         this.assistantSinceUser = false;
         this.stickToBottom = true;
         this.lastScrollTop = 0;
@@ -493,36 +542,66 @@ export class ConversationView {
       active.block,
       { component: "AssistantMessage", instanceId: active.id, props: { text: active.text, isFirstOfReply: active.isFirstOfReply } },
       active.text !== "",
+      (props) => {
+        const renderer = new IncrementalMarkdownRenderer();
+        const wrapper = document.createElement("div");
+        wrapper.className = "den-msg-finalized";
+        const text = typeof props.text === "string" ? props.text : "";
+        for (const html of [...renderer.feed(text).finalizedHtml, ...renderer.finalize()]) appendHtml(wrapper, html);
+        return wrapper;
+      },
     );
   }
 
   /** Remplace le contenu de `target` si un mod le réécrit ; sinon (ou si `target` a quitté le DOM) ne touche à rien. */
-  private rewriteWithMods(target: HTMLElement, req: ModRequest, enabled: boolean): void {
+  private rewriteWithMods(
+    target: HTMLElement,
+    req: ModRequest,
+    enabled: boolean,
+    redraw?: ModBlock["redraw"],
+  ): void {
     if (!modBridge || !enabled) return;
     const key = `${req.component}:${req.instanceId}`;
+    // Un seul bloc par clé tant que la cible est la même : l'original reste celui capturé d'emblée.
+    const previous = this.modBlocks.get(key);
+    const block: ModBlock =
+      previous?.target === target
+        ? Object.assign(previous, { req, redraw })
+        : { target, req, original: null, seq: 0, redraw };
+    // Capture synchrone, avant toute réponse : sinon elle verrait le résultat d'une requête précédente.
+    this.captureOriginal(block);
     // Borné : le plus ancien cède la place, il ne sera plus ré-invalidable.
     this.modBlocks.delete(key);
-    this.modBlocks.set(key, { target, req, original: null });
+    this.modBlocks.set(key, block);
     if (this.modBlocks.size > MAX_MOD_BLOCKS) {
       this.modBlocks.delete(this.modBlocks.keys().next().value as string);
     }
-    this.renderModBlock(this.modBlocks.get(key)!);
+    this.renderModBlock(block);
   }
 
   private renderModBlock(block: ModBlock): void {
     const bridge = modBridge;
     if (!bridge) return;
     const { target, req } = block;
+    const seq = ++block.seq;
     bridge.client.requestRender(this.tabId, req).then(
-      ({ tree, hooked }) => {
-        if (!hooked || !this.flowEl.contains(target)) return;
-        if (!isRenderNode(tree) || (typeof tree === "object" && tree.type === "engine")) return;
-        // L'original est capturé avant le premier remplacement : un mod peut l'envelopper (engine ref 0).
-        if (!block.original) {
-          block.original = document.createDocumentFragment();
-          for (const child of target.childNodes) block.original.appendChild(child.cloneNode(true));
+      ({ tree, hooked, props }) => {
+        if (seq !== block.seq || !hooked || !this.flowEl.contains(target)) return;
+        if (!isRenderNode(tree)) return;
+        if (typeof tree === "object" && tree.type === "engine") {
+          if ((tree as EngineNode).ref === 0) {
+            // Le moteur ne réécrit plus : on rend l'original s'il avait été remplacé.
+            if (block.original) target.replaceChildren(block.original.cloneNode(true));
+          } else if (props && block.redraw) {
+            // Réécriture de props : c'est le défaut de Den qui se redessine avec elles.
+            this.captureOriginal(block);
+            target.replaceChildren(block.redraw(props));
+            this.scrollToBottomIfStuck();
+          }
+          return;
         }
-        const original = block.original;
+        // L'original est capturé avant le premier remplacement : un mod peut l'envelopper (engine ref 0).
+        const original = this.captureOriginal(block);
         const opts: RenderOptions = {
           ...bridge.options?.(this.tabId, { component: req.component, instanceId: req.instanceId }),
           renderEngineDefault: (ref) => (ref === 0 ? original.cloneNode(true) : null),
@@ -534,12 +613,32 @@ export class ConversationView {
     );
   }
 
+  private captureOriginal(block: ModBlock): DocumentFragment {
+    if (!block.original) {
+      block.original = document.createDocumentFragment();
+      for (const child of block.target.childNodes) block.original.appendChild(child.cloneNode(true));
+    }
+    return block.original;
+  }
+
   private onModInvalidate(detail: ModInvalidateEventDetail | undefined): void {
     if (!detail || detail.tabId !== this.tabId) return;
     for (const { component, instanceId } of detail.instances) {
       const block = this.modBlocks.get(`${component}:${instanceId}`);
       if (block) this.renderModBlock(block);
     }
+  }
+
+  /** Le pont injecte le viewport lui-même : la vue ne fait que tout redemander. */
+  private onModViewport(event: CustomEvent<ModViewportEventDetail>): void {
+    if (event.detail?.tabId !== this.tabId) return;
+    this.onModInvalidate({
+      tabId: this.tabId,
+      instances: [...this.modBlocks.values()].map(({ req }) => ({
+        component: req.component,
+        instanceId: req.instanceId,
+      })),
+    });
   }
 
   private onToolUse(
@@ -559,7 +658,13 @@ export class ConversationView {
     details.dataset.toolUseId = toolUseId;
 
     const summary = document.createElement("summary");
-    summary.textContent = `🔧 ${name}`;
+    const nameEl = document.createElement("span");
+    nameEl.className = "den-tool-name";
+    nameEl.textContent = `🔧 ${name}`;
+    // Cible de la surface ToolUse : le <details> garde son ouverture native.
+    const surfaceEl = document.createElement("span");
+    surfaceEl.className = "den-tool-use-surface";
+    summary.append(nameEl, surfaceEl);
     const pre = document.createElement("pre");
     pre.className = "den-tool-input";
     const code = document.createElement("code");
@@ -569,10 +674,84 @@ export class ConversationView {
 
     details.appendChild(summary);
     details.appendChild(pre);
-    this.flowEl.appendChild(details);
     this.toolBlocksByToolUseId.set(toolUseId, details);
     this.toolNamesByToolUseId.set(toolUseId, name);
+    this.placeToolBlock(details, toolUseId, name, input);
+    this.rewriteWithMods(
+      surfaceEl,
+      {
+        component: "ToolUse",
+        instanceId: toolUseId,
+        props: { tool_use_id: toolUseId, tool: name, input, isRunning: true, isErrored: false, isInterrupted: false },
+      },
+      true,
+    );
     this.scrollToBottomIfStuck();
+  }
+
+  /** Pose le bloc dans le fil ; une suite d'au moins 2 lectures consécutives passe dans un <details> de groupe. */
+  private placeToolBlock(details: HTMLElement, toolUseId: string, name: string, input: unknown): void {
+    if (!isReadOnlyTool(name)) {
+      this.run = null;
+      this.flowEl.appendChild(details);
+      return;
+    }
+    const run = this.run ?? (this.run = { calls: [], group: null });
+    run.calls.push({ toolUseId, tool: name, input, isRunning: true, isErrored: false, details });
+    this.runByToolUseId.set(toolUseId, run);
+    if (!run.group) {
+      this.flowEl.appendChild(details);
+      if (run.calls.length >= 2) this.openGroup(run);
+    } else {
+      run.group.body.appendChild(details);
+    }
+    if (run.group) this.refreshGroup(run);
+  }
+
+  private openGroup(run: ToolRun): void {
+    const details = document.createElement("details");
+    details.className = "den-tool-group";
+    const summary = document.createElement("summary");
+    const label = document.createElement("span");
+    label.className = "den-tool-group__label";
+    const target = document.createElement("span");
+    target.className = "den-tool-group__surface";
+    summary.append(label, target);
+    const body = document.createElement("div");
+    body.className = "den-tool-group__body";
+    details.append(summary, body);
+    const first = run.calls[0].details;
+    first.before(details);
+    for (const call of run.calls) body.appendChild(call.details);
+    run.group = { details, body, label, target, id: run.calls[0].toolUseId };
+  }
+
+  /** Recalcule le résumé natif et redemande la surface ToolGroup avec l'état courant des appels. */
+  private refreshGroup(run: ToolRun): void {
+    const group = run.group;
+    if (!group) return;
+    group.label.textContent = summarizeToolRun(run.calls);
+    this.rewriteWithMods(
+      group.target,
+      {
+        component: "ToolGroup",
+        instanceId: group.id,
+        props: {
+          calls: run.calls.map((c) => ({
+            tool_use_id: c.toolUseId,
+            tool: c.tool,
+            input: c.input,
+            isRunning: c.isRunning,
+            isErrored: c.isErrored,
+            isInterrupted: false,
+            ...(c.isRunning ? {} : { output: c.output }),
+          })),
+          isActive: run.calls.some((c) => c.isRunning),
+          isExpanded: false,
+        },
+      },
+      true,
+    );
   }
 
   private onToolResult(
@@ -625,6 +804,33 @@ export class ConversationView {
       },
       true,
     );
+    // Seconde phase de ToolUse : même cible, props finales (le moteur dessine l'état « terminé »).
+    const toolUse = this.modBlocks.get(`ToolUse:${toolUseId}`);
+    if (toolUse) {
+      this.rewriteWithMods(
+        toolUse.target,
+        {
+          component: "ToolUse",
+          instanceId: toolUseId,
+          props: {
+            ...toolUse.req.props,
+            isRunning: false,
+            isErrored: isError,
+            isInterrupted: false,
+            output: structured ?? output,
+          },
+        },
+        true,
+      );
+    }
+    const run = this.runByToolUseId.get(toolUseId);
+    const call = run?.calls.find((c) => c.toolUseId === toolUseId);
+    if (run && call) {
+      call.isRunning = false;
+      call.isErrored = isError;
+      call.output = structured ?? output;
+      this.refreshGroup(run);
+    }
     this.scrollToBottomIfStuck();
   }
 
@@ -655,10 +861,73 @@ export class ConversationView {
     timeEl.dateTime = now.toISOString();
     timeEl.textContent = now.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit", hour12: false });
     el.appendChild(timeEl);
+    // Cible de la surface UserMessage : le texte et l'heure natifs sont masqués en CSS quand elle est remplie.
+    const surfaceEl = document.createElement("div");
+    surfaceEl.className = "den-msg-user__surface";
+    el.appendChild(surfaceEl);
     // Bouton éditer (D5) APRÈS le span de texte — la convention copier
     // (`.den-copy` immédiatement avant `.den-msg-user__text`) reste intacte.
     el.appendChild(createEditButton());
     this.flowEl.appendChild(el);
+    this.rewriteWithMods(
+      surfaceEl,
+      {
+        component: "UserMessage",
+        instanceId: `user-${++this.surfaceSeq}`,
+        props: { text, origin: { kind: "composer" }, isExpanded: true },
+      },
+      text !== "",
+      (props) => {
+        const frag = document.createDocumentFragment();
+        const span = document.createElement("span");
+        span.textContent = typeof props.text === "string" ? props.text : text;
+        frag.append(span, timeEl.cloneNode(true));
+        return frag;
+      },
+    );
+    this.scrollToBottomIfStuck();
+  }
+
+  private onCommandOutput(command: string, args: string, text: string, isError: boolean): void {
+    const el = document.createElement("div");
+    el.className = isError ? "den-command-output den-command-output-error" : "den-command-output";
+    const buildPre = (value: string): HTMLElement => {
+      const pre = document.createElement("pre");
+      const code = document.createElement("code");
+      code.textContent = value;
+      pre.append(createCopyButton(), code);
+      return pre;
+    };
+    el.appendChild(buildPre(text));
+    this.flowEl.appendChild(el);
+    this.rewriteWithMods(
+      el,
+      // Id propre à la sortie : deux commandes dans le même tour partageraient sinon la clé du bloc.
+      { component: "CommandOutput", instanceId: `cmd-${++this.surfaceSeq}`, props: { command, args, text, isErrored: isError } },
+      true,
+      (props) => buildPre(typeof props.text === "string" ? props.text : text),
+    );
+    this.scrollToBottomIfStuck();
+  }
+
+  /** Pied de tour natif ; sans durationMs (ancien sidecar, tour interrompu) il n'y en a pas. */
+  private onTurnDuration(durationMs: number | undefined): void {
+    if (typeof durationMs !== "number") return;
+    const el = document.createElement("div");
+    el.className = "den-turn-duration";
+    const render = (ms: number): string => `Worked for ${formatDuration(ms)}`;
+    el.textContent = render(durationMs);
+    this.flowEl.appendChild(el);
+    this.rewriteWithMods(
+      el,
+      {
+        component: "TurnDuration",
+        instanceId: `turn-${++this.surfaceSeq}`,
+        props: { word: TURN_DURATION_WORD, durationMs },
+      },
+      true,
+      (props) => document.createTextNode(render(typeof props.durationMs === "number" ? props.durationMs : durationMs)),
+    );
     this.scrollToBottomIfStuck();
   }
 }

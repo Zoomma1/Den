@@ -46,6 +46,7 @@ import {
 import { mergeCommands } from "./commands";
 import { resolveClaudeBinary } from "./claudeBinary";
 import { ModSurface } from "./modSurface";
+import { commandOutputOf, durationMsOf, toolResultsOf } from "./sdkMessages";
 import { PermissionBroker } from "./permissions";
 
 function send(message: SidecarToUIMessage): void {
@@ -292,6 +293,12 @@ async function pump(): Promise<void> {
         // content_block_start/stop, message_delta/stop, ping...) : rien à
         // faire ici.
       } else if (sdkMessage.type === "assistant") {
+        // Sortie de commande slash : message synthétique, rendu par command_output et jamais comme texte assistant.
+        const commandOutput = commandOutputOf(sdkMessage);
+        if (commandOutput) {
+          send({ type: "command_output", id: currentTurnId(), ...commandOutput });
+          continue;
+        }
         for (const block of sdkMessage.message.content) {
           if (block.type === "text") {
             // Sonde 05/09 : le message `assistant` final répète tout le
@@ -323,23 +330,15 @@ async function pump(): Promise<void> {
         // tool_use annoncés par l'assistant (cf. sdk.d.ts : "the CLI emits
         // them for user-role content it adds to the conversation itself,
         // chiefly the tool_result blocks").
-        const content = sdkMessage.message.content;
-        if (Array.isArray(content)) {
-          // tool_use_result est par message, pas par bloc : ambigu dès qu'il y a plusieurs tool_result.
-          const single = content.filter((b) => b.type === "tool_result").length === 1;
-          const structured = single ? sdkMessage.tool_use_result : undefined;
-          for (const block of content) {
-            if (block.type === "tool_result") {
-              send({
-                type: "tool_result",
-                id: currentTurnId(),
-                toolUseId: block.tool_use_id,
-                output: block.content,
-                ...(structured !== undefined ? { structured } : {}),
-                isError: block.is_error,
-              });
-            }
-          }
+        for (const r of toolResultsOf(sdkMessage)) {
+          send({
+            type: "tool_result",
+            id: currentTurnId(),
+            toolUseId: r.toolUseId,
+            output: r.output,
+            ...(r.structured !== undefined ? { structured: r.structured } : {}),
+            isError: r.isError,
+          });
         }
       } else if (sdkMessage.type === "conversation_reset") {
         // /clear, sortie de plan mode ou fresh-session flow (cf. sdk.d.ts
@@ -382,7 +381,11 @@ async function pump(): Promise<void> {
             recoverable: true,
           });
         }
-        send({ type: "done", sessionId: sdkMessage.session_id });
+        send({
+          type: "done",
+          sessionId: sdkMessage.session_id,
+          ...(durationMsOf(sdkMessage) !== undefined ? { durationMs: durationMsOf(sdkMessage) } : {}),
+        });
       }
     }
   } catch (err) {

@@ -375,3 +375,139 @@ describe("replaceKeepingFocus — autoFocus", () => {
     expect(document.activeElement).toBe(fresh);
   });
 });
+
+describe("renderTree : props de mise en page prismantis", () => {
+  const box = (props: Record<string, unknown>) =>
+    renderTree({ type: "Box", props, children: ["x"] }).querySelector<HTMLElement>(".den-mod-box")!;
+  const text = (props: Record<string, unknown>) =>
+    renderTree({ type: "Text", props, children: ["x"] }).querySelector<HTMLElement>(".den-mod-text")!;
+
+  it("Box rowGap / columnGap", () => {
+    const b = box({ rowGap: 1, columnGap: 2 });
+    expect(b.style.rowGap).toBe("1em");
+    expect(b.style.columnGap).toBe("2ch");
+  });
+
+  it("Box width en ch et 100%", () => {
+    expect(box({ width: 6 }).style.width).toBe("6ch");
+    expect(box({ width: "100%" }).style.width).toBe("100%");
+    expect(box({ width: 100000 }).style.width).toBe("400ch");
+  });
+
+  it("Box alignSelf", () => {
+    expect(box({ alignSelf: "flex-end" }).style.alignSelf).toBe("flex-end");
+  });
+
+  it("Box borderStyle round / bold / single / double + borderColor", () => {
+    const round = box({ borderStyle: "round", borderColor: "yellow" });
+    expect(round.style.borderStyle).toBe("solid");
+    expect(round.style.borderColor).toBe("var(--den-ansi-yellow)");
+    expect(round.style.borderRadius).toBe("var(--den-radius)");
+    expect(box({ borderStyle: "bold", borderColor: "#414868" }).style.borderWidth).toBe("2px");
+    expect(box({ borderStyle: "single" }).style.borderWidth).toBe("1px");
+    expect(box({ borderStyle: "double" }).style.borderStyle).toBe("double");
+    expect(box({ borderStyle: "inconnu" }).style.borderStyle).toBe("");
+  });
+
+  it("Text wrap truncate-end", () => {
+    const t = text({ wrap: "truncate-end" });
+    expect(t.style.whiteSpace).toBe("nowrap");
+    expect(t.style.textOverflow).toBe("ellipsis");
+    expect(t.style.overflow).toBe("hidden");
+  });
+
+  it("couleur ansi256(n)", () => {
+    expect(text({ color: "ansi256(1)" }).style.color).toBe("var(--den-ansi-red)");
+    expect(text({ color: "ansi256(9)" }).style.color).toBe("var(--den-ansi-bright-red)");
+    expect(text({ color: "ansi256(196)" }).style.color).toBe("rgb(255, 0, 0)");
+    expect(text({ color: "ansi256(232)" }).style.color).toBe("rgb(8, 8, 8)");
+    expect(text({ color: "ansi256(999)" }).style.color).toBe("");
+    expect(text({ color: "ansi256(8)" }).style.color).toBe("var(--den-ansi-gray)");
+    const defined = new Set(
+      [...readFileSync("src/styles.css", "utf8").matchAll(/(--den-ansi-[a-z-]+):/g)].map((m) => m[1]),
+    );
+    for (let n = 0; n < 16; n++) {
+      const used = /var\((--den-ansi-[a-z-]+)\)/.exec(text({ color: `ansi256(${n})` }).style.color)?.[1];
+      expect(defined.has(used ?? ""), `ansi256(${n}) -> ${used}`).toBe(true);
+    }
+  });
+
+  it("Button dimColor", () => {
+    const root = renderTree({ type: "Button", props: { label: "ok", dimColor: true } });
+    expect(root.querySelector<HTMLElement>("button")!.style.opacity).toBe("0.6");
+  });
+
+  it("Link dont l'enfant est un Text affiche le libelle, le clic garde press", () => {
+    const onPress = vi.fn();
+    const press = { plugin: "p", handle: 1 };
+    const root = renderTree(
+      {
+        type: "Link",
+        props: { href: "https://example.com" },
+        press,
+        children: [{ type: "Text", children: ["mon libelle"] }],
+      },
+      { onPress },
+    );
+    const a = root.querySelector("a")!;
+    expect(a.textContent).toBe("mon libelle");
+    a.click();
+    expect(onPress).toHaveBeenCalledWith(press, undefined, "https://example.com");
+  });
+
+  it("un element inconnu donne la boite unsupported et onUnsupported", () => {
+    const onUnsupported = vi.fn();
+    const root = renderTree({ type: "Hologram" }, { onUnsupported });
+    expect(root.querySelectorAll(".den-mod-unsupported")).toHaveLength(1);
+    expect(root.textContent).toContain("Hologram");
+    expect(onUnsupported).toHaveBeenCalledWith("Hologram");
+  });
+
+  it("la police des arbres est mono, le markdown garde la sienne", () => {
+    const css = readFileSync("src/mods/mods.css", "utf8");
+    expect(css).toMatch(/\.den-mod-tree\s*{[^}]*--den-font-mono/);
+    expect(css).toMatch(/\.den-mod-markdown\s*{[^}]*--den-font-sans/);
+  });
+});
+
+describe("renderTree : matrice prismantis", () => {
+  const lines = readFileSync("src/mods/fixtures/prismantis-render-matrix.ndjson", "utf8")
+    .split("\n")
+    .filter(Boolean)
+    .map((l) => JSON.parse(l) as { label: string; engineResponse: { tree: unknown } });
+
+  function flat(c: unknown): string {
+    if (typeof c === "string" || typeof c === "number") return String(c);
+    return typeof c === "object" && c !== null ? ((c as { children?: unknown[] }).children ?? []).map(flat).join("") : "";
+  }
+
+  function linkLabels(n: unknown, out: string[] = []): string[] {
+    if (typeof n !== "object" || n === null) return out;
+    const node = n as { type?: string; props?: { label?: string }; children?: unknown[] };
+    if (node.type === "Link") out.push(node.props?.label || flat(node) || String((node.props as { href?: string } | undefined)?.href ?? ""));
+    for (const c of node.children ?? []) linkLabels(c, out);
+    return out;
+  }
+
+  it("rend chaque arbre sans element non supporte et avec les libelles de Link", () => {
+    let withTree = 0;
+    let links = 0;
+    for (const { label, engineResponse } of lines) {
+      const tree = engineResponse.tree;
+      if (!isRenderNode(tree)) continue;
+      withTree++;
+      const onUnsupported = vi.fn();
+      const root = renderTree(tree, { onUnsupported });
+      expect(root.querySelectorAll(".den-mod-unsupported"), label).toHaveLength(0);
+      expect(onUnsupported, label).not.toHaveBeenCalled();
+      const anchors = [...root.querySelectorAll("a.den-mod-link")]
+        .filter((a) => !a.closest(".den-mod-markdown"))
+        .map((a) => a.textContent);
+      const expected = linkLabels(tree);
+      links += expected.length;
+      expect(anchors, label).toEqual(expected);
+    }
+    expect(withTree).toBeGreaterThan(50);
+    expect(links).toBeGreaterThan(0);
+  });
+});
