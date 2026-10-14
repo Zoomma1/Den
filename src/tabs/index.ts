@@ -45,9 +45,9 @@
  *   (`running`) ou "waiting for your reply" (`waiting`) ; ce module s'y abonne
  *   lui-même (cf. `syncSubmitButton`) pour transformer le bouton d'envoi en
  *   Stop tant que le tab ACTIF tourne un tour.
- * - `den:edit-prompt` (`detail: { tabId: string, text: string }`), émis par
+ * - `den:edit-prompt` (`detail: { tabId: string, text: string, images?: ImageAttachment[] }`), émis par
  *   `src/markdown/conversationView.ts` (bouton `.den-edit` sur une bulle
- *   user, D5) : reprend `text` dans la textarea du prompt SSI `tabId` est le
+ *   user, D5) : reprend `text` et `images` dans l'input SSI `tabId` est le
  *   tab actif — n'interrompt rien, l'utilisateur fait Stop lui-même d'abord
  *   si un tour tourne encore.
  * - `den:request-answered` (`detail: { tabId }`), ÉCOUTÉ ici, émis par
@@ -91,7 +91,14 @@ import { Channel, invoke } from "@tauri-apps/api/core";
 import { homeDir } from "@tauri-apps/api/path";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import "./tabs.css";
-import { composeText, mountAttachments, type AttachmentSnapshot, type AttachmentsUi } from "./attachments";
+import {
+  SLASH_BLOCKED_MESSAGE,
+  blocksSlash,
+  composeText,
+  mountAttachments,
+  type AttachmentSnapshot,
+  type AttachmentsUi,
+} from "./attachments";
 import type { DenContext } from "../core/registry";
 import { attachSlashAutocomplete } from "../autocomplete/controller";
 import {
@@ -102,6 +109,7 @@ import {
   isSessionInfo,
   type CommandInfo,
   type ConversationMessage,
+  type ImageAttachment,
   type PermissionModeId,
 } from "../types/protocol";
 import {
@@ -759,6 +767,11 @@ export async function init(ctx: DenContext): Promise<void> {
         await attachments.pending.idle();
         const sameTab = attachments.state.epoch() === epoch;
         const text = sameTab ? textarea.value : typed;
+        // Refus avant take() : texte et pièces jointes restent dans l'input pour être corrigés.
+        if (sameTab && blocksSlash(text, attachments.state.size())) {
+          attachments.notify(SLASH_BLOCKED_MESSAGE);
+          return;
+        }
         // Onglet changé : les pièces jointes ont été vidées avec lui, le texte part quand même vers son onglet d'origine.
         const snapshot = sameTab ? attachments.state.take() : { files: [], images: [] };
         if (sameTab) {
@@ -1038,9 +1051,14 @@ export async function init(ctx: DenContext): Promise<void> {
   // d'un autre tab, éventuellement en arrière-plan) ne touche à rien. Pas
   // d'interruption automatique du tour en cours (cf. docstring de tête).
   window.addEventListener("den:edit-prompt", (event) => {
-    const detail = (event as CustomEvent<{ tabId: string; text: string }>).detail;
+    const detail = (event as CustomEvent<{ tabId: string; text: string; images?: ImageAttachment[] }>).detail;
     if (!detail || detail.tabId !== activeTabId || !promptInputEl) return;
     promptInputEl.value = detail.text;
+    // Le texte repris remplace la saisie ; seules les images sont remplacées, les fichiers du trombone restent attachés.
+    if (attachmentsUi) {
+      attachmentsUi.state.clearImages();
+      attachmentsUi.restoreImages(detail.images ?? []);
+    }
     promptInputEl.focus();
     const len = promptInputEl.value.length;
     promptInputEl.setSelectionRange(len, len);

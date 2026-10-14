@@ -33,10 +33,33 @@ export function formatMention(path: string): string | null {
   return /\s/.test(path) ? `@"${path}"` : `@${path}`;
 }
 
-/** Une commande slash ne reçoit jamais de mentions : elles casseraient son parsing. */
+export const SLASH_BLOCKED_MESSAGE = "Slash commands can't be sent with attachments. Remove them or send the command alone.";
+
+/** Commande slash avec pièce jointe refusée à l'envoi (les mentions `@` ou un tableau de blocs casseraient son parsing) ; un premier mot contenant un autre `/` est un chemin, pas une commande. */
+export function blocksSlash(text: string, attachmentCount: number): boolean {
+  const firstWord = text.trim().split(/\s/)[0] ?? "";
+  return attachmentCount > 0 && /^\/[^/]+$/.test(firstWord);
+}
+
+/** Garde-fou avant `createImageBitmap` : le décodage d'un TIFF/BMP géant se paie sur le thread UI. */
+export const MAX_CONVERT_BYTES = 25 * 1024 * 1024;
+export function checkConvertible(file: { size: number }): { ok: true } | { ok: false; message: string } {
+  return file.size > MAX_CONVERT_BYTES
+    ? { ok: false, message: "Image too large to convert (max 25 MB)." }
+    : { ok: true };
+}
+
+/** Formats image lisibles par le webview mais refusés par l'API (TIFF, BMP…) : convertis en PNG au collage. SVG exclu (pas décodable en bitmap). */
+export function isConvertibleImage(type: string): boolean {
+  return (
+    type.startsWith("image/") &&
+    type !== "image/svg+xml" &&
+    !IMAGE_TYPES.some((t) => t === type)
+  );
+}
+
 export function composeText(text: string, filePaths: readonly string[]): string {
   const trimmed = text.trim();
-  if (trimmed.startsWith("/")) return trimmed;
   const mentions = filePaths
     .map(formatMention)
     .filter((m): m is string => m !== null);
@@ -147,9 +170,40 @@ export function createAttachmentState() {
       images = [];
       epoch += 1;
     },
+    /** Retire les images seules, sans bumper l'époque : ✎ n'est pas un changement d'onglet, un envoi en cours doit rester valide. */
+    clearImages(): void {
+      for (const image of images) URL.revokeObjectURL(image.previewUrl);
+      images = [];
+    },
   };
 }
 export type AttachmentState = ReturnType<typeof createAttachmentState>;
+
+/** Bitmap décodé par le webview puis redessiné : le seul chemin sans dépendance pour passer de TIFF/BMP à PNG. */
+export async function convertToPng(file: Blob): Promise<Blob> {
+  const bitmap = await createImageBitmap(file);
+  try {
+    const canvas = document.createElement("canvas");
+    canvas.width = bitmap.width;
+    canvas.height = bitmap.height;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) throw new Error("no 2d context");
+    ctx.drawImage(bitmap, 0, 0);
+    const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/png"));
+    if (!blob) throw new Error("toBlob failed");
+    return blob;
+  } finally {
+    bitmap.close();
+  }
+}
+
+/** Reconstruit un Blob depuis le base64 d'un écho pour que ✎ puisse recréer une vignette. */
+export function base64ToBlob(data: string, mediaType: string): Blob {
+  const binary = atob(data);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+  return new Blob([bytes], { type: mediaType });
+}
 
 export function readFileAsBase64(file: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -172,6 +226,10 @@ export interface AttachmentsUi {
   pending: ReturnType<typeof createPendingTracker>;
   /** À rappeler après toute mutation de `state` faite hors UI (restore, clear). */
   render(): void;
+  /** Message temporaire dans la barre (refus d'envoi, image ignorée…). */
+  notify(message: string): void;
+  /** Remet les images d'un écho (bouton ✎) en pièces jointes, avec de nouvelles vignettes. */
+  restoreImages(images: readonly ImageAttachment[]): void;
 }
 
 export function mountAttachments(textarea: HTMLTextAreaElement): AttachmentsUi {
@@ -240,16 +298,18 @@ export function mountAttachments(textarea: HTMLTextAreaElement): AttachmentsUi {
   }
 
   buttonEl.addEventListener("click", () => {
-    void open({ multiple: true, directory: false }).then((result) => {
-      const paths = result === null ? [] : Array.isArray(result) ? result : [result];
-      for (const path of paths) {
-        if (!state.addFile(path) && path.includes('"')) {
-          showError(`Cannot attach "${baseName(path)}": path contains a double quote.`);
+    void open({ multiple: true, directory: false })
+      .then((result) => {
+        const paths = result === null ? [] : Array.isArray(result) ? result : [result];
+        for (const path of paths) {
+          if (!state.addFile(path) && path.includes('"')) {
+            showError(`Cannot attach "${baseName(path)}": path contains a double quote.`);
+          }
         }
-      }
-      render();
-      textarea.focus();
-    });
+        render();
+        textarea.focus();
+      })
+      .catch(() => showError("Could not open the file picker."));
   });
 
   textarea.addEventListener("paste", (event) => {
@@ -260,28 +320,60 @@ export function mountAttachments(textarea: HTMLTextAreaElement): AttachmentsUi {
       .map((item) => item.getAsFile())
       .filter((f): f is File => f !== null);
     if (files.length === 0) return;
-    const valid: Array<{ file: File; mediaType: ImageAttachment["mediaType"] }> = [];
+    // `convert` : format hors liste blanche, passé en PNG avant la lecture (la taille est alors contrôlée sur le PNG).
+    const jobs: Array<{ file: Blob; convert: boolean }> = [];
     for (const file of files) {
+      if (isConvertibleImage(file.type)) {
+        const convertible = checkConvertible(file);
+        if (convertible.ok) jobs.push({ file, convert: true });
+        else showError(convertible.message);
+        continue;
+      }
       const check = validateImage(file);
-      if (check.ok) valid.push({ file, mediaType: check.mediaType });
+      if (check.ok) jobs.push({ file, convert: false });
       else showError(check.message);
     }
-    if (!shouldInterceptPaste(valid.length, data.getData("text/plain"))) return;
+    if (!shouldInterceptPaste(jobs.length, data.getData("text/plain"))) return;
     event.preventDefault();
     const epoch = state.epoch();
-    for (const { file, mediaType } of valid) {
-      const done = pending.begin();
-      readFileAsBase64(file)
-        .then((b64) => {
+    // Tous les compteurs avant le premier await : le submit doit voir les lectures en attente tout de suite.
+    const dones = jobs.map(() => pending.begin());
+    // Séquentiel : une conversion lente ne doit pas faire passer une image collée après la suivante.
+    void (async () => {
+      for (const [index, job] of jobs.entries()) {
+        let stage: "convert" | "read" = "read";
+        try {
+          let blob = job.file;
+          if (job.convert) {
+            stage = "convert";
+            blob = await convertToPng(job.file);
+            stage = "read";
+          }
+          const check = validateImage(blob);
+          if (!check.ok) {
+            showError(check.message);
+            continue;
+          }
+          const b64 = await readFileAsBase64(blob);
           // Onglet changé pendant la lecture : l'image appartient à l'ancien onglet, on la jette.
-          if (state.epoch() !== epoch) return;
-          state.addImage({ mediaType, data: b64, previewUrl: URL.createObjectURL(file) });
+          if (state.epoch() !== epoch) continue;
+          state.addImage({ mediaType: check.mediaType, data: b64, previewUrl: URL.createObjectURL(blob) });
           render();
-        })
-        .catch(() => showError("Could not read the pasted image."))
-        .finally(done);
-    }
+        } catch {
+          showError(stage === "convert" ? "Could not convert this image to PNG." : "Could not read the pasted image.");
+        } finally {
+          dones[index]();
+        }
+      }
+    })();
   });
 
-  return { barEl, buttonEl, state, pending, render };
+  function restoreImages(images: readonly ImageAttachment[]): void {
+    for (const image of images) {
+      state.addImage({ ...image, previewUrl: URL.createObjectURL(base64ToBlob(image.data, image.mediaType)) });
+    }
+    render();
+  }
+
+  return { barEl, buttonEl, state, pending, render, notify: showError, restoreImages };
 }

@@ -4,12 +4,17 @@ vi.mock("@tauri-apps/plugin-dialog", () => ({ open: vi.fn() }));
 vi.mock("./attachments.css", () => ({}));
 
 import {
+  MAX_CONVERT_BYTES,
   MAX_IMAGE_BYTES,
+  base64ToBlob,
   baseName,
+  blocksSlash,
+  checkConvertible,
   composeText,
   createAttachmentState,
   createPendingTracker,
   formatMention,
+  isConvertibleImage,
   shouldInterceptPaste,
   validateImage,
   type AttachedImage,
@@ -34,11 +39,54 @@ describe("composeText", () => {
   it("ajoute une ligne par fichier", () =>
     expect(composeText("look", ["/a", "/b c"])).toBe('look\n@/a\n@"/b c"'));
   it("texte vide : mentions seules", () => expect(composeText("", ["/a"])).toBe("@/a"));
-  it("commande slash : mentions ignorées", () =>
-    expect(composeText("/compact", ["/a"])).toBe("/compact"));
   it("ignore les chemins avec guillemet", () =>
     expect(composeText("x", ['/a"b', "/c"])).toBe("x\n@/c"));
   it("tout refusé : texte seul", () => expect(composeText("x", ['/a"'])).toBe("x"));
+});
+
+describe("blocksSlash", () => {
+  it("commande slash avec pièce jointe : bloqué", () => expect(blocksSlash("/compact", 1)).toBe(true));
+  it("espaces avant le slash : bloqué", () => expect(blocksSlash("  /model x", 2)).toBe(true));
+  it("commande slash seule : envoyée", () => expect(blocksSlash("/compact", 0)).toBe(false));
+  it("texte normal avec pièce jointe : envoyé", () => expect(blocksSlash("regarde", 1)).toBe(false));
+  it("slash au milieu du texte : envoyé", () => expect(blocksSlash("voir /tmp", 1)).toBe(false));
+  it("chemin absolu en premier mot : envoyé", () =>
+    expect(blocksSlash("/Users/me/app/foo.ts plante, voir l'image", 1)).toBe(false));
+  it("commande avec argument : bloqué", () => expect(blocksSlash("/model claude-opus", 1)).toBe(true));
+  it("slash seul : pas une commande, envoyé", () => expect(blocksSlash("/", 1)).toBe(false));
+});
+
+describe("checkConvertible", () => {
+  it("accepte jusqu'à 25 Mo, refuse au-delà", () => {
+    expect(checkConvertible({ size: MAX_CONVERT_BYTES }).ok).toBe(true);
+    expect(checkConvertible({ size: MAX_CONVERT_BYTES + 1 }).ok).toBe(false);
+  });
+});
+
+describe("isConvertibleImage", () => {
+  it("TIFF et BMP sont convertis", () => {
+    expect(isConvertibleImage("image/tiff")).toBe(true);
+    expect(isConvertibleImage("image/bmp")).toBe(true);
+  });
+  it("formats natifs : pas de conversion", () => {
+    for (const t of ["image/png", "image/jpeg", "image/gif", "image/webp"]) {
+      expect(isConvertibleImage(t)).toBe(false);
+    }
+  });
+  it("SVG et non-images exclus", () => {
+    expect(isConvertibleImage("image/svg+xml")).toBe(false);
+    expect(isConvertibleImage("application/pdf")).toBe(false);
+    expect(isConvertibleImage("")).toBe(false);
+  });
+});
+
+describe("base64ToBlob", () => {
+  it("restitue les octets et le type", async () => {
+    const blob = base64ToBlob(btoa("abc"), "image/png");
+    expect(blob.type).toBe("image/png");
+    expect(blob.size).toBe(3);
+    expect(await blob.text()).toBe("abc");
+  });
 });
 
 describe("validateImage", () => {
@@ -149,6 +197,19 @@ describe("createAttachmentState", () => {
     expect(s.epoch()).toBe(e0);
     s.clear();
     expect(s.epoch()).toBe(e0 + 1);
+  });
+
+  it("clearImages révoque les images, garde les fichiers et l'époque", () => {
+    const revoke = vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
+    const s = createAttachmentState();
+    s.addFile("/a");
+    s.addImage(img(1));
+    const e0 = s.epoch();
+    s.clearImages();
+    expect(s.images()).toHaveLength(0);
+    expect(s.files()).toHaveLength(1);
+    expect(s.epoch()).toBe(e0);
+    expect(revoke).toHaveBeenCalledWith("blob:1");
   });
 
   it("clear révoque les images courantes", () => {

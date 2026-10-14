@@ -333,7 +333,7 @@ describe("ConversationView", () => {
     expect(view.el.querySelector(".den-msg-user__images")).toBeNull();
   });
 
-  it("user_echo avec 2 images rend 2 <img> data: et ✎ restitue le texte seul", () => {
+  it("user_echo avec 2 images rend 2 <img> data: et ✎ restitue le texte seul puis les images d'origine", () => {
     const view = new ConversationView("tab-1");
     view.handleMessage({
       type: "user_echo",
@@ -351,10 +351,15 @@ describe("ConversationView", () => {
     expect(imgs[1].getAttribute("src")).toBe("data:image/jpeg;base64,BBB");
     expect(imgs[0].alt).toBe("Pasted image");
 
-    const edits: string[] = [];
-    window.addEventListener("den:edit-prompt", (e) => edits.push((e as CustomEvent).detail.text), { once: true });
+    const details: Array<{ text: string; images: unknown[] }> = [];
+    window.addEventListener("den:edit-prompt", (e) => details.push((e as CustomEvent).detail), { once: true });
     (view.el.querySelector(".den-edit") as HTMLElement).click();
-    expect(edits).toEqual(["regarde"]);
+    expect(details).toHaveLength(1);
+    expect(details[0].text).toBe("regarde");
+    expect(details[0].images).toEqual([
+      { mediaType: "image/png", data: "AAA" },
+      { mediaType: "image/jpeg", data: "BBB" },
+    ]);
   });
 
   // --- Éditer (D5) ---
@@ -383,7 +388,7 @@ describe("ConversationView", () => {
 
       expect(handler).toHaveBeenCalledTimes(1);
       const event = handler.mock.calls[0][0] as CustomEvent<{ tabId: string; text: string }>;
-      expect(event.detail).toEqual({ tabId: "tab-1", text });
+      expect(event.detail).toEqual({ tabId: "tab-1", text, images: [] });
     } finally {
       window.removeEventListener("den:edit-prompt", handler);
     }
