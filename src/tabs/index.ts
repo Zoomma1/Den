@@ -644,7 +644,8 @@ export async function init(ctx: DenContext): Promise<void> {
           updateTabTitle(tab);
           renderPanel();
         } else if (isErrorMessage(message)) {
-          markTabError(tab, message.message);
+          // Récupérable : l'erreur reste dans le fil, mais le tab n'est pas marqué mort à vie.
+          if (message.recoverable !== true) markTabError(tab, message.message);
         } else if (isConversationReset(message)) {
           tab.userEnded = true;
         } else if (isCommands(message)) {
