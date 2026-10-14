@@ -210,6 +210,9 @@ export class ConversationView {
   private lastScrollTop = 0;
   private readonly toolBlocksByToolUseId = new Map<string, HTMLElement>();
   private readonly toolNamesByToolUseId = new Map<string, string>();
+  // Rapports de sous-agent déjà reçus ; le stub du tool_result parent arrive après et ne doit pas s'afficher.
+  private readonly reportedToolUseIds = new Set<string>();
+  private readonly resultElsByToolUseId = new Map<string, HTMLElement>();
   private assistantSinceUser = false;
   private readonly onTabStateChangedBound: (event: Event) => void;
   private readonly modBlocks = new Map<string, ModBlock>();
@@ -284,6 +287,10 @@ export class ConversationView {
         this.finalizeActiveAssistant();
         this.onToolResult(msg.toolUseId, msg.output, msg.isError === true, msg.structured);
         return;
+      case "subagent_report":
+        this.finalizeActiveAssistant();
+        this.onSubagentReport(msg.toolUseId, msg.text);
+        return;
       case "done":
         this.finalizeActiveAssistant();
         this.onTurnDuration(msg.durationMs);
@@ -304,6 +311,8 @@ export class ConversationView {
         this.active = null;
         this.toolBlocksByToolUseId.clear();
         this.toolNamesByToolUseId.clear();
+        this.reportedToolUseIds.clear();
+        this.resultElsByToolUseId.clear();
         this.modBlocks.clear();
         this.runByToolUseId.clear();
         this.assistantSinceUser = false;
@@ -758,6 +767,36 @@ export class ConversationView {
     );
   }
 
+  private onSubagentReport(toolUseId: string, text: string): void {
+    const reportEl = document.createElement("div");
+    reportEl.className = "den-tool-result den-subagent-report";
+    const label = document.createElement("strong");
+    label.textContent = "Report";
+    const body = document.createElement("div");
+    body.className = "den-msg-finalized";
+    const renderer = new IncrementalMarkdownRenderer();
+    for (const html of [...renderer.feed(text).finalizedHtml, ...renderer.finalize()]) appendHtml(body, html);
+    reportEl.append(label, body);
+
+    this.reportedToolUseIds.add(toolUseId);
+    // Stub déjà posé (ordre inverse) : le rapport le remplace.
+    this.resultElsByToolUseId.get(toolUseId)?.remove();
+    this.resultElsByToolUseId.delete(toolUseId);
+
+    const details = this.toolBlocksByToolUseId.get(toolUseId);
+    if (details) {
+      details.appendChild(reportEl);
+    } else {
+      // Sous-agent imbriqué : pas de bloc parent visible, on isole le rapport.
+      const orphan = document.createElement("div");
+      orphan.className = "den-tool-block den-tool-block-orphan";
+      orphan.dataset.toolUseId = toolUseId;
+      orphan.appendChild(reportEl);
+      this.flowEl.appendChild(orphan);
+    }
+    this.scrollToBottomIfStuck();
+  }
+
   private onToolResult(
     toolUseId: string,
     output: unknown,
@@ -779,12 +818,17 @@ export class ConversationView {
     resultEl.appendChild(pre);
 
     const details = this.toolBlocksByToolUseId.get(toolUseId);
+    // Seul un stub non-erreur est masqué par le rapport : une erreur doit rester lisible.
+    const hasReport = this.reportedToolUseIds.has(toolUseId) && !isError;
     if (details) {
-      details.appendChild(resultEl);
+      if (!hasReport) {
+        details.appendChild(resultEl);
+        if (!isError) this.resultElsByToolUseId.set(toolUseId, resultEl);
+      }
       if (isError) {
         details.classList.add("den-tool-block-error");
       }
-    } else {
+    } else if (!hasReport) {
       // tool_result sans tool_use correspondant (ex. reprise de session
       // tronquée) : on l'affiche quand même, isolé, plutôt que de le perdre.
       const orphan = document.createElement("div");
