@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { commandOutputOf, durationMsOf, subagentReportOf, subagentUpdateOf, toolResultsOf } from "./sdkMessages";
+import { commandOutputOf, durationMsOf, subagentReportOf, subagentStepsOf, subagentUpdateOf, toolResultsOf } from "./sdkMessages";
 
 const user = (blocks: any[], tool_use_result?: unknown) => ({
   message: { content: blocks },
@@ -98,6 +98,10 @@ describe("subagentUpdateOf", () => {
     });
     expect(known.has("t1")).toBe(true);
   });
+  it("task_started : prompt et spawnDepth relayés", () => {
+    const u = subagentUpdateOf({ ...started, prompt: "do it", spawn_depth: 2 }, new Set());
+    expect(u).toMatchObject({ prompt: "do it", spawnDepth: 2 });
+  });
   it("task_started ambient, skip_transcript ou task_type étranger : ignoré et non mémorisé", () => {
     for (const extra of [{ ambient: true }, { skip_transcript: true }, { task_type: "local_bash" }]) {
       const known = new Set<string>();
@@ -166,5 +170,57 @@ describe("subagentReportOf", () => {
     expect(
       subagentReportOf(handback({ message: { content: [{ type: "tool_use", id: "x", name: "Bash", input: {} }] } })),
     ).toBeNull();
+  });
+});
+
+describe("subagentStepsOf", () => {
+  const asst = (blocks: any[], parent: string | null = "P") => ({
+    type: "assistant",
+    parent_tool_use_id: parent,
+    message: { content: blocks },
+  });
+  const userMsg = (blocks: any[]) => ({ type: "user", parent_tool_use_id: "P", message: { content: blocks } });
+  it("text", () => {
+    expect(subagentStepsOf(asst([{ type: "text", text: "hi" }]))).toEqual([
+      { type: "subagent_step", parentToolUseId: "P", kind: "text", text: "hi", truncated: false },
+    ]);
+  });
+  it("tool_use : input en JSON", () => {
+    expect(subagentStepsOf(asst([{ type: "tool_use", id: "u1", name: "Read", input: { a: 1 } }]))).toEqual([
+      { type: "subagent_step", parentToolUseId: "P", kind: "tool_use", name: "Read", toolUseId: "u1", text: '{"a":1}', truncated: false },
+    ]);
+  });
+  it("tool_result : string, blocs text, erreur", () => {
+    const s = subagentStepsOf(
+      userMsg([
+        { type: "tool_result", tool_use_id: "a", content: "ok" },
+        { type: "tool_result", tool_use_id: "b", content: [{ type: "text", text: "x" }, { type: "text", text: "y" }], is_error: true },
+      ]),
+    );
+    expect(s[0]).toMatchObject({ kind: "tool_result", toolUseId: "a", text: "ok", isError: false });
+    expect(s[1]).toMatchObject({ toolUseId: "b", text: "xy", isError: true });
+  });
+  it("troncature 4000 (texte, résultat) / 2000 (input)", () => {
+    const [t] = subagentStepsOf(asst([{ type: "text", text: "a".repeat(4001) }]));
+    expect(t).toMatchObject({ truncated: true });
+    expect(t.text).toHaveLength(4000);
+    const [u] = subagentStepsOf(asst([{ type: "tool_use", id: "u", name: "X", input: { s: "b".repeat(3000) } }]));
+    expect(u).toMatchObject({ truncated: true });
+    expect(u.text).toHaveLength(2000);
+    const [r] = subagentStepsOf(userMsg([{ type: "tool_result", tool_use_id: "a", content: "c".repeat(5000) }]));
+    expect(r).toMatchObject({ truncated: true });
+    expect(r.text).toHaveLength(4000);
+  });
+  it("SubagentHandback ignoré", () => {
+    expect(subagentStepsOf(asst([{ type: "tool_use", id: "h", name: "SubagentHandback", input: { message: "m" } }]))).toEqual([]);
+  });
+  it("le tool_result du SubagentHandback (message suivant) est ignoré aussi", () => {
+    const ids = new Set<string>();
+    subagentStepsOf(asst([{ type: "tool_use", id: "h", name: "SubagentHandback", input: { message: "m" } }]), ids);
+    expect(subagentStepsOf(userMsg([{ type: "tool_result", tool_use_id: "h", content: "ok" }]), ids)).toEqual([]);
+    expect(subagentStepsOf(userMsg([{ type: "tool_result", tool_use_id: "other", content: "ok" }]), ids)).toHaveLength(1);
+  });
+  it("sans parent_tool_use_id : []", () => {
+    expect(subagentStepsOf(asst([{ type: "text", text: "hi" }], null))).toEqual([]);
   });
 });

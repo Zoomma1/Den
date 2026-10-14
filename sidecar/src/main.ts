@@ -47,7 +47,7 @@ import { mergeCommands } from "./commands";
 import { resolveClaudeBinary } from "./claudeBinary";
 import { resolveInitialMode } from "./initialMode";
 import { ModSurface } from "./modSurface";
-import { commandOutputOf, durationMsOf, subagentReportOf, subagentUpdateOf, toolResultsOf } from "./sdkMessages";
+import { commandOutputOf, durationMsOf, subagentReportOf, subagentStepsOf, subagentUpdateOf, toolResultsOf } from "./sdkMessages";
 import { PermissionBroker } from "./permissions";
 import { buildUserContent } from "./userContent";
 
@@ -237,6 +237,8 @@ fetchCommands();
 
 // Tâches sous-agents retenues (task_started accepté) : filtre les task_* des autres types de tâches.
 const knownTasks = new Set<string>();
+// Ids des SubagentHandback vus : leur tool_result (message suivant) ne doit pas devenir une étape orpheline.
+const handbackIds = new Set<string>();
 
 async function pump(): Promise<void> {
   try {
@@ -275,9 +277,10 @@ async function pump(): Promise<void> {
         (sdkMessage.type === "assistant" || sdkMessage.type === "user") &&
         sdkMessage.parent_tool_use_id != null
       ) {
-        // Messages internes d'un sous-agent : seul son rapport remonte, jamais ses tool_use/tool_result bruts.
+        // Messages internes d'un sous-agent : rapport + étapes tronquées, jamais le flux brut.
         const r = subagentReportOf(sdkMessage);
         if (r) send(r);
+        for (const step of subagentStepsOf(sdkMessage, handbackIds)) send(step);
         continue;
       } else if (sdkMessage.type === "stream_event") {
         // Sous-agents : `parent_tool_use_id` non nul = event d'un sous-agent, ignoré
@@ -361,6 +364,7 @@ async function pump(): Promise<void> {
         // `SDKConversationResetMessage`) : jamais de string-matching sur
         // "/clear" ici, le SDK nous le dit explicitement par ce type.
         knownTasks.clear();
+        handbackIds.clear();
         send({
           type: "conversation_reset",
           sessionId: sdkMessage.session_id,
