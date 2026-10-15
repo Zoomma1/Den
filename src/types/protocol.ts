@@ -494,6 +494,25 @@ export interface ModsUnavailable {
   reason: string;
 }
 
+export type WorkflowAgentState = "queued" | "running" | "done" | "failed";
+
+/** Snapshot complet d'un workflow : remplace le précédent à chaque progress. */
+export interface WorkflowProgress {
+  phases: { index: number; title: string }[];
+  agents: {
+    index: number;
+    label: string;
+    phaseIndex: number;
+    state: WorkflowAgentState;
+    promptPreview?: string;
+    model?: string;
+    durationMs?: number;
+    tokens?: number;
+    toolCalls?: number;
+    resultPreview?: string;
+  }[];
+}
+
 /** Cycle de vie d'un sous-agent (task_started/progress/updated/notification du SDK). */
 export interface SubagentUpdate {
   type: "subagent_update";
@@ -510,6 +529,8 @@ export interface SubagentUpdate {
   prompt?: string;
   /** Rang d'imbrication : 1 = lancé par la session, N+1 = lancé par un agent de rang N. */
   spawnDepth?: number;
+  workflowName?: string;
+  workflow?: WorkflowProgress;
 }
 
 /** Étape interne d'un sous-agent (texte, appel d'outil ou résultat), tronquée côté sidecar. */
