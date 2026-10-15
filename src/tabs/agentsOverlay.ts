@@ -1,6 +1,6 @@
 import "./agentsOverlay.css";
 import { IncrementalMarkdownRenderer } from "../markdown/renderer";
-import { MAX_STEPS, type Subagent, type SubagentStepView, type Subagents } from "./subagents";
+import { MAX_STEPS, type Subagent, type SubagentStepView, type Subagents, workflowLine } from "./subagents";
 
 export interface AgentsOverlay {
   triggerEl: HTMLButtonElement;
@@ -67,6 +67,47 @@ function renderStep(step: SubagentStepView): HTMLElement {
   return node;
 }
 
+interface PhaseNode {
+  root: HTMLElement;
+  title: HTMLElement;
+  list: HTMLElement;
+}
+interface AgentNode {
+  root: HTMLDetailsElement;
+  label: HTMLElement;
+  prompt: HTMLElement;
+  task: HTMLElement;
+  meta: HTMLElement;
+  result: HTMLElement;
+  resultText: HTMLElement;
+}
+
+function makePhaseNode(): PhaseNode {
+  const title = el("h5", "den-agents-phase__title");
+  const list = el("div", "den-agents-phase__agents");
+  const root = el("section", "den-agents-phase");
+  root.append(title, list);
+  return { root, title, list };
+}
+
+// <details> natif : Entrée/Espace sur le <summary> et l'état ouvert survivent à la mise à jour en place.
+function makeAgentNode(): AgentNode {
+  const label = el("span", "den-agents-wf-agent__label");
+  const prompt = el("span", "den-agents-wf-agent__prompt");
+  const summary = el("summary", "den-agents-wf-agent__head");
+  summary.append(el("span", "den-agents-wf-agent__dot"), label, prompt);
+  const task = el("pre", "den-agents-wf-agent__task");
+  const meta = el("p", "den-agents-wf-agent__meta");
+  const resultText = el("pre", "den-agents-wf-agent__task");
+  const result = el("div", "den-agents-wf-agent__result");
+  result.append(el("strong", "den-agents-wf-agent__caption", "Result"), resultText);
+  const body = el("div", "den-agents-wf-agent__body");
+  body.append(el("strong", "den-agents-wf-agent__caption", "Task (preview)"), task, meta, result);
+  const root = el("details", "den-agents-wf-agent");
+  root.append(summary, body);
+  return { root, label, prompt, task, meta, result, resultText };
+}
+
 export function createAgentsOverlay(host: HTMLElement): AgentsOverlay {
   const triggerEl = document.createElement("button");
   triggerEl.type = "button";
@@ -100,10 +141,16 @@ export function createAgentsOverlay(host: HTMLElement): AgentsOverlay {
   let renderedReport: string | undefined;
   let taskEl: HTMLDetailsElement;
   let promptEl: HTMLElement;
+  let phasesHeadEl: HTMLElement;
+  let phasesEl: HTMLElement;
+  let stepsHeadEl: HTMLElement;
   let stepsEl: HTMLElement;
+  let phaseNodes = new Map<number, PhaseNode>();
+  let agentNodes = new Map<number, AgentNode>();
   let reportEl: HTMLElement;
 
   function rowText(a: Subagent): string {
+    if (a.workflow || a.workflowName) return workflowLine(a);
     const u = a.usage;
     return [
       a.subagentType ?? "agent",
@@ -132,14 +179,81 @@ export function createAgentsOverlay(host: HTMLElement): AgentsOverlay {
     taskEl = el("details", "den-agents-task");
     promptEl = el("p", "den-agents-task__prompt");
     taskEl.append(el("summary", "", "Task"), promptEl);
+    phasesHeadEl = el("h4", "den-agents-section", "Phases");
+    phasesEl = el("div", "den-agents-phases");
+    phasesHeadEl.hidden = phasesEl.hidden = true;
+    stepsHeadEl = el("h4", "den-agents-section", "Steps");
     stepsEl = el("div", "den-agents-steps");
     reportEl = el("div", "den-agents-report");
-    detailEl.replaceChildren(taskEl, el("h4", "den-agents-section", "Steps"), stepsEl, reportEl);
+    phaseNodes = new Map();
+    agentNodes = new Map();
+    detailEl.replaceChildren(taskEl, phasesHeadEl, phasesEl, stepsHeadEl, stepsEl, reportEl);
     shownId = a.taskId;
     renderedCount = 0;
     renderedReport = undefined;
     reportEl.hidden = true;
     detailEl.scrollTop = 0;
+  }
+
+  // Nœuds réutilisés par index de phase / d'agent : un progress ne reconstruit rien.
+  function syncWorkflow(wf: NonNullable<Subagent["workflow"]>): void {
+    const phaseIdx = new Set(wf.phases.map((p) => p.index));
+    const phases = [...wf.phases].sort((x, y) => x.index - y.index);
+    for (const ag of wf.agents) {
+      if (!phaseIdx.has(ag.phaseIndex)) {
+        phaseIdx.add(ag.phaseIndex);
+        phases.push({ index: ag.phaseIndex, title: `Phase ${ag.phaseIndex}` });
+      }
+    }
+    const seenAgents = new Set<number>();
+    phases.forEach((p, pi) => {
+      let pn = phaseNodes.get(p.index);
+      if (!pn) {
+        pn = makePhaseNode();
+        phaseNodes.set(p.index, pn);
+      }
+      setText(pn.title, p.title);
+      if (phasesEl.children[pi] !== pn.root) phasesEl.insertBefore(pn.root, phasesEl.children[pi] ?? null);
+      const mine = wf.agents.filter((x) => x.phaseIndex === p.index).sort((x, y) => x.index - y.index);
+      mine.forEach((ag, ai) => {
+        seenAgents.add(ag.index);
+        let an = agentNodes.get(ag.index);
+        if (!an) {
+          an = makeAgentNode();
+          agentNodes.set(ag.index, an);
+        }
+        an.root.dataset.state = ag.state;
+        setText(an.label, ag.label);
+        setText(an.prompt, (ag.promptPreview ?? "").replace(/\s+/g, " ").trim().slice(0, 90));
+        setText(an.task, ag.promptPreview ?? "");
+        setText(
+          an.meta,
+          [
+            ag.state,
+            ag.model,
+            ag.durationMs !== undefined ? formatDuration(ag.durationMs) : "",
+            ag.tokens !== undefined ? formatTokens(ag.tokens) : "",
+            ag.toolCalls !== undefined ? `${ag.toolCalls} tool ${ag.toolCalls === 1 ? "call" : "calls"}` : "",
+          ]
+            .filter((p) => p)
+            .join(" · "),
+        );
+        an.result.hidden = ag.resultPreview === undefined;
+        setText(an.resultText, ag.resultPreview ?? "");
+        if (pn.list.children[ai] !== an.root) pn.list.insertBefore(an.root, pn.list.children[ai] ?? null);
+      });
+    });
+    const seenPhases = new Set(phases.map((p) => p.index));
+    for (const [i, n] of phaseNodes) {
+      if (seenPhases.has(i)) continue;
+      n.root.remove();
+      phaseNodes.delete(i);
+    }
+    for (const [i, n] of agentNodes) {
+      if (seenAgents.has(i)) continue;
+      n.root.remove();
+      agentNodes.delete(i);
+    }
   }
 
   function updateDetail(a: Subagent): void {
@@ -148,6 +262,9 @@ export function createAgentsOverlay(host: HTMLElement): AgentsOverlay {
     const atBottom = !fresh && detailEl.scrollHeight - detailEl.scrollTop - detailEl.clientHeight <= 8;
     setText(promptEl, a.prompt ?? "");
     taskEl.hidden = a.prompt === undefined;
+    phasesHeadEl.hidden = phasesEl.hidden = a.workflow === undefined;
+    if (a.workflow) syncWorkflow(a.workflow);
+    stepsHeadEl.hidden = stepsEl.hidden = a.workflow !== undefined && a.stepCount === 0;
     // Index absolu de steps[i] = stepCount - steps.length + i : robuste à l'éviction au plafond.
     const base = a.stepCount - a.steps.length;
     for (let i = Math.max(0, renderedCount - base); i < a.steps.length; i++) stepsEl.appendChild(renderStep(a.steps[i]));
