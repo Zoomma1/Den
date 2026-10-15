@@ -1,4 +1,4 @@
-import type { ConversationMessage, SubagentStep, SubagentUpdate } from "../types/protocol";
+import type { ConversationMessage, SubagentStep, SubagentUpdate, WorkflowProgress } from "../types/protocol";
 
 export interface SubagentStepView {
   kind: "text" | "tool_use" | "tool_result";
@@ -24,6 +24,8 @@ export interface Subagent {
   steps: readonly SubagentStepView[];
   report?: string;
   depth: number;
+  workflowName?: string;
+  workflow?: WorkflowProgress;
   parentTaskId?: string;
   turnsSinceEnd: number;
   /** Total monotone d'étapes reçues : l'index absolu de steps[i] vaut stepCount - steps.length + i. */
@@ -48,6 +50,16 @@ function merge(prev: Subagent | undefined, u: SubagentUpdate): Subagent {
   if (u.usage !== undefined) next.usage = u.usage;
   if (u.prompt !== undefined) next.prompt = u.prompt;
   if (u.spawnDepth !== undefined) next.depth = u.spawnDepth;
+  if (u.workflowName !== undefined) next.workflowName = u.workflowName;
+  if (u.workflow !== undefined) next.workflow = u.workflow;
+  // Workflow terminé : un agent resté queued/running dans le dernier snapshot ne le sera plus jamais.
+  if (next.workflow && next.status !== "running") {
+    const end = next.status === "completed" ? "done" : "failed";
+    next.workflow = {
+      ...next.workflow,
+      agents: next.workflow.agents.map((a) => (a.state === "queued" || a.state === "running" ? { ...a, state: end } : a)),
+    };
+  }
   return next;
 }
 
@@ -68,6 +80,9 @@ function same(a: Subagent, b: Subagent): boolean {
     a.depth === b.depth &&
     a.parentTaskId === b.parentTaskId &&
     a.lastToolName === b.lastToolName &&
+    a.workflowName === b.workflowName &&
+    // Snapshot rejoué à l'identique à chaque progress : comparaison par valeur.
+    JSON.stringify(a.workflow) === JSON.stringify(b.workflow) &&
     a.usage?.totalTokens === b.usage?.totalTokens &&
     a.usage?.toolUses === b.usage?.toolUses &&
     a.usage?.durationMs === b.usage?.durationMs
@@ -148,8 +163,17 @@ const STATUS_LABEL: Record<Subagent["status"], string> = {
   stopped: "Stopped",
 };
 
+/** Libellé d'un workflow (panneau Sessions et overlay) ; n/m absent avant le premier snapshot. */
+export function workflowLine(s: Subagent): string {
+  const counts = s.workflow
+    ? `${s.workflow.agents.filter((a) => a.state === "done").length}/${s.workflow.agents.length} agents`
+    : "";
+  return ["workflow", s.workflowName ?? s.description, counts, STATUS_LABEL[s.status]].filter((p) => p).join(" · ");
+}
+
 /** Libellé court d'un sous-agent pour le panneau Sessions. */
 export function subagentLine(s: Subagent): string {
+  if (s.workflow || s.workflowName) return workflowLine(s);
   // Le dernier outil n'a de sens que pendant le run (en fin, c'est le SubagentHandback).
   const tool = s.status === "running" ? s.lastToolName : undefined;
   return [s.subagentType ?? "agent", s.description, STATUS_LABEL[s.status], tool]
