@@ -107,3 +107,21 @@
 .den-agents-step--error > .den-agents-step__name { color: var(--den-status-error, #ff6b8a); }
 .den-agents-step__truncated { flex: none; color: var(--den-fg-muted); font-style: italic; font-weight: 400; }
 .den-agents-report { padding-top: 8px; border-top: 1px solid var(--den-edge, var(--den-border)); }
+
+.den-agents-phases { display: flex; flex-direction: column; gap: 10px; margin: 0 0 12px; }
+.den-agents-phases[hidden], .den-agents-steps[hidden], .den-agents-section[hidden] { display: none; }
+.den-agents-phase__title { margin: 0 0 4px; font: 600 11px var(--den-font-sans, inherit); color: var(--den-fg-secondary); }
+.den-agents-phase__agents { display: flex; flex-direction: column; gap: 2px; }
+.den-agents-wf-agent { border-radius: 6px; background: var(--den-glass-1); min-width: 0; }
+.den-agents-wf-agent__head { display: flex; align-items: center; gap: 8px; padding: 3px 8px; cursor: pointer; min-width: 0; }
+.den-agents-wf-agent__body { padding: 4px 8px 8px 23px; }
+.den-agents-wf-agent__caption { display: block; font: 600 10px var(--den-font-sans, inherit); letter-spacing: 0.08em; text-transform: uppercase; color: var(--den-fg-muted); }
+.den-agents-wf-agent__task { margin: 2px 0 6px; max-height: 160px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font: 11px var(--den-font-mono, monospace); color: var(--den-fg-secondary); }
+.den-agents-wf-agent__meta { margin: 0 0 6px; color: var(--den-fg-muted); }
+.den-agents-wf-agent__result[hidden] { display: none; }
+.den-agents-wf-agent__dot { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--den-fg-muted); opacity: 0.5; }
+.den-agents-wf-agent[data-state="running"] .den-agents-wf-agent__dot { background: var(--den-status-running, #35d0ff); opacity: 1; }
+.den-agents-wf-agent[data-state="done"] .den-agents-wf-agent__dot { background: var(--den-status-done, #5ee6a8); opacity: 1; }
+.den-agents-wf-agent[data-state="failed"] .den-agents-wf-agent__dot { background: var(--den-status-error-state, #ff6b8a); opacity: 1; }
+.den-agents-wf-agent__label { flex: none; font-weight: 600; color: var(--den-fg); }
+.den-agents-wf-agent__prompt { flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 400 11px var(--den-font-mono, monospace); color: var(--den-fg-muted); }

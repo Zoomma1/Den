@@ -219,3 +219,69 @@ describe("subagentLine", () => {
     expect(subagentLine(s[0])).toBe("agent · Failed");
   });
 });
+
+describe("workflow", () => {
+  const wf = (states: string[]) => ({
+    phases: [{ index: 1, title: "Alpha" }],
+    agents: states.map((state, i) => ({ index: i + 1, label: `A${i + 1}`, phaseIndex: 1, state })),
+  });
+  const upd = (extra: object) => msg({ type: "subagent_update", taskId: "w", ...extra });
+
+  it("merge conserve workflow quand un update ne le porte pas, et le remplace sinon", () => {
+    let s = nextSubagents(EMPTY_SUBAGENTS, upd({ workflowName: "spike", workflow: wf(["running"]) }));
+    s = nextSubagents(s, upd({ lastToolName: "x" }));
+    expect(s[0].workflow).toEqual(wf(["running"]));
+    expect(s[0].workflowName).toBe("spike");
+    s = nextSubagents(s, upd({ workflow: wf(["done"]) }));
+    expect(s[0].workflow).toEqual(wf(["done"]));
+  });
+
+  it("same détecte un changement de workflow, ignore un snapshot identique", () => {
+    const s1 = nextSubagents(EMPTY_SUBAGENTS, upd({ workflow: wf(["running", "queued"]) }));
+    const s2 = nextSubagents(s1, upd({ workflow: wf(["running", "queued"]) }));
+    expect(s2).toBe(s1);
+    const s3 = nextSubagents(s1, upd({ workflow: wf(["done", "queued"]) }));
+    expect(s3).not.toBe(s1);
+    expect(s3[0].workflow?.agents[0].state).toBe("done");
+  });
+
+  it("subagentLine : n/m agents, sans dernier outil", () => {
+    const s = nextSubagents(
+      EMPTY_SUBAGENTS,
+      upd({ description: "desc", workflowName: "spike", lastToolName: "A1", workflow: wf(["done", "running", "queued"]) }),
+    );
+    expect(subagentLine(s[0])).toBe("workflow · spike · 1/3 agents · Running");
+    const f = nextSubagents(s, upd({ status: "failed" }));
+    expect(subagentLine(f[0])).toBe("workflow · spike · 1/3 agents · Failed");
+  });
+
+  it("fin de tâche : les agents queued/running sont rabattus (failed/stopped -> failed, completed -> done)", () => {
+    const live = wf(["done", "running", "queued"]);
+    for (const [status, end] of [["failed", "failed"], ["stopped", "failed"], ["completed", "done"]] as const) {
+      let s = nextSubagents(EMPTY_SUBAGENTS, upd({ workflow: live }));
+      s = nextSubagents(s, upd({ status }));
+      expect(s[0].workflow?.agents.map((a) => a.state)).toEqual(["done", end, end]);
+    }
+  });
+
+  it("progress tardif après fin : ni le statut ni les agents ne ressuscitent", () => {
+    let s = nextSubagents(EMPTY_SUBAGENTS, upd({ workflow: wf(["running"]) }));
+    s = nextSubagents(s, upd({ status: "failed" }));
+    s = nextSubagents(s, upd({ status: "running", workflow: wf(["running", "queued"]) }));
+    expect(s[0].status).toBe("failed");
+    expect(s[0].workflow?.agents.map((a) => a.state)).toEqual(["failed", "failed"]);
+  });
+
+  it("subagentLine : avant le premier snapshot, pas de n/m", () => {
+    const s = nextSubagents(EMPTY_SUBAGENTS, upd({ workflowName: "spike" }));
+    expect(subagentLine(s[0])).toBe("workflow · spike · Running");
+  });
+
+  it("same prend en compte les nouveaux champs d'agent, et le rabattement les garde", () => {
+    const agentWith = (extra: object) => ({ phases: [], agents: [{ index: 1, label: "A", phaseIndex: 1, state: "running", ...extra }] });
+    const s1 = nextSubagents(EMPTY_SUBAGENTS, upd({ workflow: agentWith({ tokens: 1 }) }));
+    expect(nextSubagents(s1, upd({ workflow: agentWith({ tokens: 2 }) }))).not.toBe(s1);
+    const s2 = nextSubagents(s1, upd({ status: "failed" }));
+    expect(s2[0].workflow?.agents[0]).toMatchObject({ state: "failed", tokens: 1 });
+  });
+});
