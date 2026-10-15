@@ -1,6 +1,6 @@
 // Fonctions pures extraites de main.ts : lecture des messages du SDK.
 
-import type { SubagentReport, SubagentStep, SubagentUpdate } from "../../src/types/protocol";
+import type { SubagentReport, SubagentStep, SubagentUpdate, WorkflowAgentState } from "../../src/types/protocol";
 
 export interface ToolResultOf {
   toolUseId: string;
@@ -80,6 +80,47 @@ const usageOf = (u: any): SubagentUpdate["usage"] | undefined =>
     ? { totalTokens: u.total_tokens, toolUses: u.tool_uses, durationMs: u.duration_ms }
     : undefined;
 
+const WORKFLOW_STATE: Record<string, WorkflowAgentState> = { done: "done", progress: "running" };
+const FAILED_STATE = /error|fail|killed|stopped/i;
+
+// `start` sans startedAt = en file ; état inconnu -> running (le statut terminal de la tâche le rabat côté store).
+function agentStateOf(state: unknown, startedAt: unknown): WorkflowAgentState {
+  if (typeof state !== "string") return "running";
+  if (FAILED_STATE.test(state)) return "failed";
+  if (state === "start") return startedAt == null ? "queued" : "running";
+  return Object.hasOwn(WORKFLOW_STATE, state) ? WORKFLOW_STATE[state] : "running";
+}
+
+const isIndex = (n: unknown): n is number => typeof n === "number" && Number.isFinite(n);
+// Mesures du harness : -5 ou 1e21 sont des valeurs absurdes à afficher.
+const isMeasure = (n: unknown): n is number => isIndex(n) && n >= 0 && n <= Number.MAX_SAFE_INTEGER;
+
+/** Snapshot workflow_progress ; défensif : entrées malformées ignorées, jamais d'exception. */
+function workflowOf(raw: unknown): SubagentUpdate["workflow"] | undefined {
+  if (!Array.isArray(raw)) return undefined;
+  const phases: NonNullable<SubagentUpdate["workflow"]>["phases"] = [];
+  const agents: NonNullable<SubagentUpdate["workflow"]>["agents"] = [];
+  for (const e of raw) {
+    if (e?.type === "workflow_phase" && isIndex(e.index) && typeof e.title === "string") {
+      phases.push({ index: e.index, title: e.title });
+    } else if (e?.type === "workflow_agent" && isIndex(e.index) && isIndex(e.phaseIndex) && typeof e.label === "string") {
+      agents.push({
+        index: e.index,
+        label: e.label,
+        phaseIndex: e.phaseIndex,
+        state: agentStateOf(e.state, e.startedAt),
+        ...(typeof e.promptPreview === "string" ? { promptPreview: e.promptPreview } : {}),
+        ...(typeof e.model === "string" ? { model: e.model } : {}),
+        ...(isMeasure(e.durationMs) ? { durationMs: e.durationMs } : {}),
+        ...(isMeasure(e.tokens) ? { tokens: e.tokens } : {}),
+        ...(isMeasure(e.toolCalls) && Number.isInteger(e.toolCalls) ? { toolCalls: e.toolCalls } : {}),
+        ...(typeof e.resultPreview === "string" ? { resultPreview: e.resultPreview } : {}),
+      });
+    }
+  }
+  return phases.length === 0 && agents.length === 0 ? undefined : { phases, agents };
+}
+
 const opt = (k: string, v: unknown) => (v !== undefined ? { [k]: v } : {});
 
 /** Mise à jour de card sous-agent depuis un message system task_*; `known` mémorise les task_started retenus (les autres tâches sont ignorées). */
@@ -101,6 +142,7 @@ export function subagentUpdateOf(msg: any, known: Set<string>): SubagentUpdate |
         ...opt("isBackgrounded", msg.is_backgrounded),
         ...opt("prompt", msg.prompt),
         ...opt("spawnDepth", msg.spawn_depth),
+        ...opt("workflowName", typeof msg.workflow_name === "string" ? msg.workflow_name : undefined),
       };
     case "task_progress":
       if (!known.has(taskId)) return null;
@@ -112,6 +154,7 @@ export function subagentUpdateOf(msg: any, known: Set<string>): SubagentUpdate |
         // Pas de description : un progress porte parfois « Running <cmd> » qui écraserait le libellé du started.
         ...opt("lastToolName", msg.last_tool_name),
         ...opt("usage", usageOf(msg.usage)),
+        ...opt("workflow", workflowOf(msg.workflow_progress)),
       };
     case "task_updated": {
       if (!known.has(taskId)) return null;

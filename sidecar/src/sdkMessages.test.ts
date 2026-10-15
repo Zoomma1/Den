@@ -155,6 +155,127 @@ describe("subagentUpdateOf", () => {
   });
 });
 
+describe("subagentUpdateOf : workflow (fixtures réelles trimées)", () => {
+  const wfStarted = {
+    type: "system",
+    subtype: "task_started",
+    task_id: "wgp3239m1",
+    tool_use_id: "toolu_01T2",
+    description: "Spike: deux phases",
+    task_type: "local_workflow",
+    workflow_name: "spike",
+  };
+  const phases = [
+    { type: "workflow_phase", index: 1, title: "Alpha" },
+    { type: "workflow_phase", index: 2, title: "Beta" },
+  ];
+  const agent = (over: object) => ({
+    type: "workflow_agent",
+    index: 1,
+    label: "A1",
+    phaseIndex: 1,
+    phaseTitle: "Alpha",
+    agentId: "ad09251e87010ae33",
+    model: "claude-sonnet-5-5",
+    state: "progress",
+    startedAt: 1792052634047,
+    queuedAt: 1792052634045,
+    attempt: 1,
+    promptPreview: 'Reply with the single word "ok-A1". Use no tools.',
+    tokens: 30191,
+    toolCalls: 0,
+    ...over,
+  });
+  const progress = (workflow_progress: unknown) => ({
+    type: "system",
+    subtype: "task_progress",
+    task_id: "wgp3239m1",
+    description: "Alpha: A1",
+    usage: { total_tokens: 30191, tool_uses: 0, duration_ms: 2619 },
+    last_tool_name: "A1",
+    workflow_progress,
+  });
+  const known = () => new Set(["wgp3239m1"]);
+
+  it("task_started : workflowName relayé", () => {
+    expect(subagentUpdateOf(wfStarted, new Set())).toMatchObject({ status: "running", workflowName: "spike" });
+  });
+  it("task_progress nominal (fixture réelle) : A1 démarré, A2 en file, B pas encore lancé", () => {
+    const wip = progress([
+      ...phases,
+      agent({}),
+      agent({ index: 2, label: "A2", agentId: "a604", state: "start", startedAt: undefined, toolCalls: undefined, model: "sonnet", promptPreview: 'Reply with the single word "ok-A2". Use no tools.', tokens: undefined }),
+      agent({ index: 3, label: "B", phaseIndex: 2, phaseTitle: "Beta", state: "start", promptPreview: "ok-B" }),
+    ]);
+    expect(subagentUpdateOf(wip, known())?.workflow).toEqual({
+      phases: [
+        { index: 1, title: "Alpha" },
+        { index: 2, title: "Beta" },
+      ],
+      agents: [
+        { index: 1, label: "A1", phaseIndex: 1, state: "running", model: "claude-sonnet-5-5", promptPreview: 'Reply with the single word "ok-A1". Use no tools.', tokens: 30191, toolCalls: 0 },
+        { index: 2, label: "A2", phaseIndex: 1, state: "queued", model: "sonnet", promptPreview: 'Reply with the single word "ok-A2". Use no tools.' },
+        { index: 3, label: "B", phaseIndex: 2, state: "running", model: "claude-sonnet-5-5", promptPreview: "ok-B", tokens: 30191, toolCalls: 0 },
+      ],
+    });
+  });
+  it("task_progress final : tous done", () => {
+    const u = subagentUpdateOf(progress([...phases, agent({ state: "done", durationMs: 2630, resultPreview: "ok-A1" })]), known());
+    expect(u?.workflow?.agents.map((a) => a.state)).toEqual(["done"]);
+    expect(u?.workflow?.agents[0]).toMatchObject({ durationMs: 2630, tokens: 30191, toolCalls: 0, resultPreview: "ok-A1" });
+  });
+  it("durée, tokens, appels d'outils et résultat invalides : omis", () => {
+    const u = subagentUpdateOf(
+      progress([...phases, agent({ durationMs: "12", tokens: NaN, toolCalls: Infinity, resultPreview: 5 })]),
+      known(),
+    );
+    const a = u?.workflow?.agents[0] as object;
+    for (const k of ["durationMs", "tokens", "toolCalls", "resultPreview"]) expect(a).not.toHaveProperty(k);
+  });
+  it("valeurs absurdes (négatives, 1e21, toolCalls non entier) : omises", () => {
+    const u = subagentUpdateOf(progress([...phases, agent({ durationMs: -90000, tokens: 1e21, toolCalls: 2.5 })]), known());
+    const a = u?.workflow?.agents[0] as object;
+    for (const k of ["durationMs", "tokens", "toolCalls"]) expect(a).not.toHaveProperty(k);
+    const n = subagentUpdateOf(progress([...phases, agent({ durationMs: 0, tokens: 5, toolCalls: -5 })]), known());
+    expect(n?.workflow?.agents[0]).toMatchObject({ durationMs: 0, tokens: 5 });
+    expect(n?.workflow?.agents[0]).not.toHaveProperty("toolCalls");
+  });
+  it("échec de script : task_updated failed relayé, derniers agents restent done", () => {
+    const u = subagentUpdateOf(
+      { type: "system", subtype: "task_updated", task_id: "wgp3239m1", patch: { status: "failed", error: "Error: boom" } },
+      known(),
+    );
+    expect(u).toEqual({ type: "subagent_update", taskId: "wgp3239m1", status: "failed" });
+    const n = subagentUpdateOf({ type: "system", subtype: "task_notification", task_id: "wgp3239m1", status: "failed" }, known());
+    expect(n?.status).toBe("failed");
+  });
+  it("états d'erreur ou inconnus : failed / running", () => {
+    const states = ["error", "failed", "killed", "stopped", "weird", "toString"];
+    const u = subagentUpdateOf(progress(states.map((state, i) => agent({ index: i + 1, state }))), known());
+    expect(u?.workflow?.agents.map((a) => a.state)).toEqual(["failed", "failed", "failed", "failed", "running", "running"]);
+  });
+  it("progress sans workflow_progress : pas de champ workflow", () => {
+    expect(subagentUpdateOf(progress(undefined), known())).not.toHaveProperty("workflow");
+  });
+  it("entrées malformées : ignorées, pas de crash", () => {
+    expect(subagentUpdateOf(progress("nope"), known())).not.toHaveProperty("workflow");
+    expect(subagentUpdateOf(progress({}), known())).not.toHaveProperty("workflow");
+    expect(subagentUpdateOf(progress([]), known())).not.toHaveProperty("workflow");
+    expect(subagentUpdateOf(progress([null, 3, {}, { type: "workflow_agent", index: 1 }]), known())).not.toHaveProperty("workflow");
+    const u = subagentUpdateOf(
+      progress([null, 3, "x", {}, { type: "workflow_phase", index: "1", title: "x" }, { type: "workflow_phase", index: 1 }, { type: "workflow_agent", index: 1 }, { type: "other" }, ...phases, agent({ state: 42, promptPreview: 7, model: null })]),
+      known(),
+    );
+    expect(u?.workflow).toEqual({
+      phases: [
+        { index: 1, title: "Alpha" },
+        { index: 2, title: "Beta" },
+      ],
+      agents: [{ index: 1, label: "A1", phaseIndex: 1, state: "running", tokens: 30191, toolCalls: 0 }],
+    });
+  });
+});
+
 describe("subagentReportOf", () => {
   const handback = (extra: any = {}) => ({
     type: "assistant",
