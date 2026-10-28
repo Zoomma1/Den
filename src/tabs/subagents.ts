@@ -36,6 +36,10 @@ export type Subagents = readonly Subagent[];
 
 export const EMPTY_SUBAGENTS: Subagents = [];
 
+export function hasRunningAgents(list: Subagents): boolean {
+  return list.some((s) => s.status === "running");
+}
+
 /** Fusionne seulement les champs définis : task_updated peut n'apporter que le statut. */
 function merge(prev: Subagent | undefined, u: SubagentUpdate): Subagent {
   const next: Subagent = {

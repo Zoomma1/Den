@@ -141,7 +141,7 @@ import {
 } from "./owner";
 import type { TabLifecycleState } from "./lifecycle";
 import { EMPTY_ACTIVITY, displayActivity, nextActivity, type Activity } from "./activity";
-import { EMPTY_SUBAGENTS, nextSubagents, subagentLine, type Subagents } from "./subagents";
+import { EMPTY_SUBAGENTS, hasRunningAgents, nextSubagents, subagentLine, type Subagents } from "./subagents";
 import { notificationFor, sendSystemNotification } from "./notify";
 import { TabRouter } from "./router";
 import {
@@ -155,7 +155,7 @@ import { createSessionsPanel, type SessionsPanel } from "./sessionsPanel";
 import { createSidebar, type Sidebar } from "./sidebar";
 import { promptKeyAction } from "./promptKeys";
 import { resolveJump } from "./jump";
-import { rollupStatus, sessionStatus } from "./status";
+import { rollupStatus, sessionStatus, type SessionStatus } from "./status";
 
 interface Tab {
   id: string;
@@ -376,10 +376,17 @@ export async function init(ctx: DenContext): Promise<void> {
     if (tab) onLifecycleTransition(tab, previousState, state);
   }
 
+  function statusOf(tab: Tab): SessionStatus | null {
+    return sessionStatus(router.getState(tab.id) ?? "idle", {
+      unseenDone: tab.unseenDone,
+      failed: tab.failed,
+      hasRunningAgents: hasRunningAgents(tab.subagents),
+    });
+  }
+
   /** Statut de l'onglet -> `data-status`, puis roll-up du projet vers la sidebar. */
   function refreshStatus(tab: Tab): void {
-    const state = router.getState(tab.id) ?? "idle";
-    setSessionTabStatus(tab.buttonEl, sessionStatus(state, tab));
+    setSessionTabStatus(tab.buttonEl, statusOf(tab));
     refreshProjectStatus(tab.owner.id);
     renderPanel();
   }
@@ -388,7 +395,7 @@ export async function init(ctx: DenContext): Promise<void> {
   function renderPanel(): void {
     panel.setCards(
       [...tabs.values()].map((t) => {
-        const status = sessionStatus(router.getState(t.id) ?? "idle", t);
+        const status = statusOf(t);
         return {
           tabId: t.id,
           projectName: projectNameOf(t),
@@ -411,7 +418,7 @@ export async function init(ctx: DenContext): Promise<void> {
   function refreshProjectStatus(projectId: string): void {
     const statuses = [...tabs.values()]
       .filter((t) => t.owner.id === projectId)
-      .map((t) => sessionStatus(router.getState(t.id) ?? "idle", t));
+      .map(statusOf);
     sidebar.setProjectStatus(projectId, rollupStatus(statuses));
   }
 
@@ -649,9 +656,13 @@ export async function init(ctx: DenContext): Promise<void> {
         }
         const subagents = nextSubagents(tab.subagents, message);
         if (subagents !== tab.subagents) {
+          // Le tour déclenché par le rapport de l'agent ne fait pas running -> idle : sans ça, l'onglet inactif ne passe jamais « done ».
+          if (hasRunningAgents(tab.subagents) && !hasRunningAgents(subagents) && activeTabId !== tab.id) {
+            tab.unseenDone = true;
+          }
           tab.subagents = subagents;
           if (isSubagentStep(message)) syncAgentsOverlay();
-          else renderPanel();
+          else refreshStatus(tab);
         }
         if (isSessionInfo(message)) {
           tab.sessionId = message.sessionId;
@@ -747,7 +758,7 @@ export async function init(ctx: DenContext): Promise<void> {
     // L'écho ne passe pas par channel.onmessage : le tri des sous-agents terminés se fait ici.
     if (tab) {
       tab.subagents = nextSubagents(tab.subagents, echo);
-      renderPanel();
+      refreshStatus(tab);
     }
     dispatchSessionMessage(tabId, echo);
     return true;
