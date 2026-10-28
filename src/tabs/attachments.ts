@@ -170,6 +170,10 @@ export function createAttachmentState() {
       images = [];
       epoch += 1;
     },
+    /** Invalide les collages async en cours sans toucher à l'état (changement d'onglet avec brouillon). */
+    bumpEpoch(): void {
+      epoch += 1;
+    },
     /** Retire les images seules, sans bumper l'époque : ✎ n'est pas un changement d'onglet, un envoi en cours doit rester valide. */
     clearImages(): void {
       for (const image of images) URL.revokeObjectURL(image.previewUrl);

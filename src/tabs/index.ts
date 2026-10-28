@@ -99,6 +99,7 @@ import {
   type AttachmentSnapshot,
   type AttachmentsUi,
 } from "./attachments";
+import { createDrafts } from "./drafts";
 import type { DenContext } from "../core/registry";
 import { attachSlashAutocomplete } from "../autocomplete/controller";
 import {
@@ -275,6 +276,7 @@ export async function init(ctx: DenContext): Promise<void> {
   // active (cf. updateEmptyState).
   let promptInputEl: HTMLTextAreaElement | null = null;
   let attachmentsUi: AttachmentsUi | null = null;
+  const drafts = createDrafts();
   let promptSubmitEl: HTMLButtonElement | null = null;
   let slashAutocomplete: ReturnType<typeof attachSlashAutocomplete> | null = null;
 
@@ -512,10 +514,21 @@ export async function init(ctx: DenContext): Promise<void> {
   }
 
   function setActiveTab(tabId: string | null): void {
-    // Pas de brouillon par tab : le texte tapé ne suit pas le changement de tab.
-    if (tabId !== activeTabId && promptInputEl) promptInputEl.value = "";
-    if (tabId !== activeTabId && attachmentsUi) {
-      attachmentsUi.state.clear();
+    // Brouillon par tab (DEN-53) : on range celui du tab sortant, on remet celui de l'entrant.
+    if (tabId !== activeTabId && promptInputEl && attachmentsUi) {
+      const { state } = attachmentsUi;
+      // Le tab sortant peut être déjà fermé (closeTab a retiré son brouillon) : rien à ranger.
+      if (activeTabId && tabs.has(activeTabId)) {
+        drafts.save(activeTabId, { text: promptInputEl.value, ...state.take() });
+      } else {
+        state.clear();
+      }
+      // Epoch bumpé sans clear() : les images en brouillon gardent leurs previewUrl.
+      state.bumpEpoch();
+      // discard : l'état vivant détient désormais ces images, le brouillon ne doit plus les référencer.
+      const incoming = (tabId ? drafts.discard(tabId) : undefined) ?? drafts.restore("");
+      promptInputEl.value = incoming.text;
+      state.restore(incoming);
       attachmentsUi.render();
     }
     activeTabId = tabId;
@@ -575,6 +588,7 @@ export async function init(ctx: DenContext): Promise<void> {
     sessionTabs.removeTab(tab.buttonEl);
     const { owner, cwd } = tab;
     tabs.delete(tabId);
+    for (const image of drafts.discard(tabId)?.images ?? []) URL.revokeObjectURL(image.previewUrl);
     const recent = recentTabIds.indexOf(tabId);
     if (recent !== -1) recentTabIds.splice(recent, 1);
     window.dispatchEvent(
@@ -780,13 +794,34 @@ export async function init(ctx: DenContext): Promise<void> {
     side.prepend(attachments.buttonEl);
     const main = document.createElement("div");
     main.className = "den-prompt-bar__main";
-    main.append(attachments.barEl, slash.rootEl);
+    // Le form est collé en bas : la poignée native (coin bas-droit) ne peut qu'être tirée vers le bas, donc poignée en haut.
+    const grip = document.createElement("div");
+    grip.className = "den-prompt-bar__grip";
+    grip.title = "Drag to resize";
+    grip.addEventListener("pointerdown", (event) => {
+      event.preventDefault();
+      grip.setPointerCapture(event.pointerId);
+      const startY = event.clientY;
+      const startHeight = textarea.offsetHeight;
+      const onMove = (e: PointerEvent): void => {
+        textarea.style.height = `${Math.max(0, startHeight + startY - e.clientY)}px`;
+      };
+      const onUp = (): void => {
+        grip.removeEventListener("pointermove", onMove);
+        grip.removeEventListener("pointerup", onUp);
+        grip.removeEventListener("pointercancel", onUp);
+      };
+      grip.addEventListener("pointermove", onMove);
+      grip.addEventListener("pointerup", onUp);
+      grip.addEventListener("pointercancel", onUp);
+    });
+    main.append(grip, attachments.barEl, slash.rootEl);
     form.append(main, side);
     form.addEventListener("submit", (event) => {
       event.preventDefault();
       const tabId = activeTabId;
       if (!tabId) return;
-      // Capturé avant l'await : un changement d'onglet vide le textarea, le message partirait sinon à vide.
+      // Capturé avant l'await : un changement d'onglet remplace le textarea par le brouillon de l'autre, le message partirait sinon avec le mauvais texte.
       const typed = textarea.value;
       const epoch = attachments.state.epoch();
       void (async () => {
@@ -799,7 +834,7 @@ export async function init(ctx: DenContext): Promise<void> {
           attachments.notify(SLASH_BLOCKED_MESSAGE);
           return;
         }
-        // Onglet changé : les pièces jointes ont été vidées avec lui, le texte part quand même vers son onglet d'origine.
+        // Onglet changé : les pièces jointes sont au brouillon de l'origine (non envoyées), seul le texte part.
         const snapshot = sameTab ? attachments.state.take() : { files: [], images: [] };
         if (sameTab) {
           textarea.value = "";
@@ -809,11 +844,38 @@ export async function init(ctx: DenContext): Promise<void> {
         const sent = await sendPrompt(tabId, text, snapshot);
         if (sent) {
           attachments.state.release(snapshot);
+          if (!sameTab) {
+            // Le texte envoyé ne doit pas rester en brouillon (onglet d'origine actif à nouveau, ou en arrière-plan).
+            if (activeTabId === tabId) {
+              if (textarea.value === text) {
+                textarea.value = "";
+                slash.refresh();
+              }
+            } else if (tabs.has(tabId)) {
+              drafts.clearTextIf(tabId, text);
+            }
+          }
           return;
         }
-        // Onglet changé pendant l'envoi : restaurer dans l'onglet courant polluerait une autre session.
+        // Onglet changé pendant l'envoi : le texte retourne au brouillon de l'origine, jamais dans l'onglet courant.
         if (attachments.state.epoch() !== epoch) {
-          attachments.state.release(snapshot);
+          if (activeTabId === tabId) {
+            attachments.state.restore(snapshot);
+            attachments.render();
+            if (textarea.value.length === 0) {
+              textarea.value = text;
+              slash.refresh();
+            }
+          } else if (tabs.has(tabId)) {
+            const draft = drafts.restore(tabId);
+            drafts.save(tabId, {
+              text: draft.text === "" ? text : draft.text,
+              files: [...snapshot.files, ...draft.files.filter((f) => !snapshot.files.some((s) => s.path === f.path))],
+              images: [...snapshot.images, ...draft.images],
+            });
+          } else {
+            attachments.state.release(snapshot);
+          }
           return;
         }
         // Envoi en échec : restituer texte et pièces jointes (sauf si
