@@ -394,6 +394,29 @@ describe("renderTree : props de mise en page prismantis", () => {
     expect(box({ width: 100000 }).style.width).toBe("400ch");
   });
 
+  it("Box height (en lignes), overflow hidden et minWidth : le clip de prismantis", () => {
+    const b = box({ height: 0, overflow: "hidden", minWidth: 2 });
+    expect(b.style.height).toBe("0px");
+    expect(b.style.overflow).toBe("hidden");
+    expect(b.style.minWidth).toBe("2ch");
+  });
+
+  it("Box display none (les touches cachées du modmgr)", () => {
+    expect(box({ display: "none" }).style.display).toBe("none");
+    expect(box({ display: "grid" }).style.display).toBe("");
+  });
+
+  it("Button plain : posé en attribut pour un rendu à plat", () => {
+    const btn = (props: Record<string, unknown>) =>
+      renderTree({ type: "Button", props, children: ["x"] }).querySelector<HTMLElement>("button")!;
+    expect(btn({ plain: true }).hasAttribute("data-plain")).toBe(true);
+    expect(btn({}).hasAttribute("data-plain")).toBe(false);
+  });
+
+  it("Box ignore un overflow inconnu", () => {
+    expect(box({ overflow: "scroll" }).style.overflow).toBe("");
+  });
+
   it("Box alignSelf", () => {
     expect(box({ alignSelf: "flex-end" }).style.alignSelf).toBe("flex-end");
   });
