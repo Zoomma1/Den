@@ -122,7 +122,7 @@
 
 .den-btn--allow,
 .den-btn--submit {
-  background: var(--den-accent-gradient, var(--den-accent));
+  background: var(--den-accent);
   border-color: var(--den-accent);
   color: var(--den-accent-fg);
 }
