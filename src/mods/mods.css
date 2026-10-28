@@ -92,7 +92,7 @@
 
 .den-mod-btn[data-variant="primary"] {
   color: var(--den-accent-fg);
-  background: var(--den-accent-gradient);
+  background: var(--den-accent);
   border-color: transparent;
 }
 
