@@ -37,7 +37,20 @@ describe("createPaneHost", () => {
     return el;
   });
 
+  let observers: { cb: () => void; observe: ReturnType<typeof vi.fn>; disconnect: ReturnType<typeof vi.fn> }[];
+
   beforeEach(() => {
+    observers = [];
+    vi.stubGlobal(
+      "ResizeObserver",
+      class {
+        observe = vi.fn();
+        disconnect = vi.fn();
+        constructor(public cb: () => void) {
+          observers.push(this);
+        }
+      },
+    );
     mount = document.createElement("aside");
     document.body.append(mount);
     visibility = [];
@@ -55,6 +68,7 @@ describe("createPaneHost", () => {
     window.removeEventListener("den:pane-visibility-request", onVisibility);
     mount.remove();
     vi.useRealTimers();
+    vi.unstubAllGlobals();
   });
 
   const tabs = () => [...mount.querySelectorAll<HTMLElement>('[role="tab"]')];
@@ -278,6 +292,107 @@ describe("createPaneHost", () => {
   it("au démarrage sans aucun pane, demande de masquer la colonne", () => {
     activate("t1");
     expect(visibility).toEqual([false]);
+  });
+
+  describe("taille annoncée au mod", () => {
+    const bodyEl = () => mount.querySelector<HTMLElement>(".den-pane__body")!;
+    const define = (el: HTMLElement, prop: string, value: number) =>
+      Object.defineProperty(el, prop, { configurable: true, value });
+    const size = (width: number, height: number) => {
+      define(bodyEl(), "clientWidth", width);
+      define(bodyEl(), "clientHeight", height);
+    };
+    const cell = (width: number, height: number) => {
+      const probe = mount.querySelector<HTMLElement>(".den-pane__probe")!;
+      probe.getBoundingClientRect = () => ({ width, height }) as DOMRect;
+    };
+    const lastProps = () => client.requestRender.mock.calls.at(-1)![1].props;
+
+    it("la hauteur du DOM prime sur pane.rows, avec la cellule mesurée", async () => {
+      size(400, 600);
+      cell(10, 20);
+      activate("t1");
+      pushPanes({ tabId: "t1", panes: [{ ...A, rows: 21, columns: 36 }], shownId: "a" });
+      await flush();
+      expect(lastProps().bodyColumns).toBe(40);
+      expect(lastProps().scroll.bodyRows).toBe(30);
+    });
+
+    it("retire le padding du corps de la zone utile", async () => {
+      size(420, 620);
+      cell(10, 20);
+      bodyEl().style.padding = "10px 10px";
+      vi.spyOn(window, "getComputedStyle").mockReturnValue({
+        paddingLeft: "10px",
+        paddingRight: "10px",
+        paddingTop: "10px",
+        paddingBottom: "10px",
+      } as CSSStyleDeclaration);
+      activate("t1");
+      pushPanes({ tabId: "t1", panes: [A], shownId: "a" });
+      await flush();
+      expect(lastProps().bodyColumns).toBe(40);
+      expect(lastProps().scroll.bodyRows).toBe(30);
+      vi.restoreAllMocks();
+    });
+
+    it("cellule non mesurée -> repli 8x18", async () => {
+      size(80, 180);
+      cell(0, 0);
+      activate("t1");
+      pushPanes({ tabId: "t1", panes: [A], shownId: "a" });
+      await flush();
+      expect(lastProps().bodyColumns).toBe(10);
+      expect(lastProps().scroll.bodyRows).toBe(10);
+    });
+
+    it("zone à 0 -> repli sur pane.columns / pane.rows puis sur les défauts", async () => {
+      activate("t1");
+      pushPanes({ tabId: "t1", panes: [{ ...A, rows: 21, columns: 36 }], shownId: "a" });
+      await flush();
+      expect(lastProps().bodyColumns).toBe(36);
+      expect(lastProps().scroll.bodyRows).toBe(21);
+      pushPanes({ tabId: "t1", panes: [B], shownId: "b" });
+      await flush();
+      expect(lastProps().bodyColumns).toBe(40);
+      expect(lastProps().scroll.bodyRows).toBe(24);
+    });
+
+    it("un redimensionnement re-rend une fois ; aucun rendu si la taille est inchangée", async () => {
+      size(400, 600);
+      cell(10, 20);
+      activate("t1");
+      pushPanes({ tabId: "t1", panes: [A], shownId: "a" });
+      await flush();
+      client.requestRender.mockClear();
+      expect(observers).toHaveLength(1);
+      expect(observers[0].observe).toHaveBeenCalledWith(bodyEl());
+      vi.useFakeTimers();
+      observers[0].cb();
+      vi.advanceTimersByTime(500);
+      expect(client.requestRender).not.toHaveBeenCalled();
+      size(400, 800);
+      observers[0].cb();
+      observers[0].cb();
+      vi.advanceTimersByTime(500);
+      expect(client.requestRender).toHaveBeenCalledTimes(1);
+      expect(lastProps().scroll.bodyRows).toBe(40);
+    });
+
+    it("dispose déconnecte l'observer et annule le rendu en attente", () => {
+      size(400, 600);
+      cell(10, 20);
+      activate("t1");
+      pushPanes({ tabId: "t1", panes: [A], shownId: "a" });
+      vi.useFakeTimers();
+      client.requestRender.mockClear();
+      size(400, 800);
+      observers[0].cb();
+      host.dispose();
+      vi.advanceTimersByTime(500);
+      expect(observers[0].disconnect).toHaveBeenCalled();
+      expect(client.requestRender).not.toHaveBeenCalled();
+    });
   });
 
   it("dispose retire les listeners", async () => {

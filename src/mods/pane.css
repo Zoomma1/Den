@@ -85,3 +85,12 @@
 .den-pane__empty {
   min-height: 1px;
 }
+
+/* Sonde de cellule : même police et line-height que .den-mod-tree, jamais visible. */
+.den-pane__probe {
+  position: absolute;
+  width: 1ch;
+  height: 1lh;
+  visibility: hidden;
+  pointer-events: none;
+}
