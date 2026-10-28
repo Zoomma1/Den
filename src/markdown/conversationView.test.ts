@@ -907,3 +907,53 @@ describe("ConversationView — surfaces du moteur", () => {
     });
   });
 });
+
+describe("ConversationView — rendu lisible des tool calls (DEN-46)", () => {
+  function use(view: ConversationView, name: string, input: unknown, toolUseId = "t1"): HTMLElement {
+    view.handleMessage({ type: "tool_use", id: "turn", toolUseId, name, input } as ToolUse);
+    return view.el.querySelector(`details[data-tool-use-id="${toolUseId}"]`) as HTMLElement;
+  }
+
+  it("Bash : commande dans le <code>, description en libellé, aperçu dans le résumé", () => {
+    const details = use(new ConversationView("tab-1"), "Bash", { command: "ls -la", description: "Lister" });
+    expect(details.querySelector(".den-tool-input code")?.textContent).toBe("ls -la");
+    expect(details.querySelector(".den-tool-arg")?.textContent).toContain("Lister");
+    expect(details.querySelector("summary > .den-tool-preview")?.textContent).toBe("ls -la");
+    expect(details.textContent).not.toContain('"command"');
+  });
+
+  it("Read / Edit : chemin du fichier", () => {
+    const view = new ConversationView("tab-1");
+    const read = use(view, "Read", { file_path: "/tmp/x.ts" }, "r1");
+    const edit = use(view, "Edit", { file_path: "/tmp/y.ts", old_string: "a", new_string: "b" }, "e1");
+    expect(read.querySelector(".den-tool-input code")?.textContent).toBe("/tmp/x.ts");
+    expect(edit.querySelector(".den-tool-input code")?.textContent).toBe("/tmp/y.ts");
+  });
+
+  it("outil inconnu : repli sur le JSON", () => {
+    const details = use(new ConversationView("tab-1"), "Mystere", { a: 1 });
+    expect(details.querySelector(".den-tool-input code")?.textContent).toBe(JSON.stringify({ a: 1 }, null, 2));
+  });
+
+  it("ExitPlanMode : plan rendu en markdown dans .den-plan-block, ouvert", () => {
+    const details = use(new ConversationView("tab-1"), "ExitPlanMode", { plan: "# Mon plan\n\n- étape un" });
+    const block = details.querySelector(".den-plan-block");
+    expect(block).not.toBeNull();
+    expect(block?.querySelector(".den-plan-block__title")?.textContent).toBe("Plan");
+    expect(block?.querySelector("h1")?.textContent).toBe("Mon plan");
+    expect(block?.querySelector("li")?.textContent).toContain("étape un");
+    expect((details as HTMLDetailsElement).open).toBe(true);
+    expect(details.querySelector(".den-tool-input")).toBeNull();
+  });
+
+  it("data-state : running puis done, ou error", () => {
+    const view = new ConversationView("tab-1");
+    const ok = use(view, "Read", { file_path: "/a" }, "ok");
+    const ko = use(view, "Bash", { command: "false" }, "ko");
+    expect(ok.dataset.state).toBe("running");
+    view.handleMessage({ type: "tool_result", id: "turn", toolUseId: "ok", output: "x" } as ToolResult);
+    view.handleMessage({ type: "tool_result", id: "turn", toolUseId: "ko", output: "x", isError: true } as ToolResult);
+    expect(ok.dataset.state).toBe("done");
+    expect(ko.dataset.state).toBe("error");
+  });
+});

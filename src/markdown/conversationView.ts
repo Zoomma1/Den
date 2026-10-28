@@ -21,6 +21,7 @@ import type {
   ImageAttachment,
 } from "../types/protocol";
 import { IncrementalMarkdownRenderer } from "./renderer";
+import { describeToolInput } from "./toolInput";
 import { MOD_EVENTS } from "../mods/contracts";
 import type {
   ModInvalidateEventDetail,
@@ -677,16 +678,52 @@ export class ConversationView {
     // Cible de la surface ToolUse : le <details> garde son ouverture native.
     const surfaceEl = document.createElement("span");
     surfaceEl.className = "den-tool-use-surface";
-    summary.append(nameEl, surfaceEl);
-    const pre = document.createElement("pre");
-    pre.className = "den-tool-input";
-    const code = document.createElement("code");
-    code.textContent = safeStringify(input);
-    pre.appendChild(createCopyButton());
-    pre.appendChild(code);
-
+    const view = describeToolInput(name, input);
+    // Aperçu frère de .den-tool-name (jamais dans la surface) : masqué par CSS quand un mod la remplit.
+    if (view.summary) {
+      const previewEl = document.createElement("span");
+      previewEl.className = "den-tool-preview";
+      previewEl.textContent = view.summary;
+      summary.append(nameEl, previewEl, surfaceEl);
+    } else {
+      summary.append(nameEl, surfaceEl);
+    }
+    details.dataset.state = "running";
     details.appendChild(summary);
-    details.appendChild(pre);
+
+    if (view.kind === "plan") {
+      const plan = document.createElement("div");
+      plan.className = "den-plan-block";
+      const title = document.createElement("strong");
+      title.className = "den-plan-block__title";
+      title.textContent = "Plan";
+      const body = document.createElement("div");
+      body.className = "den-msg-finalized";
+      const renderer = new IncrementalMarkdownRenderer();
+      for (const html of [...renderer.feed(view.markdown).finalizedHtml, ...renderer.finalize()]) appendHtml(body, html);
+      plan.append(title, body);
+      details.appendChild(plan);
+      details.open = true;
+    } else {
+      const pre = document.createElement("pre");
+      pre.className = "den-tool-input";
+      const code = document.createElement("code");
+      code.textContent = view.kind === "fields" ? view.main : view.json;
+      pre.appendChild(createCopyButton());
+      pre.appendChild(code);
+      if (view.kind === "fields") {
+        for (const { label, value } of view.extras) {
+          const arg = document.createElement("div");
+          arg.className = "den-tool-arg";
+          const labelEl = document.createElement("span");
+          labelEl.className = "den-tool-arg__label";
+          labelEl.textContent = label;
+          arg.append(labelEl, ` ${value}`);
+          details.appendChild(arg);
+        }
+      }
+      details.appendChild(pre);
+    }
     this.toolBlocksByToolUseId.set(toolUseId, details);
     this.toolNamesByToolUseId.set(toolUseId, name);
     this.placeToolBlock(details, toolUseId, name, input);
@@ -828,6 +865,7 @@ export class ConversationView {
       if (isError) {
         details.classList.add("den-tool-block-error");
       }
+      details.dataset.state = isError ? "error" : "done";
     } else if (!hasReport) {
       // tool_result sans tool_use correspondant (ex. reprise de session
       // tronquée) : on l'affiche quand même, isolé, plutôt que de le perdre.

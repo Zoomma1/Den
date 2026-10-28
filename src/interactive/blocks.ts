@@ -14,6 +14,8 @@ import type {
   QuestionRequest,
   QuestionResponse,
 } from "../types/protocol";
+import { IncrementalMarkdownRenderer } from "../markdown/renderer";
+import { describeToolInput } from "../markdown/toolInput";
 
 function safeStringify(value: unknown): string {
   try {
@@ -65,9 +67,21 @@ export function renderPermissionBlock(
     description.textContent = message.description;
   }
 
-  const pre = document.createElement("pre");
+  const inputView = describeToolInput(message.toolName, message.input);
+  // Le plan de ExitPlanMode est du markdown : rendu au lieu du JSON ; les autres outils gardent le JSON.
+  const pre = document.createElement(inputView.kind === "plan" ? "div" : "pre");
   pre.className = "den-decision-block__detail";
-  pre.textContent = safeStringify(message.input);
+  if (inputView.kind === "plan") {
+    pre.classList.add("den-decision-block__plan");
+    const renderer = new IncrementalMarkdownRenderer();
+    for (const html of [...renderer.feed(inputView.markdown).finalizedHtml, ...renderer.finalize()]) {
+      const template = document.createElement("template");
+      template.innerHTML = html;
+      pre.appendChild(template.content);
+    }
+  } else {
+    pre.textContent = safeStringify(message.input);
+  }
 
   const actions = document.createElement("div");
   actions.className = "den-decision-block__actions";
