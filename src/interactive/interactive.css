@@ -52,6 +52,14 @@
   word-break: break-word;
 }
 
+/* Plan de ExitPlanMode : markdown rendu, donc police et retours à la ligne du texte courant. */
+.den-decision-block__plan {
+  font-family: inherit;
+  white-space: normal;
+  max-height: 40vh;
+  overflow-y: auto;
+}
+
 .den-decision-block__actions,
 .den-decision-block__options {
   display: flex;

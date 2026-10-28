@@ -43,8 +43,9 @@ function resolveColor(value: unknown): string | undefined {
 }
 
 // Les props de mise en page sont en cellules de terminal : ch en largeur, em en hauteur.
-function cells(value: unknown, unit: "ch" | "em"): string | undefined {
-  return typeof value === "number" && Number.isFinite(value) ? `${value}${unit}` : undefined;
+function cells(value: unknown, unit: "ch" | "em" | "lh"): string | undefined {
+  if (typeof value !== "number" || !Number.isFinite(value)) return undefined;
+  return value === 0 ? "0" : `${value}${unit}`;
 }
 
 function setStyle(el: HTMLElement, prop: string, value: string | undefined): void {
@@ -80,6 +81,12 @@ function applyBoxStyle(el: HTMLElement, p: Record<string, unknown>): void {
   setStyle(el, "column-gap", cells(p.columnGap, "ch"));
   setStyle(el, "width", p.width === "100%" ? "100%" : cells(boundedWidth(p.width), "ch"));
   if (typeof p.alignSelf === "string") el.style.alignSelf = p.alignSelf;
+  // `height={0} flexGrow={1} overflow="hidden"` (clip de prismantis) : sans ces props, une barre de citation de N lignes impose sa hauteur au bloc.
+  setStyle(el, "height", cells(p.height, "lh"));
+  setStyle(el, "min-width", cells(p.minWidth, "ch"));
+  if (p.overflow === "hidden" || p.overflow === "visible") el.style.overflow = p.overflow;
+  // `display="none"` cache les boutons à raccourci du modmgr (j / k / h / l) : ils restent cliquables par touche.
+  if (p.display === "none") el.style.display = "none";
   applyBorder(el, p);
   for (const kind of ["padding", "margin"] as const) {
     setStyle(el, `${kind}-left`, cells(p[`${kind}Left`] ?? p[`${kind}X`] ?? p[kind], "ch"));
@@ -287,6 +294,7 @@ function build(node: RenderNode, opts: RenderOptions): Node {
       btn.className = "den-mod-btn";
       if (typeof p.variant === "string") btn.dataset.variant = p.variant;
       if (typeof p.role === "string") btn.dataset.role = p.role;
+      if (p.plain === true) btn.dataset.plain = "";
       btn.textContent = str(p.label) || textOf(el.children);
       if (p.dimColor === true) btn.style.opacity = "0.6";
       if (typeof p.hotkey === "string" && p.hotkey) btn.dataset.hotkey = p.hotkey.toLowerCase();

@@ -341,17 +341,49 @@
   filter: brightness(1.08);
 }
 
+/* Grille : les pastilles s'ajoutent au-dessus du champ sans lui prendre sa hauteur (flex: 1 la réduisait à celle de la colonne de droite). */
 .den-prompt-bar {
-  display: flex;
-  gap: var(--den-space-2);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--den-space-1) var(--den-space-2);
   padding: var(--den-space-2);
   background: transparent;
+}
+
+.den-prompt-bar > .den-prompt-bar__main {
+  display: contents;
+}
+
+.den-prompt-bar .den-attachments {
+  grid-column: 1;
+  grid-row: 1;
+}
+
+.den-prompt-bar .den-prompt-bar__field {
+  grid-column: 1;
+  grid-row: 2;
 }
 
 .den-prompt-bar__side {
   display: flex;
   flex-direction: column;
   gap: var(--den-space-1);
+  /* Ancré en bas du formulaire : les pastilles ajoutées au-dessus ne font pas bouger les contrôles. */
+  grid-column: 2;
+  grid-row: 2;
+  align-self: end;
+}
+
+/* Poignée invisible à cheval sur le bord haut du champ (même cellule de grille) ; la native reste en bas à droite. */
+.den-prompt-bar .den-prompt-bar__grip {
+  grid-column: 1;
+  grid-row: 2;
+  align-self: start;
+  height: 8px;
+  margin-top: -4px;
+  z-index: 1;
+  cursor: ns-resize;
+  touch-action: none;
 }
 
 .den-prompt-bar__side .den-prompt-bar__submit {
@@ -361,6 +393,8 @@
 .den-prompt-bar__input {
   flex: 1;
   resize: vertical;
+  min-height: 3.5rem;
+  max-height: 50vh;
   padding: var(--den-space-2);
   border: 1px solid var(--den-edge-hi, var(--den-border));
   border-radius: var(--den-radius-lg, var(--den-radius));

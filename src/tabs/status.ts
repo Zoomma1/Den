@@ -11,14 +11,15 @@ export const STATUS_META: Record<SessionStatus, { label: string; token: string }
   error: { label: "Error", token: "--den-status-error-state" },
 };
 
-/** `failed` = échec hors lifecycle (invoke raté, cf. `markTabError`) ; `unseenDone` = tour fini pas encore consulté. */
+/** `failed` = échec hors lifecycle (invoke raté, cf. `markTabError`) ; `unseenDone` = tour fini pas encore consulté ; `hasRunningAgents` = agent de fond actif alors que le tour est fini. */
 export function sessionStatus(
   state: TabLifecycleState,
-  flags: { unseenDone: boolean; failed: boolean },
+  flags: { unseenDone: boolean; failed: boolean; hasRunningAgents?: boolean },
 ): SessionStatus | null {
   if (state === "error" || flags.failed) return "error";
   if (state === "waiting") return "needs_input";
   if (state === "running") return "running";
+  if (state === "idle" && flags.hasRunningAgents) return "running";
   if (state === "idle" && flags.unseenDone) return "done";
   return null;
 }

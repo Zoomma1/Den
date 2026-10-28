@@ -152,6 +152,73 @@
   border-color: var(--den-status-error);
 }
 
+.den-tool-block > summary .den-tool-name {
+  font-weight: 600;
+  color: var(--den-fg);
+}
+
+/* Aperçu de l'argument principal : une ligne tronquée à côté du nom. */
+.den-tool-preview {
+  margin-left: var(--den-space-2);
+  display: inline-block;
+  max-width: 60ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: bottom;
+}
+
+.den-tool-block[data-state="running"] > summary .den-tool-name::after {
+  content: " …";
+  color: var(--den-fg-secondary);
+}
+
+.den-tool-block[data-state="done"] > summary .den-tool-name::after {
+  content: " ✓";
+  color: var(--den-status-success, var(--den-fg-secondary));
+}
+
+.den-tool-block[data-state="error"] > summary .den-tool-name::after {
+  content: " ✗";
+  color: var(--den-status-error);
+}
+
+.den-tool-arg {
+  margin-top: var(--den-space-2);
+  color: var(--den-fg-secondary);
+  /* Les valeurs longues (old_string, content…) gardent leurs retours à la ligne sans noyer le fil. */
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 12em;
+  overflow-y: auto;
+}
+
+.den-tool-arg__label {
+  font-family: var(--den-font-mono);
+  font-size: 0.85em;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  opacity: 0.8;
+}
+
+/* Plan mode : bloc titré, distinct d'une réponse texte. */
+.den-plan-block {
+  margin-top: var(--den-space-2);
+  padding: var(--den-space-2) var(--den-space-3);
+  border-left: 3px solid var(--den-accent, var(--den-fg-secondary));
+  background: var(--den-bg-surface, transparent);
+  border-radius: 6px;
+}
+
+.den-plan-block__title {
+  display: block;
+  margin-bottom: var(--den-space-2);
+  font-family: var(--den-font-mono);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--den-accent, var(--den-fg));
+}
+
 /* `position: relative` : ancre le bouton copier (D8, cf. .den-copy). */
 .den-tool-input,
 .den-tool-result pre {
@@ -302,7 +369,7 @@
 }
 
 /* Surface ToolUse du moteur : si un mod la remplit, elle remplace le libellé natif du <summary>. */
-.den-tool-block > summary:has(.den-tool-use-surface:not(:empty)) > .den-tool-name {
+.den-tool-block > summary:has(.den-tool-use-surface:not(:empty)) > :is(.den-tool-name, .den-tool-preview) {
   display: none;
 }
 

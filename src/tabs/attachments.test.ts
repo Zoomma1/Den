@@ -22,6 +22,19 @@ import {
 
 afterEach(() => vi.restoreAllMocks());
 
+describe("bumpEpoch", () => {
+  it("incrémente l'époque sans toucher aux images ni révoquer leurs URLs", () => {
+    const revoke = vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
+    const state = createAttachmentState();
+    state.addImage({ mediaType: "image/png", data: "d", previewUrl: "blob:b" });
+    const before = state.epoch();
+    state.bumpEpoch();
+    expect(state.epoch()).toBe(before + 1);
+    expect(state.images()).toHaveLength(1);
+    expect(revoke).not.toHaveBeenCalled();
+  });
+});
+
 const img = (n: number): AttachedImage => ({
   mediaType: "image/png",
   data: `d${n}`,

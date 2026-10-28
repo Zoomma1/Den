@@ -13,6 +13,8 @@
 .den-mod-box {
   display: flex;
   min-width: 0;
+  /* Un `align-self: flex-start` de mod prend sinon la largeur de son contenu (ligne de code entière). */
+  max-width: 100%;
 }
 
 .den-mod-text {
@@ -40,6 +42,14 @@
   border: 1px solid var(--den-border);
   border-radius: var(--den-radius);
   overflow-x: auto;
+  /* `overflow-x: auto` rend l'axe Y scrollable : un pixel d'arrondi suffit à faire apparaître une barre verticale. */
+  overflow-y: hidden;
+  /* Le scroll reste actif ; la barre overlay macOS recouvrait sinon la dernière ligne. */
+  scrollbar-width: none;
+}
+
+.den-mod-code::-webkit-scrollbar {
+  display: none;
 }
 
 .den-mod-code code {
@@ -70,6 +80,11 @@
   cursor: pointer;
 }
 
+/* Dans un Box en ligne `align-items: stretch`, un bouton prenait la hauteur de son voisin (ex. la barre de citation). */
+.den-mod-btn {
+  align-self: flex-start;
+}
+
 .den-mod-btn:hover {
   background: var(--den-glass-3);
   border-color: var(--den-edge-hi);
@@ -79,6 +94,23 @@
   color: var(--den-accent-fg);
   background: var(--den-accent-gradient);
   border-color: transparent;
+}
+
+/* Button plain = du texte cliquable en terminal : une ligne, sans cadre ; tronqué (et non replié) si la colonne est trop étroite. */
+.den-mod-btn[data-plain] {
+  padding: 0;
+  border-color: transparent;
+  background: transparent;
+  line-height: inherit;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+.den-mod-btn[data-plain]:hover {
+  background: var(--den-glass-3);
 }
 
 .den-mod-btn[data-role="dismiss"] {

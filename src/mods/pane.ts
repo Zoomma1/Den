@@ -16,9 +16,10 @@ import {
 import { pressHotkey, replaceKeepingFocus } from "./render";
 
 const INVALIDATE_DEBOUNCE_MS = 100;
-// Estimation grossière d'une cellule de grille de texte, le moteur ne rend pas en pixels.
-const CELL_WIDTH_PX = 8;
-const CELL_HEIGHT_PX = 18;
+const RESIZE_DEBOUNCE_MS = 100;
+// Cellule de repli quand la sonde n'est pas encore mesurable (pas mise en page).
+const FALLBACK_CELL_WIDTH_PX = 8;
+const FALLBACK_CELL_HEIGHT_PX = 18;
 const FALLBACK_COLUMNS = 40;
 const FALLBACK_ROWS = 24;
 
@@ -36,6 +37,8 @@ export const createPaneHost: CreatePaneHost = ({ mount, client, renderTree, opti
   let bodyKey: string | null = null;
   let renderToken = 0;
   let invalidateTimer: ReturnType<typeof setTimeout> | null = null;
+  let resizeTimer: ReturnType<typeof setTimeout> | null = null;
+  let lastSize = "";
 
   mount.classList.add("den-pane");
   const tabsEl = document.createElement("div");
@@ -44,7 +47,25 @@ export const createPaneHost: CreatePaneHost = ({ mount, client, renderTree, opti
   const bodyEl = document.createElement("div");
   bodyEl.className = "den-pane__body";
   bodyEl.tabIndex = 0;
-  mount.replaceChildren(tabsEl, bodyEl);
+  // Sur mount et non bodyEl : bodyEl.replaceChildren() le vide à chaque rendu.
+  const probe = document.createElement("div");
+  probe.setAttribute("aria-hidden", "true");
+  probe.className = "den-mod-tree den-pane__probe";
+  mount.replaceChildren(tabsEl, bodyEl, probe);
+
+  function bodySize(pane?: { columns?: number; rows?: number }): { columns: number; rows: number } {
+    const rect = probe.getBoundingClientRect();
+    const w = rect.width > 0 ? rect.width : FALLBACK_CELL_WIDTH_PX;
+    const h = rect.height > 0 ? rect.height : FALLBACK_CELL_HEIGHT_PX;
+    const style = getComputedStyle(bodyEl);
+    const px = (v: string) => parseFloat(v) || 0;
+    const width = bodyEl.clientWidth - px(style.paddingLeft) - px(style.paddingRight);
+    const height = bodyEl.clientHeight - px(style.paddingTop) - px(style.paddingBottom);
+    return {
+      columns: width > 0 ? Math.max(1, Math.floor(width / w)) : (pane?.columns ?? FALLBACK_COLUMNS),
+      rows: height > 0 ? Math.max(1, Math.floor(height / h)) : (pane?.rows ?? FALLBACK_ROWS),
+    };
+  }
 
   function activeRoster(): PaneRoster | null {
     return activeTabId ? (rosters.get(activeTabId) ?? null) : null;
@@ -111,10 +132,8 @@ export const createPaneHost: CreatePaneHost = ({ mount, client, renderTree, opti
     bodyEl.classList.toggle("den-pane__body--focused", isFocused);
 
     const token = ++renderToken;
-    const columns = bodyEl.clientWidth
-      ? Math.floor(bodyEl.clientWidth / CELL_WIDTH_PX)
-      : (pane.columns ?? FALLBACK_COLUMNS);
-    const bodyRows = pane.rows ?? (bodyEl.clientHeight ? Math.floor(bodyEl.clientHeight / CELL_HEIGHT_PX) : FALLBACK_ROWS);
+    const { columns, rows: bodyRows } = bodySize(pane);
+    lastSize = `${columns}x${bodyRows}`;
     let tree = null;
     try {
       const res = await client.requestRender(tabId, {
@@ -219,6 +238,23 @@ export const createPaneHost: CreatePaneHost = ({ mount, client, renderTree, opti
     act("close", pane.id);
   }
 
+  const resizeObserver =
+    typeof ResizeObserver === "undefined"
+      ? null
+      : new ResizeObserver(() => {
+          if (resizeTimer) clearTimeout(resizeTimer);
+          resizeTimer = setTimeout(() => {
+            resizeTimer = null;
+            const roster = activeRoster();
+            if (!roster?.panes.some((p) => p.id === roster.shownId)) return;
+            const pane = roster.panes.find((p) => p.id === roster.shownId);
+            const { columns, rows } = bodySize(pane);
+            if (`${columns}x${rows}` === lastSize) return;
+            void renderBody(roster, true);
+          }, RESIZE_DEBOUNCE_MS);
+        });
+  resizeObserver?.observe(bodyEl);
+
   window.addEventListener(MOD_EVENTS.panes, onPanes);
   window.addEventListener("den:active-tab-changed", onActiveTab);
   window.addEventListener(MOD_EVENTS.invalidate, onInvalidate);
@@ -233,6 +269,8 @@ export const createPaneHost: CreatePaneHost = ({ mount, client, renderTree, opti
       window.removeEventListener("den:session-closed", onSessionClosed);
       mount.removeEventListener("keydown", onKeydown);
       if (invalidateTimer) clearTimeout(invalidateTimer);
+      if (resizeTimer) clearTimeout(resizeTimer);
+      resizeObserver?.disconnect();
       renderToken++;
       mount.replaceChildren();
     },
