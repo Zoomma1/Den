@@ -1,0 +1,72 @@
+.den-settings-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.5);
+}
+.den-settings-backdrop[hidden] { display: none; }
+
+.den-settings-overlay {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  width: min(560px, 92vw);
+  max-height: 80vh;
+  overflow-y: auto;
+  padding: 20px;
+  border: 1px solid var(--den-edge, var(--den-border));
+  border-radius: 10px;
+  background: var(--den-bg-surface);
+  color: var(--den-fg);
+}
+.den-settings-title { margin: 0; font-size: 16px; }
+.den-settings-section { display: flex; flex-direction: column; gap: 10px; }
+.den-settings-section__title {
+  margin: 0;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--den-fg-secondary);
+}
+.den-settings-field { display: grid; grid-template-columns: 1fr auto; gap: 4px 12px; align-items: center; }
+.den-settings-field__note { grid-column: 1 / -1; font-size: 11px; color: var(--den-fg-muted); }
+.den-settings-select {
+  padding: 4px 8px;
+  border: 1px solid var(--den-border);
+  border-radius: var(--den-radius, 8px);
+  background: var(--den-bg-elevated);
+  color: var(--den-fg);
+  font: inherit;
+}
+.den-settings-shortcuts { display: grid; grid-template-columns: auto 1fr; gap: 6px 16px; margin: 0; }
+.den-settings-shortcuts dd { margin: 0; color: var(--den-fg-secondary); }
+.den-settings-shortcuts__combo { font-family: var(--den-font-mono, monospace); color: var(--den-fg); }
+.den-settings-legend { display: flex; flex-wrap: wrap; gap: 6px 16px; margin: 0; padding: 0; list-style: none; }
+.den-settings-legend__item { display: flex; align-items: center; gap: 6px; color: var(--den-fg-secondary); }
+.den-settings-legend__dot { width: 8px; height: 8px; border-radius: 50%; }
+.den-settings-close {
+  align-self: flex-end;
+  padding: 6px 14px;
+  border: 0;
+  border-radius: var(--den-radius, 8px);
+  background: var(--den-accent);
+  color: var(--den-accent-fg);
+  font: 600 12px var(--den-font-sans, inherit);
+  cursor: pointer;
+}
+
+.den-settings-actions { display: flex; gap: 8px; }
+
+.den-settings-open-themes {
+  padding: 6px 12px;
+  border: 1px solid var(--den-edge, var(--den-border));
+  border-radius: var(--den-radius);
+  background: var(--den-glass-2, var(--den-bg-surface));
+  color: var(--den-fg);
+  font: 600 12px var(--den-font-sans, inherit);
+  cursor: pointer;
+}
+.den-settings-open-themes:hover { background: var(--den-glass-3, var(--den-bg-elevated)); }

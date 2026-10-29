@@ -13,6 +13,7 @@ import "./mods/client/client.css";
 import { Registry, type DenContext } from "./core/registry";
 import * as theme from "./theme";
 import * as workspace from "./workspace";
+import * as settings from "./settings";
 import * as layout from "./layout";
 import * as tabs from "./tabs";
 import * as markdown from "./markdown";
@@ -59,6 +60,8 @@ const registry = new Registry();
 //   pour que son header de session se retrouve au-dessus de `.den-views`.
 registry.register({ name: "theme", init: theme.init });
 registry.register({ name: "workspace", init: workspace.init });
+// settings après workspace (lit le preset courant) et avant layout (qui lit settings.layoutPreset au boot).
+registry.register({ name: "settings", init: settings.init });
 registry.register({ name: "layout", init: layout.init });
 registry.register({ name: "markdown", init: markdown.init });
 registry.register({ name: "tabs", init: tabs.init });

@@ -39,7 +39,8 @@
  * qu'une nouvelle grille CSS provoque — rien à faire ici pour xterm.
  */
 import { getState, saveState, setLayout } from "../workspace";
-import type { LayoutState } from "../workspace/store";
+import type { LayoutPreset, LayoutState } from "../workspace/store";
+import { getSettings } from "../settings/store";
 import { debounce, type Debounced } from "../terminal/debounce";
 import {
   applyLayout,
@@ -51,6 +52,7 @@ import {
   withTerminalHidden,
   withSizes,
   withRightPx,
+  withPreset,
 } from "./layout";
 import "./layout.css";
 
@@ -58,16 +60,32 @@ const PERSIST_DEBOUNCE_MS = 300;
 
 type SplitterKind = "sidebar" | "panes" | "pane";
 
+let appEl: HTMLElement | null = null;
+let panesSplitterEl: HTMLElement | null = null;
+
+/** Change le preset de layout (écran de réglages) : mémoire, grille, disque. */
+export function setPreset(preset: LayoutPreset): void {
+  const next = withPreset(getState().layout, preset);
+  setLayout(next);
+  if (appEl) applyLayout(appEl, next);
+  if (appEl && panesSplitterEl) syncPanesOrientation(appEl, panesSplitterEl);
+  void saveState();
+}
+
 export function init(): void {
   const app = document.getElementById("den-app");
   if (!app) {
     throw new Error("Den: point de montage #den-app introuvable dans index.html");
   }
 
+  appEl = app;
+  const presetOverride = getSettings().layoutPreset;
+  if (presetOverride) setLayout(withPreset(getState().layout, presetOverride));
   applyLayout(app, getState().layout);
 
   const sidebarSplitter = createSplitter("sidebar", "Resize sidebar");
   const panesSplitter = createSplitter("panes", "Resize conversation and terminal panes");
+  panesSplitterEl = panesSplitter;
   const paneSplitter = createSplitter("pane", "Resize mod pane column");
   app.append(sidebarSplitter, panesSplitter, paneSplitter);
   syncPanesOrientation(app, panesSplitter);

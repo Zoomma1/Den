@@ -11,7 +11,8 @@
   margin-top: auto;
 }
 
-.den-root-bar > button {
+.den-root-bar > button,
+.den-root-bar__row > button {
   display: flex;
   justify-content: center;
   padding: var(--den-space-2) var(--den-space-3);
@@ -23,13 +24,38 @@
   cursor: pointer;
 }
 
-.den-root-bar__add-workspace {
+.den-root-bar__row {
+  display: flex;
+  gap: var(--den-space-2);
+}
+
+.den-root-bar__row > .den-root-bar__add-workspace {
+  flex: 1;
+}
+
+.den-root-bar__add-workspace,
+.den-root-bar__settings {
   border: 1px solid var(--den-edge, var(--den-border));
   background: var(--den-glass-2, var(--den-bg-surface));
   color: var(--den-fg);
 }
 
-.den-root-bar__add-workspace:hover {
+/* Cog lisible d'un coup d'œil : plus grand que le texte voisin, bouton carré. */
+.den-root-bar__row > .den-root-bar__settings {
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 2.75rem;
+  padding: 0;
+}
+
+.den-root-bar__settings svg {
+  width: 1.3rem;
+  height: 1.3rem;
+}
+
+.den-root-bar__add-workspace:hover,
+.den-root-bar__settings:hover {
   background: var(--den-glass-3, var(--den-bg-elevated));
 }
 

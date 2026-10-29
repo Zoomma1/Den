@@ -151,6 +151,7 @@ import {
   type SessionTabs,
 } from "./sessionTabs";
 import { createAgentsOverlay, type AgentsOverlay } from "./agentsOverlay";
+import { getSettingsOverlay } from "../settings";
 import { createSessionsPanel, type SessionsPanel } from "./sessionsPanel";
 import { createSidebar, type Sidebar } from "./sidebar";
 import { promptKeyAction } from "./promptKeys";
@@ -1134,6 +1135,14 @@ export async function init(ctx: DenContext): Promise<void> {
   ctx.mounts.sidebar.prepend(panel.triggerEl);
   agentsOverlay = createAgentsOverlay(document.body);
   panel.triggerEl.after(agentsOverlay.triggerEl);
+  const settingsTrigger = getSettingsOverlay()?.triggerEl;
+  const addWorkspaceEl = ctx.mounts.sidebar.querySelector(".den-root-bar__add-workspace");
+  if (settingsTrigger && addWorkspaceEl) {
+    const row = document.createElement("div");
+    row.className = "den-root-bar__row";
+    addWorkspaceEl.replaceWith(row);
+    row.append(addWorkspaceEl, settingsTrigger);
+  }
 
   // La barre se monte elle-même en premier enfant, au-dessus de `.den-views` (déjà inséré par `markdown`).
   sessionTabs = createSessionTabs(ctx.mounts.conversation, { onNew: onNewSession });
