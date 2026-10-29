@@ -39,8 +39,6 @@ use std::path::{Path, PathBuf};
 use tauri::Manager;
 
 const STATE_FILE: &str = "state.json";
-const STATE_TMP: &str = "state.json.tmp";
-const STATE_BAK: &str = "state.json.bak";
 const LEGACY_FILE: &str = "workspace.json";
 const LEGACY_MIGRATED: &str = "workspace.json.migrated";
 
@@ -69,7 +67,7 @@ fn user_base(app: &tauri::AppHandle) -> Result<PathBuf, String> {
 
 /// Résout le dossier de base (dev repo ou fichiers utilisateur) selon le
 /// même ordre que `theme.rs::resolve_base`.
-fn resolve_base(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+pub(crate) fn resolve_base(app: &tauri::AppHandle) -> Result<PathBuf, String> {
     if let Some(base) = dev_repo_base() {
         return Ok(base);
     }
@@ -116,10 +114,15 @@ pub fn path_canonicalize(path: String) -> Result<String, String> {
 #[tauri::command]
 pub fn state_write(app: tauri::AppHandle, json: String) -> Result<(), String> {
     let base = resolve_base(&app)?;
-    let path = base.join(STATE_FILE);
-    let tmp = base.join(STATE_TMP);
+    atomic_write(&base, STATE_FILE, &json)
+}
+
+/// Écriture atomique partagée (state.json, settings.json) : `.bak` de l'existant, puis `.tmp` + rename.
+pub(crate) fn atomic_write(base: &Path, name: &str, json: &str) -> Result<(), String> {
+    let path = base.join(name);
+    let tmp = base.join(format!("{name}.tmp"));
     if path.exists() {
-        fs::copy(&path, base.join(STATE_BAK))
+        fs::copy(&path, base.join(format!("{name}.bak")))
             .map_err(|e| format!("copie de sauvegarde de {} impossible: {e}", path.display()))?;
     }
     fs::write(&tmp, json)
@@ -150,4 +153,22 @@ pub fn state_migrated(app: tauri::AppHandle) -> Result<(), String> {
             migrated_path.display()
         )
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn atomic_write_creates_bak_of_previous_version() {
+        let dir = std::env::temp_dir().join(format!("den-state-test-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        atomic_write(&dir, "x.json", "one").unwrap();
+        assert!(!dir.join("x.json.bak").exists());
+        atomic_write(&dir, "x.json", "two").unwrap();
+        assert_eq!(fs::read_to_string(dir.join("x.json")).unwrap(), "two");
+        assert_eq!(fs::read_to_string(dir.join("x.json.bak")).unwrap(), "one");
+        assert!(!dir.join("x.json.tmp").exists());
+        fs::remove_dir_all(&dir).unwrap();
+    }
 }

@@ -38,6 +38,7 @@ src-tauri/gen/schemas
 # cf. src-tauri/src/state.rs::state_migrated).
 /workspace.json*
 /state.json*
+/settings.json*
 
 # Worktrees des fleets /implement-feature
 .claude/worktrees/

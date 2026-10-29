@@ -1,5 +1,6 @@
 mod login_path;
 mod pty;
+mod settings;
 mod sidecar;
 mod state;
 mod theme;
@@ -21,6 +22,10 @@ pub fn run() {
             sidecar::sidecar_kill_all,
             theme::theme_read,
             theme::theme_watch,
+            theme::theme_list,
+            theme::theme_open_dir,
+            settings::settings_read,
+            settings::settings_write,
             state::state_read,
             state::state_write,
             state::path_canonicalize,

@@ -25,7 +25,6 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use tauri::ipc::Channel;
-use tauri::Manager;
 
 use crate::login_path;
 
@@ -204,7 +203,7 @@ pub async fn sidecar_spawn(
     command.env("DEN_PARENT_PID", std::process::id().to_string());
 
     // Dossier de config lu par le sidecar (mode initial) ; non résolu => le sidecar retombe sur default.
-    match app.path().app_config_dir() {
+    match crate::state::resolve_base(&app) {
         Ok(dir) => {
             command.env("DEN_CONFIG_DIR", dir);
         }
